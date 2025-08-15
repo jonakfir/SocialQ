@@ -13,13 +13,12 @@
 
     try {
     const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-    const res = await fetch('/auth/login', {
+    const res = await fetch(`${API}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // send/receive cookie
+        credentials: 'include',
         body: JSON.stringify({ username, password })
-      });
-
+    });
       const data = await res.json().catch(() => ({}));
 
       if (res.ok && (data.ok || data.success)) {

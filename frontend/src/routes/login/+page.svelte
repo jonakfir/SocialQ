@@ -9,11 +9,11 @@
     e.preventDefault();
     error = '';
     const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-    const res = await fetch('/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ username, password })
+    const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username, password })
     });
 
     const data = await res.json().catch(() => ({}));

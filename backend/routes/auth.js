@@ -7,24 +7,29 @@ const { db, createUser, findUserByUsername, findUserById } = require('../db/db')
 const router = express.Router();
 
 const COOKIE_NAME = 'session';
-const JWT_SECRET = process.env.AUTH_SECRET || 'dev-change-this';
+const JWT_SECRET  = process.env.AUTH_SECRET || 'dev-change-this';
 
 // ---------------- helpers ----------------
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
+
+/**
+ * Only sets the cookie. DOES NOT send a response.
+ * Handlers should call res.json(...) after this.
+ */
 function setSessionCookie(res, payload) {
   const token = signToken(payload);
   const isProd = process.env.NODE_ENV === 'production';
-  res.cookie('session', token, {
+  res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: isProd ? 'none' : 'lax', // 'lax' locally, 'none' in prod
     secure:   isProd,                  // only true in prod (https)
     path: '/',
-    maxAge: 1000 * 60 * 60 * 24 * 7
+    maxAge: 1000 * 60 * 60 * 24 * 7    // 7 days
   });
-  res.json({ ok: true });
 }
+
 function getUserIdFromCookie(req) {
   try {
     const token = req.cookies?.[COOKIE_NAME];
@@ -51,6 +56,7 @@ router.post('/register', async (req, res) => {
     if (!username || !password || String(username).length < 3 || String(password).length < 6) {
       return res.status(400).json({ error: 'Username ≥ 3 chars, password ≥ 6 chars' });
     }
+
     const exists = findUserByUsername(username);
     if (exists) return res.status(409).json({ error: 'Username already taken' });
 
@@ -67,22 +73,30 @@ router.post('/register', async (req, res) => {
 
 // POST /auth/login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  console.log('POST /auth/login');
+  try {
+    // Use USERNAME + PASSWORD (your DB helpers are username-based)
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Missing username or password' });
+    }
 
-  // TODO: Replace this with real DB lookup
-  const user = await findUserByEmail(email); // implement this
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+    const user = findUserByUsername(username);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    setSessionCookie(res, { uid: user.id, un: user.username });
+    return res.json({ ok: true, user: { id: user.id, username: user.username } });
+  } catch (e) {
+    console.error('login error', e);
+    return res.status(500).json({ error: 'Server error' });
   }
-
-  // Example password check (replace with bcrypt compare)
-  const isMatch = password === user.password;
-  if (!isMatch) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-
-  // Create session cookie
-  setSessionCookie(res, { uid: user.id });
 });
 
 // POST /auth/logout
@@ -90,13 +104,12 @@ router.post('/logout', (req, res) => {
   console.log('POST /auth/logout');
   try {
     const isProd = process.env.NODE_ENV === 'production';
-
-    res.cookie('session', token, {
+    // Properly clear the cookie (must match sameSite/secure/path)
+    res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
-      sameSite: isProd ? 'none' : 'lax', // 'lax' locally, 'none' in prod
-      secure:   isProd,                  // only true in prod (https)
-      path: '/',
-      maxAge: 1000 * 60 * 60 * 24 * 7
+      sameSite: isProd ? 'none' : 'lax',
+      secure:   isProd,
+      path: '/'
     });
     return res.json({ ok: true });
   } catch (e) {
@@ -107,12 +120,11 @@ router.post('/logout', (req, res) => {
 
 // GET /auth/me
 router.get('/me', (req, res) => {
-  // no console.log here to avoid spam on polling
   try {
     const uid = getUserIdFromCookie(req);
     if (!uid) return res.json({ user: null });
-    const user = findUserById(uid); // { id, username }
-    return res.json({ user: user || null });
+    const user = findUserById(uid); // { id, username, password }
+    return res.json({ user: user ? { id: user.id, username: user.username } : null });
   } catch (e) {
     console.error('me error', e);
     return res.json({ user: null });
