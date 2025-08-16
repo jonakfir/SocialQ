@@ -1,12 +1,11 @@
 // backend/server.js
-require('dotenv').config({ path: '../.env' });
+
+// 1) Load env (Railway injects real env vars; .env is optional)
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-
-// Routers
-const authRoutes = require('./routes/auth');
 
 const app = express();
 
@@ -14,13 +13,9 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json());
 app.use(cookieParser());
-
-// If you're behind a proxy/load balancer (Railway/Render/Heroku/Vercel/NGINX),
-// this is required so secure cookies work correctly.
 app.set('trust proxy', 1);
 
-// --- CORS (dev & prod) ---
-// Support a single origin via FRONTEND_ORIGIN or multiple via FRONTEND_ORIGINS (comma-separated)
+// --- CORS ---
 const devDefault = 'http://localhost:5173';
 const rawOrigins =
   process.env.FRONTEND_ORIGINS ||
@@ -34,52 +29,53 @@ const allowedOrigins = String(rawOrigins)
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow non-browser requests (like curl/postman) where origin is undefined
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    origin(origin, cb) {
+      if (!origin) return cb(null, true);             // curl/healthcheck/etc
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS blocked for origin: ${origin}`), false);
     },
     credentials: true,
   })
 );
-
-// Preflight for all routes
 app.options('*', cors());
 
-// --- Routes ---
-app.use('/auth', authRoutes);
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
+// --- Healthcheck FIRST (so app is healthy even if other imports fail) ---
+app.get('/health', (_req, res) => {
+  res.status(200).json({
     ok: true,
     env: process.env.NODE_ENV || 'development',
     time: new Date().toISOString(),
   });
 });
 
-// --- Not Found handler ---
-app.use((req, res, next) => {
-  res.status(404).json({ error: 'Not Found' });
+// --- Routes (guard against startup crashes) ---
+let authRoutes = express.Router();
+try {
+  authRoutes = require('./routes/auth');
+} catch (err) {
+  console.error('[BOOT] Failed to load ./routes/auth:', err);
+}
+app.use('/auth', authRoutes);
+
+// --- 404 ---
+app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
+
+// --- Error handler ---
+app.use((err, _req, res, _next) => {
+  console.error('[Server Error]', err?.stack || err);
+  res.status(err.status || 500).json({ error: err.message || 'Server error' });
 });
 
-// --- Error handler (last) ---
-app.use((err, req, res, next) => {
-  console.error('[Server Error]', err?.message || err);
-  res
-    .status(err.status || 500)
-    .json({ error: err.message || 'Server error' });
-});
+// Log any unhandled crashes so they show in Railway Deploy Logs
+process.on('unhandledRejection', (e) => console.error('[unhandledRejection]', e));
+process.on('uncaughtException', (e) => console.error('[uncaughtException]', e));
 
 // --- Start server ---
-const PORT = process.env.PORT || 4000;
-// Bind on 0.0.0.0 so it’s reachable from Docker/Render/Railway/etc.
+const PORT = Number(process.env.PORT) || 8080; // Railway provides PORT
 app.listen(PORT, '0.0.0.0', () => {
   console.log('========================================');
   console.log(`API listening on :${PORT}`);
-  console.log('Allowed CORS origins:', allowedOrigins.join(', '));
+  console.log('Allowed CORS origins:', allowedOrigins.join(', ') || '(none)');
   console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
   console.log('========================================');
 });
- 
