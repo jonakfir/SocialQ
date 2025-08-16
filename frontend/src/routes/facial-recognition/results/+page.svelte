@@ -170,6 +170,6 @@
 
     <button class="btn" on:click={clearAndRestart}>Play Again</button>
     <button class="btn" on:click={() => goto('/facial-recognition/results/stats')}>See Stats</button>
-    <button class="btn" on:click={() => goto('/dashboard')}>Exit</button>
+    <button class="btn" on:click={() => goto('/dashboard')}>Dashboard</button>
   </div>
 </div>

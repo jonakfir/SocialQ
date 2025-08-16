@@ -195,6 +195,6 @@
 
     <button class="btn" on:click={clearAndRestart}>Play Again</button>
     <button class="btn" on:click={() => goto('/transition-recognition/results/stats')}>See Stats</button>
-    <button class="btn" on:click={() => goto('/dashboard')}>Exit</button>
+    <button class="btn" on:click={() => goto('/dashboard')}>Back to Dashboard</button>
   </div>
 </div>
