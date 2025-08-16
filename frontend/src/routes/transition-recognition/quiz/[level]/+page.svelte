@@ -103,50 +103,6 @@
     }
   }
 
-    // draw current frame into a small canvas
-    function frameToDataURL(): string | undefined {
-      const w = Math.max(1, v.videoWidth || 0);
-      const h = Math.max(1, v.videoHeight || 0);
-      if (!w || !h) return undefined;
-
-      const cap = 128; // target max dimension for a light thumbnail
-      const scale = Math.min(cap / w, cap / h);
-      const cw = Math.max(1, Math.round(w * scale));
-      const ch = Math.max(1, Math.round(h * scale));
-      const c = document.createElement('canvas');
-      c.width = cw; c.height = ch;
-      const ctx = c.getContext('2d');
-      if (!ctx) return undefined;
-      try {
-        ctx.drawImage(v, 0, 0, cw, ch);
-        return c.toDataURL('image/jpeg', 0.72);
-      } catch {
-        // CORS-tainted canvas or other issue
-        return undefined;
-      }
-    }
-
-    const out: { start?: string; end?: string } = {};
-
-    // start frame ~0.05s
-    try {
-      await seekTo(0.05);
-      out.start = frameToDataURL();
-    } catch {}
-
-    // end frame slightly before duration
-    try {
-      const endT = Math.max(0.05, (Number.isFinite(v.duration) ? v.duration : 0.1) - 0.08);
-      await seekTo(endT);
-      out.end = frameToDataURL();
-    } catch {}
-
-    // clean up
-    try { v.src = ''; v.remove(); } catch {}
-
-    return out;
-  }
-
   async function captureBatch(urls: string[]) {
     const starts: (string | undefined)[] = [];
     const ends: (string | undefined)[] = [];
