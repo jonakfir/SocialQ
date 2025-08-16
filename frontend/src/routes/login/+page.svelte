@@ -167,7 +167,7 @@
 </div>
 
 <div class="auth-wrap">
-  <div class="card {shake ? 'shake' : ''}" in:fade={{ duration: 220 }} in:fly={{ y: 16, duration: 280 }}>
+  <div class="card {shake ? 'shake' : ''}" in:fade={{ duration: 220 }}>
     <h2 class="title">Login</h2>
 
     <form on:submit={handleLogin} autocomplete="on">
