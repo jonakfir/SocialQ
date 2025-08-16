@@ -3,9 +3,11 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
-  
 
   type Row = { img: string; options: string[]; correct: string };
+
+  // ---- force exactly N questions ----
+  const QUESTION_COUNT = 8;
 
   // ---- difficulty from route param ----
   let difficulty = '1';
@@ -75,17 +77,18 @@
     document.title = 'Facial Recognition Quiz';
     try {
       const serverDiff = difficulty === '5' ? 'all' : difficulty;
-      const res = await fetch(`/ekman?difficulty=${encodeURIComponent(serverDiff)}&count8`, {
-        cache: 'no-store'
-      });
+
+      const res = await fetch(
+        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}`,
+        { cache: 'no-store' }
+      );
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
       const rows: Row[] = await res.json();
-      if (!Array.isArray(rows) || rows.length === 0) {
-        throw new Error('No images found for this difficulty.');
-      }
 
-      quizData = rows;
+      quizData = (Array.isArray(rows) ? rows.slice(0, QUESTION_COUNT) : []);
+      if (!quizData.length) throw new Error('No images found for this difficulty.');
+
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
