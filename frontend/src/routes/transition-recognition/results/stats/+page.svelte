@@ -276,7 +276,7 @@
 
     <div class="footer">
       <button class="btn primary" on:click={playAgain}>Play Again</button>
-      <a class="btn" href="/transition-recognition/settings">Back to Settings</a>
+      <a class="btn" href="/transition-recognition/results">Back to Results</a>
       <a class="btn" href="/dashboard">Dashboard</a>
     </div>
   </div>
