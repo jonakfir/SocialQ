@@ -1,33 +1,28 @@
-import { PRIVATE_API_BASE } from '$env/static/private';
+const TARGET = process.env.PRIVATE_API_BASE ?? 'http://127.0.0.1:8080';
 
-const BASE = (PRIVATE_API_BASE || '').replace(/\/$/, '');
-
-async function forward(event, suffix) {
-  const req = event.request;
-  const url = `${BASE}${suffix}`;
-
+async function forward(request: Request, path: string) {
+  const url = `${TARGET.replace(/\/$/, '')}/${path}`;
   const body =
-    req.method === 'GET' || req.method === 'HEAD'
+    request.method === 'GET' || request.method === 'HEAD'
       ? undefined
-      : await req.arrayBuffer();
+      : await request.arrayBuffer();
 
   const resp = await fetch(url, {
-    method: req.method,
-    headers: req.headers,
+    method: request.method,
+    headers: request.headers,
     body,
-    redirect: 'manual'
+    redirect: 'manual',
   });
 
-  // Pass through headers, but drop compression so Vercel can serve it
-  const headers = new Headers(resp.headers);
-  headers.delete('content-encoding');
+  const out = new Headers(resp.headers);
+  out.delete('content-encoding');
 
-  return new Response(resp.body, { status: resp.status, headers });
+  return new Response(resp.body, { status: resp.status, headers: out });
 }
 
-export const GET     = (e) => forward(e, '/' + e.params.path);
-export const POST    = (e) => forward(e, '/' + e.params.path);
-export const PUT     = (e) => forward(e, '/' + e.params.path);
-export const PATCH   = (e) => forward(e, '/' + e.params.path);
-export const DELETE  = (e) => forward(e, '/' + e.params.path);
-export const OPTIONS = (e) => forward(e, '/' + e.params.path);
+export const GET     = ({ request, params }) => forward(request, params.path);
+export const POST    = ({ request, params }) => forward(request, params.path);
+export const PUT     = ({ request, params }) => forward(request, params.path);
+export const PATCH   = ({ request, params }) => forward(request, params.path);
+export const DELETE  = ({ request, params }) => forward(request, params.path);
+export const OPTIONS = ({ request, params }) => forward(request, params.path);
