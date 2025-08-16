@@ -7,29 +7,31 @@
   let error = '';
   let loading = false;
 
-  async function handleCreate(e: Event) {
+  async function handleCreate(e: SubmitEvent) {
     e.preventDefault();
     error = '';
     loading = true;
 
     try {
-      // change the path here if your backend uses /auth/signup
       const res = await apiFetch('/auth/register', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (res.status === 409) throw new Error(data?.error || 'Username already exists');
-        throw new Error(data?.error || 'Registration failed');
+        // show exactly what the backend returned
+        let msg = '';
+        try { msg = (await res.json())?.error || ''; } catch {}
+        if (!msg) try { msg = await res.text(); } catch {}
+        error = msg || `Registration failed (HTTP ${res.status})`;
+        console.log('register error', res.status, msg);
+        return;
       }
 
       goto('/login?created=1');
-    } catch (err) {
-      console.error(err);
-      error = err?.message ?? 'Network error';
+    } catch {
+      error = 'Network error';
     } finally {
       loading = false;
     }
