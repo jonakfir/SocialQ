@@ -5,16 +5,15 @@
   "type": "commonjs",
   "engines": { "node": "20.x" },
   "scripts": {
-    "start": "node server.js",
-    "postinstall": "npm rebuild better-sqlite3 --build-from-source"
+    "start": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^9.4.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "better-sqlite3": "^9.6.0"
   }
 }
