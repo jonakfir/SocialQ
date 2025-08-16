@@ -1,11 +1,12 @@
 {
-  "name": "socialq-api",
-  "private": true,
-  "type": "module",
+  "name": "backend",
+  "version": "1.0.0",
   "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": "22.x" },
   "scripts": {
     "start": "node server.js"
-  },
+  }
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
