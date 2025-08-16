@@ -188,7 +188,7 @@
     localStorage.setItem('quiz_results', JSON.stringify(results)); // [true,false,...]
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(targets.length));
-    goto('/facial-recognition/results'); // reuse existing results page
+    goto('/mirroring/results'); // reuse existing results page
   }
 
   function nextTarget() {
