@@ -18,34 +18,39 @@ const rawOrigins =
   process.env.FRONTEND_ORIGIN ||
   devDefault;
 
-const allowedOrigins = String(rawOrigins)
+// exact origins you explicitly allow
+const exactAllowed = String(rawOrigins)
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 
+// allow all previews under your Vercel team/project domain
+const PREVIEW_SUFFIX = '-jonathan-kfirs-projects.vercel.app'; // adjust if your suffix differs
+
 function isAllowedOrigin(origin) {
-  if (!origin) return true;                 // curl/healthchecks
-  for (const o of allowedOrigins) {
-    if (o === '*' || o === origin) return true;
-    // allow patterns like https://*.vercel.app
-    if (o.includes('*')) {
-      const pattern = '^' + o
-        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')  // escape regex
-        .replace('\\*', '.*') + '$';
-      if (new RegExp(pattern).test(origin)) return true;
-    }
+  if (!origin) return true; // curl/healthchecks/postman
+  try {
+    const { protocol, host } = new URL(origin);
+    if (exactAllowed.includes(origin)) return true;
+    if (protocol === 'https:' && host.endsWith(PREVIEW_SUFFIX)) return true; // any Vercel preview of your project
+    if (origin.startsWith('http://localhost:')) return true;
+    return false;
+  } catch {
+    return false;
   }
-  return false;
 }
 
-app.use(cors({
+const corsOptions = {
   origin(origin, cb) {
     if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS blocked for origin: ${origin}`), false);
   },
-  credentials: true,
-}));
-app.options('*', cors());
+  credentials: true, // needed for cookies
+};
+
+app.use(cors(corsOptions));
+// IMPORTANT: use the SAME options for preflight
+app.options('*', cors(corsOptions));
 
 // HEALTHCHECK FIRST
 app.get('/health', (_req, res) => {
