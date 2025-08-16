@@ -1,32 +1,37 @@
+<!-- src/lib/components/Header.svelte -->
+
 <script context="module">
-  // Make the header client-only so it never runs during SSR.
+  // Client-only (safe to use document/window)
   export const ssr = false;
 </script>
 
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { goto, afterNavigate } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
 
+  // Passed in from +layout.svelte: <Header user={data.user} />
+  export let user = null;            // { id, username } | null
   export let showProfile = true;
   export let showMenu = true;
 
-  let user = null;      // { id, username } | null
-  let loading = true;
   let isOpen = false;
-  let wrapEl;           // ref to the menu wrapper for outside-click
+  let wrapEl;                        // ref for outside-click
 
-  async function loadUser() {
-    try {
-      const res = await fetch('http://localhost:4000/auth/me', { credentials: 'include' });
-      const data = await res.json().catch(() => ({}));
-      user = data?.user ?? null;
-    } catch {
-      user = null;
-    } finally {
-      loading = false;
-    }
+  $: if (user && user.username && typeof localStorage !== 'undefined') {
+    localStorage.setItem('username', user.username);
+    if (user.id != null) localStorage.setItem('userId', String(user.id));
   }
-  onMount(loadUser);
+
+  // Optional: fallback to localStorage so the initial doesn't flicker
+  onMount(() => {
+    if (!user && typeof localStorage !== 'undefined') {
+      const name = localStorage.getItem('username');
+      if (name) {
+        user = { id: Number(localStorage.getItem('userId')) || -1, username: name };
+      }
+    }
+  });
 
   // --- menu behaviour ---
   function toggleMenu(e) {
@@ -35,13 +40,10 @@
   }
   function closeMenu() { isOpen = false; }
 
-  // define here so we can remove it in cleanup
   function onDocClick(e) {
     if (!wrapEl) return;
     if (!wrapEl.contains(e.target)) isOpen = false;
   }
-
-  // ✅ Guard any document usage so it never runs on the server
   onMount(() => {
     if (typeof document !== 'undefined') {
       document.addEventListener('click', onDocClick);
@@ -53,11 +55,9 @@
       document.removeEventListener('click', onDocClick);
     }
   });
-
-  // Close after navigation too (client-side)
   afterNavigate(() => { isOpen = false; });
 
-  // --- navigation actions ---
+  // --- navigation / auth actions ---
   function goToProfile() {
     closeMenu();
     goto(user ? '/profile' : '/login');
@@ -68,10 +68,11 @@
   }
   async function doLogout() {
     try {
-      await fetch('http://localhost:4000/auth/logout', {
-        method: 'POST',
-        credentials: 'include'
-      });
+      await apiFetch('/auth/logout', { method: 'POST' });
+    } catch {}
+    try {
+      localStorage.removeItem('username');
+      localStorage.removeItem('userId');
     } catch {}
     closeMenu();
     goto('/login');
@@ -88,7 +89,7 @@
       title={user ? user.username : 'Not signed in'}
       on:click={goToProfile}
     >
-      {#if loading}…{:else}{initial}{/if}
+      {initial}
     </button>
   {/if}
 
@@ -118,8 +119,7 @@
   .header {
     position: absolute;
     top: 20px;
-    left: 0;
-    right: 0;
+    left: 0; right: 0;
     padding: 0 28px;
     display: flex;
     justify-content: space-between;
@@ -127,8 +127,7 @@
     z-index: 1000;
   }
 
-  .profile,
-  .menu {
+  .profile, .menu {
     width: 40px; height: 40px;
     border-radius: 50%;
     border: 2px solid #111;
@@ -140,16 +139,12 @@
     font-size: 16px;
     margin: 0;
   }
-  .profile:hover, .menu:hover {
-    background: #4f46e5; color: #fff;
-  }
+  .profile:hover, .menu:hover { background: #4f46e5; color: #fff; }
 
   .menu-wrap { position: relative; }
-
   .menu-pop {
     position: absolute;
-    right: 0;
-    top: 46px;
+    right: 0; top: 46px;
     min-width: 180px;
     background: #fff;
     border: 1.5px solid #111;
@@ -160,17 +155,10 @@
     z-index: 1001;
   }
   .menu-pop[data-open="true"] { display: block; }
-
   .item {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: #fff;
-    border: 0;
-    padding: 12px 14px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 700;
+    display: block; width: 100%; text-align: left;
+    background: #fff; border: 0; padding: 12px 14px;
+    border-radius: 8px; cursor: pointer; font-weight: 700;
   }
   .item:hover { background: #4f46e5; color: #fff; }
 </style>
