@@ -1,41 +1,32 @@
-<script>
+<script lang="ts">
   import { goto } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
 
   let username = '';
   let password = '';
   let error = '';
 
-  async function handleLogin(e) {
+  async function handleLogin(e: Event) {
     e.preventDefault();
     error = '';
 
-    const API_BASE = import.meta.env.VITE_API_BASE ?? ''; // or leave '' if you use the /api proxy
+    const res = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    });
 
-    try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ username, password })
-      });
+    const data = await res.json().catch(() => null);
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Login failed');
-
-      const uname = data?.user?.username ?? username;
-      const uid   = data?.user?.id ?? null;
-
-      localStorage.setItem('username', uname);
-      if (uid != null) localStorage.setItem('userId', String(uid));
-
+    if (res.ok && data?.ok) {
+      const u = data.user?.username ?? username;
+      const id = data.user?.id ?? null;
+      localStorage.setItem('username', u);
+      if (id != null) localStorage.setItem('userId', String(id));
       goto('/dashboard');
-    } catch (err) {
-      console.error(err);
-      error = err?.message ?? 'Network error';
+    } else {
+      error = data?.error ?? `Login failed (HTTP ${res.status})`;
     }
   }
-
-  function goCreate() { goto('/create-account'); }
 </script>
 
 <style>
