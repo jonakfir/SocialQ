@@ -20,13 +20,27 @@ const rawOrigins =
 
 const allowedOrigins = String(rawOrigins)
   .split(',')
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;                 // curl/healthchecks
+  for (const o of allowedOrigins) {
+    if (o === '*' || o === origin) return true;
+    // allow patterns like https://*.vercel.app
+    if (o.includes('*')) {
+      const pattern = '^' + o
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')  // escape regex
+        .replace('\\*', '.*') + '$';
+      if (new RegExp(pattern).test(origin)) return true;
+    }
+  }
+  return false;
+}
 
 app.use(cors({
   origin(origin, cb) {
-    if (!origin) return cb(null, true);                 // healthcheck/curl
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    if (isAllowedOrigin(origin)) return cb(null, true);
     return cb(new Error(`CORS blocked for origin: ${origin}`), false);
   },
   credentials: true,
