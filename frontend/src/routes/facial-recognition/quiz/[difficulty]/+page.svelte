@@ -1,19 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page as $pageStore } from '$app/stores';
+  import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
 
   type Row = { img: string; options: string[]; correct: string };
 
   // ---- difficulty from route param ----
   let difficulty = '1';
-  $: {
-    const p = $pageStore && (/** @ts-ignore */ $pageStore as any);
-    // Svelte store auto-subscription:
-    // @ts-ignore
-    difficulty = (p?.url?.pathname?.split('/').pop() ?? '1').toString();
-  }
+  $: difficulty = (($page.params?.difficulty ?? '1') as string).toString();
 
   // ---- state ----
   let quizData: Row[] = [];
@@ -93,15 +88,13 @@
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      // ✅ Persist minimal question info for the Stats page
+      // Persist minimal question info for the Stats page
       const minimal = quizData.map(q => ({
         img: normalizeImg(q.img),
         correct: q.correct
       }));
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
-
-      // Clear old picks; we’ll rewrite as the user answers
-      localStorage.removeItem('fr_picks');
+      localStorage.removeItem('fr_picks'); // clear old picks
 
       startTimer();
     } catch (err: any) {
@@ -152,12 +145,12 @@
       results.push(ok);
     });
 
-    // ✅ summary that Results page uses
+    // summary for Results page
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(quizData.length));
 
-    // ✅ picks & questions for Stats page
+    // picks & questions for Stats page
     const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
     localStorage.setItem('fr_picks', JSON.stringify(picks));
     localStorage.setItem(
@@ -165,7 +158,7 @@
       JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
     );
 
-    // ✅ prebuild rich details so Stats is instant
+    // prebuild rich details so Stats is instant
     const details = quizData.map((q, i) => {
       const picked = picks[i];
       return {
@@ -178,11 +171,11 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
-    // ✅ lightweight per-user history
+    // lightweight per-user history
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
     const attempt = {
-      date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+      date: new Date().toISOString().slice(0, 10),
       score,
       total: quizData.length,
       difficulty
@@ -339,7 +332,6 @@
   .ring{
     width:100%; height:100%;
     transform:rotate(-90deg);
-    margin-bottom:100px;
   }
 
   .ring .bg{
