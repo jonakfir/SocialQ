@@ -1,7 +1,17 @@
-const TARGET = process.env.PRIVATE_API_BASE ?? 'http://127.0.0.1:8080';
+// frontend/src/routes/api/[...path]/+server.ts
+import type { RequestHandler } from './$types';
+import { PUBLIC_API_URL } from '$env/static/public';
+
+const ORIGIN = (PUBLIC_API_URL || '').replace(/\/$/, '');
 
 async function forward(request: Request, path: string) {
-  const url = `${TARGET.replace(/\/$/, '')}/${path}`;
+  const url = ORIGIN + (path.startsWith('/') ? path : `/${path}`);
+
+  // forward ALL headers (esp. Cookie) to Railway
+  const headers = new Headers(request.headers);
+  headers.delete('host');
+  headers.delete('connection');
+
   const body =
     request.method === 'GET' || request.method === 'HEAD'
       ? undefined
@@ -9,20 +19,22 @@ async function forward(request: Request, path: string) {
 
   const resp = await fetch(url, {
     method: request.method,
-    headers: request.headers,
+    headers,
     body,
-    redirect: 'manual',
+    redirect: 'manual'
   });
 
+  // pass Set-Cookie back to the browser; strip encodings
   const out = new Headers(resp.headers);
   out.delete('content-encoding');
+  out.delete('content-length');
 
   return new Response(resp.body, { status: resp.status, headers: out });
 }
 
-export const GET     = ({ request, params }) => forward(request, params.path);
-export const POST    = ({ request, params }) => forward(request, params.path);
-export const PUT     = ({ request, params }) => forward(request, params.path);
-export const PATCH   = ({ request, params }) => forward(request, params.path);
-export const DELETE  = ({ request, params }) => forward(request, params.path);
-export const OPTIONS = ({ request, params }) => forward(request, params.path);
+export const GET: RequestHandler     = ({ request, params }) => forward(request, `/${params.path}`);
+export const POST: RequestHandler    = ({ request, params }) => forward(request, `/${params.path}`);
+export const PUT: RequestHandler     = ({ request, params }) => forward(request, `/${params.path}`);
+export const PATCH: RequestHandler   = ({ request, params }) => forward(request, `/${params.path}`);
+export const DELETE: RequestHandler  = ({ request, params }) => forward(request, `/${params.path}`);
+export const OPTIONS: RequestHandler = ({ request, params }) => forward(request, `/${params.path}`);
