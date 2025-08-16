@@ -6,46 +6,51 @@
   let total = 0;
   let results = [];
 
-  function readArray(keys) {
-    for (const k of keys) {
-      try {
-        const v = JSON.parse(localStorage.getItem(k) || 'null');
-        if (Array.isArray(v) && v.length) return v;
-      } catch {}
-    }
-    return [];
+  function readJSON(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; }
+    catch { return fallback; }
+  }
+
+  function normalizeImg(u) {
+    return (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
+  }
+
+  function synthesizeDetails() {
+    const qs = readJSON('fr_questions', []);
+    const picks = readJSON('fr_picks', []);
+    if (!Array.isArray(qs) || !qs.length) return null;
+
+    return qs.map((q, i) => {
+      const correct =
+        q?.correct ?? q?.answer ?? q?.label ?? q?.name ?? q?.emotion ?? '(unknown)';
+      const img = normalizeImg(q?.img ?? q?.src ?? q?.url);
+      const picked = (picks[i] ?? '__timeout__');
+      return { index: i, img, correct, picked, isCorrect: picked === correct };
+    });
   }
 
   onMount(() => {
     document.title = 'Quiz Result';
 
-    const details = JSON.parse(localStorage.getItem('quiz_details') || 'null');
+    // Prefer a rich details array if it exists and is sane
+    let details = readJSON('quiz_details', null);
+    if (!Array.isArray(details) || !details.length || details.some(d => !('picked' in d) || !('correct' in d))) {
+      const synth = synthesizeDetails();
+      if (synth) {
+        details = synth;
+        localStorage.setItem('quiz_details', JSON.stringify(details));
+      }
+    }
 
     if (Array.isArray(details) && details.length) {
-      score  = details.filter(d => d.isCorrect).length;
-      total  = details.length;
+      score = details.filter(d => d.isCorrect).length;
+      total = details.length;
       results = details.map(d => !!d.isCorrect);
     } else {
-      // fallback to older keys
+      // ultra-fallback to booleans if needed
       score   = Number(localStorage.getItem('quiz_score')  || 0);
       total   = Number(localStorage.getItem('quiz_total')  || 0);
-      results = JSON.parse(localStorage.getItem('quiz_results') || '[]');
-
-      // attempt to synthesize quiz_details right now (helps the Stats page)
-      if (!localStorage.getItem('quiz_details')) {
-        const questions = readArray(['fr_questions', 'quiz_questions', 'questions', 'fr_rounds', 'rounds']);
-        const picks     = readArray(['fr_picks', 'quiz_picks', 'picks', 'answers', 'selections']);
-        if (questions.length) {
-          const synth = questions.map((q, i) => {
-            const correct = q.correct ?? q.answer ?? q.name ?? '(unknown)';
-            let img = q.img ?? q.src ?? q.url;
-            if (typeof img === 'string' && img.startsWith('blob:')) img = undefined;
-            const picked = picks[i] ?? '__timeout__';
-            return { index:i, img, correct, picked, isCorrect: picked === correct };
-          });
-          localStorage.setItem('quiz_details', JSON.stringify(synth));
-        }
-      }
+      results = readJSON('quiz_results', []);
     }
   });
 
@@ -53,7 +58,7 @@
     localStorage.removeItem('quiz_results');
     localStorage.removeItem('quiz_score');
     localStorage.removeItem('quiz_total');
-    // keep quiz_details so "See Stats" still works after Play Again if you want
+    // keep quiz_details so Stats can still render after replay if desired
     goto('/facial-recognition/settings');
   }
 </script>
@@ -68,10 +73,8 @@
   .progress-bar { display:flex; justify-content:center; gap:8px; margin-bottom:25px; }
   .progress-dot { width:45px; height:10px; border-radius:5px; }
   .correct { background:#4CAF50; } .wrong { background:#FF3B30; }
-  .score-circle { width:200px; height:200px; border-radius:50%; background:#4f46e5; color:#fff; font-size:40px; font-weight:bold;
-    display:flex; justify-content:center; align-items:center; margin:30px auto; }
-  .btn { display:block; width:80%; max-width:300px; padding:15px; margin:15px auto; font-size:20px; font-weight:bold; color:#000;
-    background:#fff; border:2px solid #000; border-radius:40px; cursor:pointer; text-align:center; transition:background .3s; }
+  .score-circle { width:200px; height:200px; border-radius:50%; background:#4f46e5; color:#fff; font-size:40px; font-weight:bold; display:flex; justify-content:center; align-items:center; margin:30px auto; }
+  .btn { display:block; width:80%; max-width:300px; padding:15px; margin:15px auto; font-size:20px; font-weight:bold; color:#000; background:#fff; border:2px solid #000; border-radius:40px; cursor:pointer; text-align:center; transition:background .3s; }
   .btn:hover { background:#4f46e5; color:#fff; }
 </style>
 
@@ -84,9 +87,7 @@
     <h2 style="font-family: Georgia; font-size: 2.5rem;">Great Job!</h2>
 
     <div class="progress-bar">
-      {#each results as res}
-        <div class="progress-dot {res ? 'correct' : 'wrong'}"></div>
-      {/each}
+      {#each results as res}<div class="progress-dot {res ? 'correct' : 'wrong'}"></div>{/each}
     </div>
 
     <div class="score-circle">{score}/{total}</div>

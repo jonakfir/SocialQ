@@ -5,31 +5,50 @@
   let details = [];
   let score = 0;
 
+  function readJSON(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; }
+    catch { return fallback; }
+  }
+  function normalizeImg(u) { return (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined; }
+
+  function synthesizeDetails() {
+    const qs = readJSON('fr_questions', []);
+    const picks = readJSON('fr_picks', []);
+    if (!Array.isArray(qs) || !qs.length) return null;
+
+    return qs.map((q, i) => {
+      const correct =
+        q?.correct ?? q?.answer ?? q?.label ?? q?.name ?? q?.emotion ?? '(unknown)';
+      const img = normalizeImg(q?.img ?? q?.src ?? q?.url);
+      const picked = (picks[i] ?? '__timeout__');
+      return { index: i, img, correct, picked, isCorrect: picked === correct };
+    });
+  }
+
   onMount(() => {
     document.title = 'Quiz Stats';
-    try {
-      details = JSON.parse(localStorage.getItem('quiz_details') || '[]');
-    } catch { details = []; }
 
-    // graceful fallback (older deployments)
-    if (!details.length) {
-      const bools = JSON.parse(localStorage.getItem('quiz_results') || '[]');
-      details = bools.map((ok, i) => ({
-        index: i,
-        img: undefined,
-        correct: '(unknown)',
-        picked: '(unknown)',
-        isCorrect: !!ok
-      }));
+    // Prefer existing details; repair/synthesize if missing or incomplete
+    let d = readJSON('quiz_details', null);
+    const needsRepair =
+      !Array.isArray(d) || !d.length || d.some(x => !('picked' in x) || !('correct' in x));
+    if (needsRepair) {
+      const synth = synthesizeDetails();
+      if (synth) {
+        d = synth;
+        localStorage.setItem('quiz_details', JSON.stringify(d));
+      }
     }
-    score = details.filter(d => d.isCorrect).length;
+
+    details = Array.isArray(d) ? d : [];
+    score = details.filter(x => x.isCorrect).length;
   });
 
   function playAgain() {
-    // keep quiz_details so user can come back to review if desired
     localStorage.removeItem('quiz_results');
     localStorage.removeItem('quiz_score');
     localStorage.removeItem('quiz_total');
+    // keep quiz_details so user can still review after replay if desired
     goto('/facial-recognition/settings');
   }
 </script>
@@ -89,31 +108,19 @@
     </div>
 
     <div class="dots">
-      {#each details as d}
-        <div class="dot {d.isCorrect ? 'ok' : 'no'}"></div>
-      {/each}
+      {#each details as d}<div class="dot {d.isCorrect ? 'ok' : 'no'}"></div>{/each}
     </div>
 
     <div class="list">
       {#each details as d, i}
         <div class="row">
-          {#if d.img}
-            <img class="thumb" src={d.img} alt={`Q${i+1}`} />
-          {:else}
-            <div class="thumb" aria-label="no image"></div>
-          {/if}
-
+          {#if d.img}<img class="thumb" src={d.img} alt={`Q${i+1}`} />{:else}<div class="thumb" aria-label="no image"></div>{/if}
           <div class="labels">
             <div class="q">Q{i + 1}</div>
             <div class="correct"><strong>Correct:</strong> {d.correct}</div>
-            <div class="picked {d.isCorrect ? '' : 'bad'}">
-              <strong>Your pick:</strong> {d.picked === '__timeout__' ? '— (timeout)' : d.picked}
-            </div>
+            <div class="picked {d.isCorrect ? '' : 'bad'}"><strong>Your pick:</strong> {d.picked === '__timeout__' ? '— (timeout)' : d.picked}</div>
           </div>
-
-          <div class="badge {d.isCorrect ? 'ok' : 'no'}">
-            {d.isCorrect ? 'Correct' : 'Incorrect'}
-          </div>
+          <div class="badge {d.isCorrect ? 'ok' : 'no'}">{d.isCorrect ? 'Correct' : 'Incorrect'}</div>
         </div>
       {/each}
     </div>
