@@ -1,4 +1,7 @@
 <script>
+  // disable SSR because we read localStorage
+  export const ssr = false;
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
@@ -9,9 +12,11 @@
     try { return JSON.parse(localStorage.getItem(k) ?? 'null') ?? f; }
     catch { return f; }
   };
+
   const normalizeImg = (u) =>
     (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
 
+  // Build a rich list from the lightweight FR data if needed
   function synthesizeFromFR() {
     const qs    = readJSON('fr_questions', []);
     const picks = readJSON('fr_picks', []);
@@ -29,20 +34,22 @@
   onMount(() => {
     document.title = 'Quiz Stats';
 
-    // 1) try rich details
+    // 1) Prefer the rich details if present
     let d = readJSON('quiz_details', null);
-    const bad = !(Array.isArray(d) && d.length) || d.some(x => !('picked' in x) || !('correct' in x));
+    const broken = !(Array.isArray(d) && d.length) ||
+                   d.some(x => !('picked' in x) || !('correct' in x));
 
-    // 2) repair from fr_questions + fr_picks
-    if (bad) {
+    // 2) Repair from FR question/pick storage
+    if (broken) {
       const repaired = synthesizeFromFR();
       if (repaired) {
         d = repaired;
+        // cache for next time so stats open instantly
         localStorage.setItem('quiz_details', JSON.stringify(d));
       }
     }
 
-    // 3) FINAL fallback to booleans so the page never shows 0/0 empty
+    // 3) Final fallback from boolean results so page never looks empty
     if (!(Array.isArray(d) && d.length)) {
       const bools = readJSON('quiz_results', []);
       d = bools.map((ok, i) => ({
@@ -52,7 +59,7 @@
         picked: '(unknown)',
         isCorrect: !!ok
       }));
-      // don’t write this back; it’s just a display fallback
+      // we intentionally DO NOT write this fallback back
     }
 
     details = d;
@@ -60,6 +67,7 @@
   });
 
   function playAgain() {
+    // clear light summary keys so a new run writes fresh values
     localStorage.removeItem('quiz_results');
     localStorage.removeItem('quiz_score');
     localStorage.removeItem('quiz_total');
@@ -67,19 +75,42 @@
   }
 </script>
 
+<svelte:head>
+  <title>Quiz Stats • SocialQ</title>
+</svelte:head>
+
 <style>
   @import '/static/style.css';
   :global(html, body) { height: 100%; }
 
-  .page { min-height:100vh; position:relative; display:grid; place-items:center; }
+  .page {
+    min-height:100vh;
+    position:relative;
+    display:grid;
+    place-items:center;
+  }
+
   .glass {
-    width:min(980px,94vw); background:rgba(255,255,255,.85); backdrop-filter:blur(18px);
-    border-radius:20px; box-shadow:0 14px 48px rgba(0,0,0,.18);
-    display:grid; grid-template-rows:auto auto 1fr auto; max-height:84vh; overflow:hidden;
+    width:min(980px,94vw);
+    background:rgba(255,255,255,.85);
+    backdrop-filter:blur(18px);
+    border-radius:20px;
+    box-shadow:0 14px 48px rgba(0,0,0,.18);
+    display:grid;
+    grid-template-rows:auto auto 1fr auto;
+    max-height:84vh;
+    overflow:hidden;
   }
 
   .head { padding:20px 24px 6px; text-align:center; }
-  .title { font-family:'Georgia', serif; font-size:3rem; color:#fff; -webkit-text-stroke:2px rgba(0,0,0,.5); text-shadow:0 3px 3px rgba(0,0,0,.4); margin:6px 0 10px; }
+  .title {
+    font-family:'Georgia', serif;
+    font-size:3rem;
+    color:#fff;
+    -webkit-text-stroke:2px rgba(0,0,0,.5);
+    text-shadow:0 3px 3px rgba(0,0,0,.4);
+    margin:6px 0 10px;
+  }
   .summary { font-weight:800; color:#111; }
 
   .dots { display:flex; justify-content:center; gap:8px; padding:0 24px 12px; }
@@ -88,28 +119,68 @@
 
   .list { overflow:auto; padding:12px 16px 16px; }
   .row {
-    display:grid; grid-template-columns:72px 1fr auto; gap:14px; align-items:center;
-    padding:12px; margin:10px 8px; border:1.5px solid rgba(17,17,17,.15); border-radius:12px; background:rgba(255,255,255,.95);
+    display:grid;
+    grid-template-columns:72px 1fr auto;
+    gap:14px;
+    align-items:center;
+    padding:12px;
+    margin:10px 8px;
+    border:1.5px solid rgba(17,17,17,.15);
+    border-radius:12px;
+    background:rgba(255,255,255,.95);
   }
-  .thumb { width:72px; height:72px; border-radius:10px; object-fit:cover; background:#f5f5f5; border:1px solid rgba(17,17,17,.08); }
+
+  .thumb {
+    width:72px; height:72px;
+    border-radius:10px;
+    object-fit:cover;
+    background:#f5f5f5;
+    border:1px solid rgba(17,17,17,.08);
+  }
+
   .labels { line-height:1.35; }
   .q { font-weight:800; color:#111; margin-bottom:2px; }
   .correct { color:#111; }
-  .picked { color:#374151; } .picked.bad { color:#b91c1c; }
+  .picked { color:#374151; }
+  .picked.bad { color:#b91c1c; }
 
-  .badge { font-weight:800; padding:8px 12px; border-radius:9999px; border:2px solid #111; background:#fff; white-space:nowrap; }
+  .badge {
+    font-weight:800;
+    padding:8px 12px;
+    border-radius:9999px;
+    border:2px solid #111;
+    background:#fff;
+    white-space:nowrap;
+  }
   .badge.ok { background:#22c55e; color:#fff; border-color:#22c55e; }
   .badge.no { background:#ef4444; color:#fff; border-color:#ef4444; }
 
-  .actions { display:grid; gap:-10px; padding:12px 10px -20px; justify-items:center; }
+  .actions {
+    display:grid;
+    gap:10px;
+    padding:14px 10px 18px;
+    justify-items:center;
+  }
+
   .btn {
-    display:block; width:min(320px,90%); padding:14px 16px; border-radius:9999px; font-weight:800; font-size:16px; cursor:pointer;
-    border:2px solid #111; background:#fff; color:#111; transition:transform .05s, filter .2s;
+    display:block;
+    width:min(320px,90%);
+    padding:14px 16px;
+    border-radius:9999px;
+    font-weight:800;
+    font-size:16px;
+    cursor:pointer;
+    border:2px solid #111;
+    background:#fff;
+    color:#111;
+    transition:transform .05s, filter .2s;
   }
   .btn:hover { filter:brightness(1.03); }
+  .btn:active { transform: translateY(1px); }
   .btn.primary { background:#4f46e5; border-color:#4f46e5; color:#fff; }
 </style>
 
+<!-- background blobs -->
 <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
 <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
@@ -122,19 +193,31 @@
     </div>
 
     <div class="dots">
-      {#each details as d}<div class="dot {d.isCorrect ? 'ok' : 'no'}"></div>{/each}
+      {#each details as d}
+        <div class="dot {d.isCorrect ? 'ok' : 'no'}"></div>
+      {/each}
     </div>
 
     <div class="list">
       {#each details as d, i}
         <div class="row">
-          {#if d.img}<img class="thumb" src={d.img} alt={`Q${i+1}`} />{:else}<div class="thumb" aria-label="no image"></div>{/if}
+          {#if d.img}
+            <img class="thumb" src={d.img} alt={`Q${i + 1}`} />
+          {:else}
+            <div class="thumb" aria-label="no image"></div>
+          {/if}
+
           <div class="labels">
             <div class="q">Q{i + 1}</div>
             <div class="correct"><strong>Correct:</strong> {d.correct}</div>
-            <div class="picked {d.isCorrect ? '' : 'bad'}"><strong>Your pick:</strong> {d.picked === '__timeout__' ? '— (timeout)' : d.picked}</div>
+            <div class="picked {d.isCorrect ? '' : 'bad'}">
+              <strong>Your pick:</strong> {d.picked === '__timeout__' ? '— (timeout)' : d.picked}
+            </div>
           </div>
-          <div class="badge {d.isCorrect ? 'ok' : 'no'}">{d.isCorrect ? 'Correct' : 'Incorrect'}</div>
+
+          <div class="badge {d.isCorrect ? 'ok' : 'no'}">
+            {d.isCorrect ? 'Correct' : 'Incorrect'}
+          </div>
         </div>
       {/each}
     </div>
