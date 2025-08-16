@@ -1,5 +1,5 @@
 <script>
-  // disable SSR because we read localStorage
+  // We read localStorage → disable SSR
   export const ssr = false;
 
   import { onMount } from 'svelte';
@@ -16,7 +16,6 @@
   const normalizeImg = (u) =>
     (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
 
-  // Build a rich list from the lightweight FR data if needed
   function synthesizeFromFR() {
     const qs    = readJSON('fr_questions', []);
     const picks = readJSON('fr_picks', []);
@@ -34,22 +33,21 @@
   onMount(() => {
     document.title = 'Quiz Stats';
 
-    // 1) Prefer the rich details if present
+    // Prefer rich details
     let d = readJSON('quiz_details', null);
     const broken = !(Array.isArray(d) && d.length) ||
                    d.some(x => !('picked' in x) || !('correct' in x));
 
-    // 2) Repair from FR question/pick storage
+    // Repair from FR storage if needed
     if (broken) {
       const repaired = synthesizeFromFR();
       if (repaired) {
         d = repaired;
-        // cache for next time so stats open instantly
         localStorage.setItem('quiz_details', JSON.stringify(d));
       }
     }
 
-    // 3) Final fallback from boolean results so page never looks empty
+    // Final fallback from booleans
     if (!(Array.isArray(d) && d.length)) {
       const bools = readJSON('quiz_results', []);
       d = bools.map((ok, i) => ({
@@ -59,7 +57,6 @@
         picked: '(unknown)',
         isCorrect: !!ok
       }));
-      // we intentionally DO NOT write this fallback back
     }
 
     details = d;
@@ -67,7 +64,6 @@
   });
 
   function playAgain() {
-    // clear light summary keys so a new run writes fresh values
     localStorage.removeItem('quiz_results');
     localStorage.removeItem('quiz_score');
     localStorage.removeItem('quiz_total');
@@ -97,7 +93,7 @@
     border-radius:20px;
     box-shadow:0 14px 48px rgba(0,0,0,.18);
     display:grid;
-    grid-template-rows:auto auto 1fr auto;
+    grid-template-rows:auto auto 1fr auto; /* header, dots, list, footer */
     max-height:84vh;
     overflow:hidden;
   }
@@ -155,17 +151,24 @@
   .badge.ok { background:#22c55e; color:#fff; border-color:#22c55e; }
   .badge.no { background:#ef4444; color:#fff; border-color:#ef4444; }
 
-  .actions {
-    display:grid;
-    gap:10px;
-    padding:14px 10px 18px;
-    justify-items:center;
+  /* Footer like Transition Recognition: sticky row with side-by-side buttons */
+  .footer {
+    position: sticky;
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,.75), rgba(255,255,255,.92));
+    border-top: 1px solid rgba(0,0,0,.08);
+    padding: 14px 16px;
+  }
+  .footer-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;          /* wrap on tiny screens */
   }
 
   .btn {
     display:block;
-    width:min(320px,90%);
-    padding:14px 16px;
+    padding:14px 18px;
     border-radius:9999px;
     font-weight:800;
     font-size:16px;
@@ -174,6 +177,10 @@
     background:#fff;
     color:#111;
     transition:transform .05s, filter .2s;
+    min-width: 220px;
+    flex: 1 1 260px;          /* grow evenly, min ~260 */
+    max-width: 360px;
+    text-align:center;
   }
   .btn:hover { filter:brightness(1.03); }
   .btn:active { transform: translateY(1px); }
@@ -222,10 +229,13 @@
       {/each}
     </div>
 
-    <div class="actions">
-      <button class="btn primary" on:click={playAgain}>Play Again</button>
-      <button class="btn" on:click={() => goto('/facial-recognition/results')}>Back to Results</button>
-      <button class="btn" on:click={() => goto('/dashboard')}>Exit</button>
+    <!-- Sticky, side-by-side footer buttons -->
+    <div class="footer">
+      <div class="footer-row">
+        <button class="btn primary" on:click={playAgain}>Play Again</button>
+        <button class="btn" on:click={() => goto('/facial-recognition/results')}>Back to Results</button>
+        <button class="btn" on:click={() => goto('/dashboard')}>Dashboard</button>
+      </div>
     </div>
   </div>
 </div>
