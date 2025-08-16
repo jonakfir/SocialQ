@@ -1,36 +1,34 @@
-<script lang="ts">
+<script>
   import { goto } from '$app/navigation';
-  import { apiFetch } from '$lib/api';
 
   let username = '';
   let password = '';
   let error = '';
   let loading = false;
 
-  async function handleCreate(e: SubmitEvent) {
+  async function handleCreate(e) {
     e.preventDefault();
     error = '';
     loading = true;
 
     try {
-      const res = await apiFetch('/auth/register', {
+      const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+      // If this is empty, you forgot to set the Vercel env var.
+      const res = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username, password })
       });
 
-      if (!res.ok) {
-        // show exactly what the backend returned
-        let msg = '';
-        try { msg = (await res.json())?.error || ''; } catch {}
-        if (!msg) try { msg = await res.text(); } catch {}
-        error = msg || `Registration failed (HTTP ${res.status})`;
-        console.log('register error', res.status, msg);
-        return;
-      }
+      const data = await res.json().catch(() => ({}));
 
-      goto('/login?created=1');
-    } catch {
+      if (res.ok && (data.ok || data.success)) {
+        goto('/login?created=1');
+      } else {
+        error = data.error || `Registration failed (HTTP ${res.status})`;
+      }
+    } catch (e) {
       error = 'Network error';
     } finally {
       loading = false;
