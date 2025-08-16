@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
-  // Tiny helper: always call your API under /api and include cookies
+  // Call your API on same-origin and include cookies
   const api = (path, init = {}) =>
     fetch(`/api${path}`, { credentials: 'include', ...init });
 
@@ -12,19 +12,45 @@
 
   let username = '';
   let originalUsername = '';
-  let newPassword = '';
+  let userId = null; // we’ll capture this from /auth/me so we can build a stable userKey
+
+  // ---- helpers ----
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const makeUserKey = (id, name) => (id != null ? `${id}:${norm(name)}` : norm(name));
+
+  function migrateLocalData(oldKey, newKey) {
+    if (!oldKey || !newKey || oldKey === newKey) return;
+
+    const prefixes = [
+      'fr_history_',      // facial recognition attempts table
+      'tr_details_',      // transition stats rows
+      'tr_last_run_',     // transition last-run bundle
+      // add more here if you later namespace other features
+    ];
+
+    for (const p of prefixes) {
+      const oldK = p + oldKey;
+      const newK = p + newKey;
+      const val = localStorage.getItem(oldK);
+      if (val != null) {
+        // don’t overwrite if new already exists; merge logic could be added if you want
+        if (localStorage.getItem(newK) == null) {
+          localStorage.setItem(newK, val);
+        }
+        localStorage.removeItem(oldK);
+      }
+    }
+  }
 
   async function loadMe() {
-    error = '';
     try {
       const res = await api('/auth/me');
       if (res.status === 401) return goto('/login');
-      if (!res.ok) throw new Error(`Unexpected ${res.status}`);
-
       const data = await res.json().catch(() => ({}));
       if (!data?.user) return goto('/login');
 
-      username = data.user.username || '';
+      userId = data.user.id ?? null;
+      username = data.user.username ?? '';
       originalUsername = username;
     } catch {
       error = 'Could not load profile.';
@@ -35,28 +61,18 @@
   onMount(loadMe);
 
   function validate() {
-    if (!username.trim()) {
-      error = 'Username is required.';
-      return false;
-    }
-    if (username.trim().length < 2) {
-      error = 'Username must be at least 2 characters.';
-      return false;
-    }
+    if (!username.trim()) { error = 'Username is required.'; return false; }
+    if (username.trim().length < 2) { error = 'Username must be at least 2 characters.'; return false; }
     return true;
   }
 
   async function save(e) {
     e.preventDefault();
     error = '';
-
     if (!validate()) return;
 
-    // No actual change?
-    if (username.trim() === originalUsername && !newPassword) {
-      error = 'Nothing to update.';
-      return;
-    }
+    const noChange = username.trim() === originalUsername && !newPassword;
+    if (noChange) { error = 'Nothing to update.'; return; }
 
     saving = true;
     try {
@@ -65,20 +81,24 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: username.trim(),
-          // send only if user typed one
           ...(newPassword ? { password: newPassword } : {})
         })
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (res.status === 401) return goto('/login');
 
       if (res.ok && (data.ok || data.success)) {
+        // if username changed, migrate localStorage keys
+        const newName = data?.user?.username ?? username;
+        const id = (data?.user?.id ?? userId);
+        const oldKey = makeUserKey(id, originalUsername);
+        const newKey = makeUserKey(id, newName);
+        migrateLocalData(oldKey, newKey);
+
         return goto('/profile');
       }
 
-      // Show backend message if provided
       error = data.error || `Update failed (status ${res.status}).`;
     } catch {
       error = 'Network error.';
@@ -86,7 +106,10 @@
       saving = false;
     }
   }
+
+  let newPassword = '';
 </script>
+
 
 <style>
   .blobs { position: fixed; inset: 0; pointer-events: none; z-index: 1; }

@@ -2,35 +2,35 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { getUserKey } from '$lib/userKey';
+  import { frKey } from '$lib/userKey';
 
   type Row = { img: string; options: string[]; correct: string };
 
-  // ---- difficulty from route param ----
+  // difficulty from route param
   let difficulty = '1';
   $: difficulty = (($page.params?.difficulty ?? '1') as string).toString();
 
-  // ---- state ----
+  // state
   let quizData: Row[] = [];
   let currentIndex = 0;
   let userAnswers: (string | null)[] = [];
   let loading = true;
   let loadError = '';
 
-  // ---- helpers ----
+  // helper
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
-  // ---- 5-second per-question timer (Level 5 only) ----
+  // 5s timer for level 5
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
 
-  // ring geometry (for the level-5 timer)
+  // ring geometry
   const R = 28;
   const C = 2 * Math.PI * R;
 
-  // progress (0..1) based on time left
+  // progress (0..1)
   $: pct = difficulty === '5'
     ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
     : 0;
@@ -69,7 +69,7 @@
 
   onDestroy(stopTimer);
 
-  // ---- mount: fetch questions & prepare storage for Stats ----
+  // fetch questions & prep storage for Stats
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
     try {
@@ -88,13 +88,13 @@
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      // Persist minimal question info for the Stats page
+      // minimal question info for stats
       const minimal = quizData.map(q => ({
         img: normalizeImg(q.img),
         correct: q.correct
       }));
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
-      localStorage.removeItem('fr_picks'); // clear old picks
+      localStorage.removeItem('fr_picks');
 
       startTimer();
     } catch (err: any) {
@@ -104,10 +104,9 @@
     }
   });
 
-  // ---- interactions ----
+  // interactions
   function selectOption(option: string) {
     userAnswers[currentIndex] = option;
-
     // keep a live copy of picks so refreshes don't lose state
     const picksLive = userAnswers.map(v => (v == null ? null : v));
     localStorage.setItem('fr_picks', JSON.stringify(picksLive));
@@ -136,7 +135,7 @@
   function finish() {
     stopTimer();
 
-    // Determine results + score
+    // results + score
     let score = 0;
     const results: boolean[] = [];
     quizData.forEach((q, i) => {
@@ -171,17 +170,11 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
-    // lightweight per-user history
-    const userKey = getUserKey();
-    const historyKey = `fr_history_${userKey}`;
-    const attempt = {
-      date: new Date().toISOString().slice(0, 10),
-      score,
-      total: quizData.length,
-      difficulty
-    };
+    // per-user history (ID-based)
+    const historyKey = frKey();
     const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
-    existing.unshift(attempt);
+    const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    existing.unshift({ date, score, total: quizData.length, difficulty });
     localStorage.setItem(historyKey, JSON.stringify(existing.slice(0, 50)));
 
     goto('/facial-recognition/results');
