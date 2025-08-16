@@ -31,6 +31,97 @@
   let timeLeft = LIMIT;
   let timerId: number | null = null;
 
+    // --- Off-screen thumbnail capture (does NOT touch the on-screen player) ---
+  function waitEvent<T extends keyof HTMLVideoElementEventMap>(
+    v: HTMLVideoElement,
+    name: T
+  ): Promise<void> {
+    return new Promise((resolve) => v.addEventListener(name, () => resolve(), { once: true }));
+  }
+
+  async function captureFromUrl(url: string): Promise<{ start?: string; end?: string }> {
+    // create an off-DOM video so we don't affect the visible player
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous';
+    v.muted = true;
+    (v as any).playsInline = true;
+    v.src = url;
+
+    // wait for metadata so duration/videoWidth are known
+    if (!Number.isFinite(v.duration) || !v.videoWidth) {
+      await waitEvent(v, 'loadedmetadata').catch(() => {});
+    }
+
+    // tiny helper to seek + wait
+    async function seekTo(t: number) {
+      try {
+        v.currentTime = t;
+        await waitEvent(v, 'seeked');
+      } catch {}
+    }
+
+    // draw current frame into a small canvas
+    function frameToDataURL(): string | undefined {
+      const w = Math.max(1, v.videoWidth || 0);
+      const h = Math.max(1, v.videoHeight || 0);
+      if (!w || !h) return undefined;
+
+      const cap = 128; // target max dimension for a light thumbnail
+      const scale = Math.min(cap / w, cap / h);
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const ctx = c.getContext('2d');
+      if (!ctx) return undefined;
+      try {
+        ctx.drawImage(v, 0, 0, cw, ch);
+        return c.toDataURL('image/jpeg', 0.72);
+      } catch {
+        // CORS-tainted canvas or other issue
+        return undefined;
+      }
+    }
+
+    const out: { start?: string; end?: string } = {};
+
+    // start frame ~0.05s
+    try {
+      await seekTo(0.05);
+      out.start = frameToDataURL();
+    } catch {}
+
+    // end frame slightly before duration
+    try {
+      const endT = Math.max(0.05, (Number.isFinite(v.duration) ? v.duration : 0.1) - 0.08);
+      await seekTo(endT);
+      out.end = frameToDataURL();
+    } catch {}
+
+    // clean up
+    try { v.src = ''; v.remove(); } catch {}
+
+    return out;
+  }
+
+  async function captureBatch(urls: string[]) {
+    const starts: (string | undefined)[] = [];
+    const ends: (string | undefined)[] = [];
+    // do them sequentially to stay lightweight
+    for (const u of urls) {
+      try {
+        const { start, end } = await captureFromUrl(u);
+        starts.push(start);
+        ends.push(end);
+      } catch {
+        starts.push(undefined);
+        ends.push(undefined);
+      }
+    }
+    return { starts, ends };
+  }
+
+
   function startTimer() {
     if (level !== 'challenge') return;
     stopTimer();
@@ -63,33 +154,57 @@
     try { videoEl.pause(); videoEl.currentTime = 0; videoEl.play(); } catch {}
   }
 
-  function finish() {
+  async function finish() {
     stopTimer();
 
+    // score + bool matrix for the results page
     let scoreNum = 0;
     const results: Array<[boolean, boolean]> = [];
 
-    // Build rows in the exact shape the stats page expects
-    const rows = clips.map((c, i) => {
-      const pickedFrom = guessFrom[i] ?? null;
-      const pickedTo   = guessTo[i]   ?? null;
+    const pickedFrom = clips.map((_, i) => (guessFrom[i] ?? '__timeout__'));
+    const pickedTo   = clips.map((_, i) => (guessTo[i]   ?? '__timeout__'));
 
-      const okFrom = !!(pickedFrom && c.from && pickedFrom === c.from);
-      const okTo   = !!(pickedTo   && c.to   && pickedTo   === c.to);
-
+    clips.forEach((c, i) => {
+      const okFrom = pickedFrom[i] === c.from;
+      const okTo   = pickedTo[i]   === c.to;
       if (okFrom && okTo) scoreNum++;
       results.push([okFrom, okTo]);
-
-      return {
-        media: c.media,         // optional, helps thumb capture later
-        from: c.from,
-        to: c.to,
-        pickedFrom,
-        pickedTo,
-        okFrom,
-        okTo
-      };
     });
+
+    // Save the simple round summary (used by /results)
+    localStorage.setItem('quiz_results', JSON.stringify(results));
+    localStorage.setItem('quiz_score', String(scoreNum));
+    localStorage.setItem('quiz_total', String(clips.length));
+
+    // --- NEW: capture thumbnails OFF-SCREEN after the quiz is done ---
+    const { starts, ends } = await captureBatch(clips.map(c => c.media));
+
+    // Build rich rows for stats (keeps all the words you want)
+    const rows = clips.map((c, i) => ({
+      startImg:     starts[i],             // data URL or undefined
+      endImg:       ends[i],               // data URL or undefined
+      correctStart: c.from,
+      correctEnd:   c.to,
+      pickedStart:  pickedFrom[i],
+      pickedEnd:    pickedTo[i],
+      isCorrect:    results[i][0] && results[i][1]
+    }));
+
+    const userKey = getUserKey();
+    localStorage.setItem('tr_details', JSON.stringify(rows));                 // global
+    localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));      // user-scoped
+
+    // Optional bundle if you ever want to reconstruct later
+    localStorage.setItem(
+      `tr_last_run_${userKey}`,
+      JSON.stringify({
+        clips: clips.map(c => ({ href: c.media, from: c.from, to: c.to })),
+        guessFrom, guessTo
+      })
+    );
+
+    goto('/transition-recognition/results');
+  }
 
     // Keep your existing round summary (results page uses this)
     localStorage.setItem('quiz_results', JSON.stringify(results));
