@@ -40,25 +40,68 @@
   }
 
   async function captureFromUrl(url: string): Promise<{ start?: string; end?: string }> {
-    // create an off-DOM video so we don't affect the visible player
     const v = document.createElement('video');
-    v.crossOrigin = 'anonymous';
+    // keep it in the DOM for Safari/WebKit
+    Object.assign(v.style, {
+      position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px', opacity: '0',
+      pointerEvents: 'none',
+    });
+    v.crossOrigin = 'anonymous';           // requires the server to send ACAO
+    v.preload = 'auto';
     v.muted = true;
     (v as any).playsInline = true;
     v.src = url;
+    document.body.appendChild(v);
 
-    // wait for metadata so duration/videoWidth are known
-    if (!Number.isFinite(v.duration) || !v.videoWidth) {
-      await waitEvent(v, 'loadedmetadata').catch(() => {});
-    }
+    try {
+      // wait for dimensions/duration
+      if (!Number.isFinite(v.duration) || !v.videoWidth) {
+        await waitEvent(v, 'loadedmetadata');
+      }
+      // ensure a decodable frame is available
+      if (v.readyState < 2) {
+        await waitEvent(v, 'canplay');
+      }
 
-    // tiny helper to seek + wait
-    async function seekTo(t: number) {
-      try {
-        v.currentTime = t;
+      const capFrame = async (t: number) => {
+        // clamp to [0, duration]
+        const tt = Math.max(0, Math.min(v.duration || 0.1, t));
+        v.currentTime = tt;
         await waitEvent(v, 'seeked');
-      } catch {}
+
+        const w = v.videoWidth, h = v.videoHeight;
+        if (!w || !h) return undefined;
+
+        const cap = 128; // thumbnail size
+        const scale = Math.min(cap / w, cap / h);
+        const cw = Math.max(1, Math.round(w * scale));
+        const ch = Math.max(1, Math.round(h * scale));
+
+        const c = document.createElement('canvas');
+        c.width = cw; c.height = ch;
+        const ctx = c.getContext('2d');
+        if (!ctx) return undefined;
+
+        try {
+          ctx.drawImage(v, 0, 0, cw, ch);
+          return c.toDataURL('image/jpeg', 0.72);
+        } catch (err) {
+          console.warn('[thumb] canvas tainted (CORS?) for', url);
+          return undefined;
+        }
+      };
+
+      const start = await capFrame(0.05);
+      const end   = await capFrame(Math.max(0.05, (v.duration || 0.1) - 0.08));
+
+      return { start, end };
+    } finally {
+      try { v.pause(); } catch {}
+      try { v.src = ''; } catch {}
+      try { v.load?.(); } catch {}
+      try { v.remove(); } catch {}
     }
+  }
 
     // draw current frame into a small canvas
     function frameToDataURL(): string | undefined {
