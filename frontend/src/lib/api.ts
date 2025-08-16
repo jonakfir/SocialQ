@@ -6,8 +6,7 @@ import { PUBLIC_API_URL } from '$env/static/public';
  * Backend base URL (no trailing slash).
  * Prefer PUBLIC_API_URL (set on Vercel), fall back to VITE_API_BASE for local/dev.
  */
-const BASE = String(PUBLIC_API_URL || import.meta.env.VITE_API_BASE || '')
-  .replace(/\/$/, '');
+const BASE = (PUBLIC_API_URL?.trim() || '/api').replace(/\/$/, '');
 
 // Helpful warning if you forgot to configure the env var in production.
 if (browser && import.meta.env.PROD && !BASE) {
@@ -26,11 +25,14 @@ export function apiUrl(path: string): string {
 
 /** Low-level fetch with sane defaults for our API. */
 export async function apiFetch(path: string, init: RequestInit = {}) {
-  const url = `/api${path}`;
   const headers = new Headers(init.headers ?? {});
   if (!headers.has('content-type') && init.body && typeof init.body === 'string') {
     headers.set('content-type', 'application/json');
   }
+
+  // In the browser: hit `${BASE}${path}` (=> '/api' when env missing)
+  // On server: always use the local proxy at /api
+  const url = browser ? `${BASE}${path}` : `/api${path}`;
   return fetch(url, { ...init, headers, credentials: 'include' });
 }
 
