@@ -26,9 +26,6 @@
   let startChoices: Emotion[][] = [];
   let endChoices:   Emotion[][] = [];
 
-  let startThumbs: (string | undefined)[] = [];
-  let endThumbs:   (string | undefined)[] = [];
-
   // challenge timer
   const LIMIT = 10_000;
   let timeLeft = LIMIT;
@@ -66,102 +63,31 @@
     try { videoEl.pause(); videoEl.currentTime = 0; videoEl.play(); } catch {}
   }
 
-   const normalizeImg = (u: unknown) =>
-    (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
-
-  function waitForMetadata(v: HTMLVideoElement): Promise<void> {
-    if (v.readyState >= 1 && v.videoWidth && v.videoHeight) return Promise.resolve();
-    return new Promise(resolve => {
-      const fn = () => { v.removeEventListener('loadedmetadata', fn); resolve(); };
-      v.addEventListener('loadedmetadata', fn, { once: true });
-    });
-  }
-
-  function drawFrameToDataURL(v: HTMLVideoElement): string | undefined {
-    const w = v.videoWidth, h = v.videoHeight;
-    if (!w || !h) return undefined;
-    // scale to ~128px max dimension for lightweight thumbs
-    const S = 128;
-    const scale = Math.min(S / w, S / h);
-    const cw = Math.max(1, Math.round(w * scale));
-    const ch = Math.max(1, Math.round(h * scale));
-    const c = document.createElement('canvas');
-    c.width = cw; c.height = ch;
-    const ctx = c.getContext('2d');
-    if (!ctx) return undefined;
-    ctx.drawImage(v, 0, 0, cw, ch);
-    try { return c.toDataURL('image/jpeg', 0.72); } catch { return undefined; }
-  }
-
-  function seek(v: HTMLVideoElement, t: number): Promise<void> {
-    return new Promise(resolve => {
-      const onSeeked = () => { v.removeEventListener('seeked', onSeeked); resolve(); };
-      v.addEventListener('seeked', onSeeked, { once: true });
-      try { v.currentTime = t; } catch { resolve(); }
-    });
-  }
-
-  async function captureThumbsFor(index: number) {
-    // If we already have both, skip
-    if (startThumbs[index] && endThumbs[index]) return;
-    const v = videoEl;
-    if (!v || !clips[index]) return;
-
-    await waitForMetadata(v);
-
-    // Pause while we capture, then restore playback
-    const wasPaused = v.paused;
-    try { v.pause(); } catch {}
-
-    // start frame
-    try {
-      await seek(v, 0.05);
-      startThumbs[index] = drawFrameToDataURL(v);
-    } catch {}
-
-    // end frame (slightly before duration to avoid range edge)
-    try {
-      const endT = Math.max(0.05, (isFinite(v.duration) ? v.duration : 0.05) - 0.08);
-      await seek(v, endT);
-      endThumbs[index] = drawFrameToDataURL(v);
-    } catch {}
-
-    // restore
-    try {
-      await seek(v, 0);
-      if (!wasPaused) await v.play();
-    } catch {}
-  }
-
-  // Re-capture when current clip/video changes
-  $: if (videoEl && clips[current]) captureThumbsFor(current);
-
   function finish() {
     stopTimer();
 
     let scoreNum = 0;
     const results: Array<[boolean, boolean]> = [];
 
+    // Build rows in the exact shape the stats page expects
     const rows = clips.map((c, i) => {
-      const pickedFrom = guessFrom[i] ?? '__timeout__';
-      const pickedTo   = guessTo[i]   ?? '__timeout__';
+      const pickedFrom = guessFrom[i] ?? null;
+      const pickedTo   = guessTo[i]   ?? null;
 
-      const okFrom = pickedFrom === c.from;
-      const okTo   = pickedTo   === c.to;
+      const okFrom = !!(pickedFrom && c.from && pickedFrom === c.from);
+      const okTo   = !!(pickedTo   && c.to   && pickedTo   === c.to);
 
       if (okFrom && okTo) scoreNum++;
       results.push([okFrom, okTo]);
 
       return {
-        // thumbnails we captured (fallback: nothing)
-        startImg: startThumbs[i],
-        endImg:   endThumbs[i],
-        // labels
-        correctStart: c.from,
-        correctEnd:   c.to,
-        pickedStart:  pickedFrom,
-        pickedEnd:    pickedTo,
-        isCorrect:    okFrom && okTo
+        media: c.media,         // optional, helps thumb capture later
+        from: c.from,
+        to: c.to,
+        pickedFrom,
+        pickedTo,
+        okFrom,
+        okTo
       };
     });
 
