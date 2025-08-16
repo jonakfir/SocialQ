@@ -2,21 +2,30 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
+  // Tiny helper: always call your API under /api and include cookies
+  const api = (path, init = {}) =>
+    fetch(`/api${path}`, { credentials: 'include', ...init });
+
   let loading = true;
   let saving = false;
   let error = '';
 
   let username = '';
+  let originalUsername = '';
   let newPassword = '';
 
   async function loadMe() {
+    error = '';
     try {
-      const res = await fetch('http://localhost:4000/auth/me', { credentials: 'include' });
+      const res = await api('/auth/me');
+      if (res.status === 401) return goto('/login');
+      if (!res.ok) throw new Error(`Unexpected ${res.status}`);
+
       const data = await res.json().catch(() => ({}));
-      if (!data?.user) {
-        return goto('/login');
-      }
-      username = data.user.username;
+      if (!data?.user) return goto('/login');
+
+      username = data.user.username || '';
+      originalUsername = username;
     } catch {
       error = 'Could not load profile.';
     } finally {
@@ -25,27 +34,53 @@
   }
   onMount(loadMe);
 
+  function validate() {
+    if (!username.trim()) {
+      error = 'Username is required.';
+      return false;
+    }
+    if (username.trim().length < 2) {
+      error = 'Username must be at least 2 characters.';
+      return false;
+    }
+    return true;
+  }
+
   async function save(e) {
     e.preventDefault();
     error = '';
+
+    if (!validate()) return;
+
+    // No actual change?
+    if (username.trim() === originalUsername && !newPassword) {
+      error = 'Nothing to update.';
+      return;
+    }
+
     saving = true;
     try {
-      const res = await fetch('http://localhost:4000/auth/update', {
+      const res = await api('/auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({
-          username,
-          password: newPassword || undefined
+          username: username.trim(),
+          // send only if user typed one
+          ...(newPassword ? { password: newPassword } : {})
         })
       });
+
       const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401) return goto('/login');
+
       if (res.ok && (data.ok || data.success)) {
-        goto('/profile');
-      } else {
-        error = data.error || `Update failed (status ${res.status})`;
+        return goto('/profile');
       }
-    } catch (_) {
+
+      // Show backend message if provided
+      error = data.error || `Update failed (status ${res.status}).`;
+    } catch {
       error = 'Network error.';
     } finally {
       saving = false;
@@ -57,106 +92,50 @@
   .blobs { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
 
   .container {
-    display: grid;
-    place-items: center;
-    min-height: 100vh;
-    width: 100vw;
-    position: relative;
-    z-index: 2;
-    padding: 24px;
+    display: grid; place-items: center;
+    min-height: 100vh; width: 100vw;
+    position: relative; z-index: 2; padding: 24px;
   }
 
   .edit-box {
-    background: rgba(255, 255, 255, 0.6);
+    background: rgba(255,255,255,0.6);
     backdrop-filter: blur(20px);
-    padding: 32px 24px;
-    border-radius: 20px;
-    width: min(360px, 92vw);
-    text-align: center;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
-    z-index: 3;
+    padding: 32px 24px; border-radius: 20px;
+    width: min(360px, 92vw); text-align: center;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.2); z-index: 3;
   }
 
   h2 {
-    font-size: 2rem;
-    margin-bottom: 16px;
-    font-family: 'Georgia', serif;
-    color: white;
-    -webkit-text-stroke: 2px rgba(0, 0, 0, 0.5);
-    text-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    font-size: 2rem; margin-bottom: 16px;
+    font-family: 'Georgia', serif; color: white;
+    -webkit-text-stroke: 2px rgba(0,0,0,0.5);
+    text-shadow: 0 4px 10px rgba(0,0,0,0.4);
   }
 
-  form {
-    display: grid;
-    gap: 10px;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-  }
+  form { display: grid; gap: 10px; width: 100%; }
 
-  input[type="text"],
-  input[type="password"] {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    border: 1.5px solid rgba(17, 17, 17, 0.18);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.95);
-    font-size: 15px;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
+  input[type="text"], input[type="password"] {
+    width: 100%; box-sizing: border-box;
+    padding: 10px 12px; border: 1.5px solid rgba(17,17,17,.18);
+    border-radius: 10px; background: rgba(255,255,255,.95);
+    font-size: 15px; outline: none;
+    transition: border-color .2s, box-shadow .2s;
   }
-
-  input:focus {
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
-  }
+  input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
 
   .btn {
-    display: block;
-    width: 100%;
-    padding: 12px 14px;
-    border-radius: 9999px;
-    font-weight: 700;
-    font-size: 15px;
-    cursor: pointer;
-    border: 2px solid #111;
-    background: #fff;
-    color: #111;
-    transition: transform 0.05s, filter 0.2s, background 0.2s;
-    box-sizing: border-box;
+    display: block; width: 100%; padding: 12px 14px;
+    border-radius: 9999px; font-weight: 700; font-size: 15px;
+    cursor: pointer; border: 2px solid #111; background: #fff; color: #111;
+    transition: transform .05s, filter .2s, background .2s; box-sizing: border-box;
   }
+  .btn:hover { filter: brightness(1.03); }
+  .btn:active { transform: translateY(1px); }
+  .primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .outline { background: transparent; border-color: #111; color: #111; }
 
-  .btn:hover {
-    filter: brightness(1.03);
-  }
-
-  .btn:active {
-    transform: translateY(1px);
-  }
-
-  .primary {
-    background: #4f46e5;
-    border-color: #4f46e5;
-    color: #fff;
-  }
-
-  .outline {
-    background: transparent;
-    border-color: #111;
-    color: #111;
-  }
-
-  .error {
-    margin-top: 8px;
-    color: #b91c1c;
-    font-weight: 700;
-  }
-
-  .row {
-    display: grid;
-    gap: 8px;
-  }
+  .error { margin-top: 8px; color: #b91c1c; font-weight: 700; }
+  .row { display: grid; gap: 8px; }
 </style>
 
 <div class="blobs">
@@ -182,7 +161,7 @@
         </button>
       </form>
 
-      {#if error}<div class="error">{error}</div>{/if}
+      {#if error}<div class="error" aria-live="polite">{error}</div>{/if}
 
       <button class="btn outline" on:click={() => goto('/profile')}>Cancel</button>
     {/if}
