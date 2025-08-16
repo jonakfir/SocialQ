@@ -1,35 +1,44 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page as $pageStore } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
 
   type Row = { img: string; options: string[]; correct: string };
 
+  // ---- difficulty from route param ----
   let difficulty = '1';
-  $: difficulty = ($page.params.difficulty ?? '1').toString();
+  $: {
+    const p = $pageStore && (/** @ts-ignore */ $pageStore as any);
+    // Svelte store auto-subscription:
+    // @ts-ignore
+    difficulty = (p?.url?.pathname?.split('/').pop() ?? '1').toString();
+  }
 
+  // ---- state ----
   let quizData: Row[] = [];
   let currentIndex = 0;
   let userAnswers: (string | null)[] = [];
   let loading = true;
   let loadError = '';
 
+  // ---- helpers ----
+  const normalizeImg = (u: unknown) =>
+    typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
+
   // ---- 5-second per-question timer (Level 5 only) ----
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
 
-  const TOTAL_MS = 5000;
-
-  // ring geometry
-  const R = 28;                           // radius in px (SVG units)
-  const C = 2 * Math.PI * R;              // circumference
+  // ring geometry (for the level-5 timer)
+  const R = 28;
+  const C = 2 * Math.PI * R;
 
   // progress (0..1) based on time left
-  $: pct = (difficulty === '5')
-    ? Math.max(0, Math.min(1, timeLeft / TOTAL_MS))
-    : 0; 
+  $: pct = difficulty === '5'
+    ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
+    : 0;
 
   function stopTimer() {
     if (tickHandle) cancelAnimationFrame(tickHandle);
@@ -38,7 +47,6 @@
 
   function startTimer() {
     stopTimer();
-    // Only time-limit Level 5
     if (difficulty !== '5') {
       timeLeft = TIME_LIMIT_MS;
       return;
@@ -50,7 +58,6 @@
       timeLeft = Math.max(0, TIME_LIMIT_MS - elapsed);
       if (timeLeft <= 0) {
         stopTimer();
-        // If unanswered, mark as timeout; then move on
         if (!userAnswers[currentIndex]) userAnswers[currentIndex] = '__timeout__';
         if (currentIndex < quizData.length - 1) {
           currentIndex++;
@@ -67,28 +74,35 @@
 
   onDestroy(stopTimer);
 
+  // ---- mount: fetch questions & prepare storage for Stats ----
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
     try {
-      // Level 5 pulls from all levels -> send difficulty=all to the API
       const serverDiff = difficulty === '5' ? 'all' : difficulty;
-
       const res = await fetch(`/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=12`, {
         cache: 'no-store'
       });
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
-      const rows = await res.json();
+      const rows: Row[] = await res.json();
       if (!Array.isArray(rows) || rows.length === 0) {
         throw new Error('No images found for this difficulty.');
       }
 
-      // rows already come as { img, options, correct }
       quizData = rows;
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      // start the timer for the first question (if level 5)
+      // ✅ Persist minimal question info for the Stats page
+      const minimal = quizData.map(q => ({
+        img: normalizeImg(q.img),
+        correct: q.correct
+      }));
+      localStorage.setItem('fr_questions', JSON.stringify(minimal));
+
+      // Clear old picks; we’ll rewrite as the user answers
+      localStorage.removeItem('fr_picks');
+
       startTimer();
     } catch (err: any) {
       loadError = err?.message ?? 'Failed to load quiz.';
@@ -97,10 +111,13 @@
     }
   });
 
+  // ---- interactions ----
   function selectOption(option: string) {
     userAnswers[currentIndex] = option;
-    // Optional: auto-advance on Level 5 when they choose within 5s
-    // if (difficulty === '5') nextQuestion();
+
+    // keep a live copy of picks so refreshes don't lose state
+    const picksLive = userAnswers.map(v => (v == null ? null : v));
+    localStorage.setItem('fr_picks', JSON.stringify(picksLive));
   }
 
   function nextQuestion() {
@@ -125,6 +142,8 @@
 
   function finish() {
     stopTimer();
+
+    // Determine results + score
     let score = 0;
     const results: boolean[] = [];
     quizData.forEach((q, i) => {
@@ -133,44 +152,60 @@
       results.push(ok);
     });
 
-    // existing
+    // ✅ summary that Results page uses
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(quizData.length));
 
+    // ✅ picks & questions for Stats page
+    const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
+    localStorage.setItem('fr_picks', JSON.stringify(picks));
+    localStorage.setItem(
+      'fr_questions',
+      JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
+    );
+
+    // ✅ prebuild rich details so Stats is instant
+    const details = quizData.map((q, i) => {
+      const picked = picks[i];
+      return {
+        index: i,
+        img: normalizeImg(q.img),
+        correct: q.correct,
+        picked,
+        isCorrect: picked === q.correct
+      };
+    });
+    localStorage.setItem('quiz_details', JSON.stringify(details));
+
+    // ✅ lightweight per-user history
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
-
     const attempt = {
       date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
       score,
       total: quizData.length,
       difficulty
     };
-
     const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
     existing.unshift(attempt);
     localStorage.setItem(historyKey, JSON.stringify(existing.slice(0, 50)));
+
     goto('/facial-recognition/results');
   }
 </script>
 
-
 <style>
-  /* keep your shared styles */
   @import '/static/style.css';
 
   :root{
-    /* app colors */
-    --brand: #4f46e5;         /* indigo used elsewhere */
-    --brand-strong: #7c3aed;  /* purple for selected state */
+    --brand: #4f46e5;
+    --brand-strong: #7c3aed;
   }
 
-  /* fonts consistent with the rest of the app */
   .quiz-box,
-  .quiz-box * {
-    font-family: 'Arial', sans-serif;
-  }
+  .quiz-box * { font-family: 'Arial', sans-serif; }
+
   .settings-title {
     font-family: 'Georgia', serif;
     font-weight: 700;
@@ -215,7 +250,6 @@
   }
   .dot.active { background: var(--brand); width: 60px; }
 
-  /* Emotion options */
   .option-btn {
     display: inline-block;
     min-width: 160px;
@@ -226,19 +260,17 @@
     color: var(--brand);
     background: #fff;
     border: 2px solid var(--brand);
-    border-radius: 9999px;                 /* pill */
+    border-radius: 9999px;
     cursor: pointer;
     transition: transform .05s ease,
                 background .2s, color .2s,
                 border-color .2s, box-shadow .2s;
   }
-  /* hover only when not selected */
   .option-btn:not(.selected):hover {
     background: var(--brand);
     color: #fff;
     box-shadow: 0 6px 18px rgba(79,70,229,.25);
   }
-  /* selected = purple */
   .option-btn.selected {
     background: var(--brand-strong);
     border-color: var(--brand-strong);
@@ -246,7 +278,6 @@
     box-shadow: 0 6px 18px rgba(124,58,237,.28);
   }
 
-  /* Bottom navigation buttons */
   .next-btn,
   .back-question-btn {
     display: inline-block;
@@ -255,7 +286,7 @@
     padding: 14px 20px;
     font-size: 18px;
     font-weight: 700;
-    border-radius: 9999px;         
+    border-radius: 9999px;
     cursor: pointer;
     transition: filter .2s ease, background .2s, color .2s, border-color .2s;
     border: 2px solid transparent;
@@ -272,9 +303,7 @@
     color: #111827;
     border-color: #111827;
   }
-  .back-question-btn:hover {
-    background: #fff;
-  }
+  .back-question-btn:hover { background: #fff; }
 
   .nav-row {
     display: flex;
@@ -290,50 +319,50 @@
     font-size: 20px; font-weight: bold;
     background: none; border: none; color: black;
     cursor: pointer; z-index: 3;
+  }
 
-	}
-.media-row{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:18px;                 /* space between image and ring */
-  margin-bottom:16px;
-}
+  .media-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:18px;
+    margin-bottom:16px;
+  }
 
-.ring-wrap{
-  position:relative;
-  width:64px; height:64px;
-  flex:0 0 auto;            /* don’t stretch */
+  .ring-wrap{
+    position:relative;
+    width:64px; height:64px;
+    flex:0 0 auto;
     margin-bottom:-27px;
-}
+  }
 
-.ring{
-  width:100%; height:100%;
-  transform:rotate(-90deg); /* make stroke start at top */
-  margin-bottom:100px;
-}
+  .ring{
+    width:100%; height:100%;
+    transform:rotate(-90deg);
+    margin-bottom:100px;
+  }
 
-.ring .bg{
-  fill:none;
-  stroke:rgba(0,0,0,.12);
-  stroke-width:6;
-}
+  .ring .bg{
+    fill:none;
+    stroke:rgba(0,0,0,.12);
+    stroke-width:6;
+  }
 
-.ring .fg{
-  fill:none;
-  stroke:var(--brand);
-  stroke-width:6;
-  stroke-linecap:round;
-  transition:stroke-dashoffset .08s linear;
-}
+  .ring .fg{
+    fill:none;
+    stroke:var(--brand);
+    stroke-width:6;
+    stroke-linecap:round;
+    transition:stroke-dashoffset .08s linear;
+  }
 
-.ring-label{
-  position:absolute; inset:0;
-  display:flex; align-items:center; justify-content:center;
-  font-weight:700;
-  font-size:0.95rem;
-  color:var(--brand);
-}
+  .ring-label{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700;
+    font-size:0.95rem;
+    color:var(--brand);
+  }
 </style>
 
 {#if loading}
@@ -347,21 +376,18 @@
   <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
   <div class="media-row">
-
-  {#if difficulty === '5'}
-    <div class="ring-wrap" title="Time left">
-      <svg viewBox="0 0 64 64" class="ring" aria-hidden="true">
-        <!-- background track -->
-        <circle cx="32" cy="32" r={R} class="bg" />
-        <!-- foreground progress -->
-        <circle
-          cx="32" cy="32" r={R}
-          class="fg"
-          style="stroke-dasharray:{C}; stroke-dashoffset:{C * (1 - pct)}" />
-      </svg>
-      <div class="ring-label">{Math.ceil(timeLeft / 1000)}</div>
-    </div>
-  {/if}
+    {#if difficulty === '5'}
+      <div class="ring-wrap" title="Time left">
+        <svg viewBox="0 0 64 64" class="ring" aria-hidden="true">
+          <circle cx="32" cy="32" r={R} class="bg" />
+          <circle
+            cx="32" cy="32" r={R}
+            class="fg"
+            style="stroke-dasharray:{C}; stroke-dashoffset:{C * (1 - pct)}" />
+        </svg>
+        <div class="ring-label">{Math.ceil(timeLeft / 1000)}</div>
+      </div>
+    {/if}
   </div>
 
   <div class="dashboard-box quiz-box">
@@ -385,7 +411,7 @@
       {/each}
     </div>
 
-    <div>
+    <div class="nav-row">
       <button class="back-question-btn" on:click={backQuestion} disabled={currentIndex === 0}>Back</button>
       <button class="next-btn" on:click={nextQuestion}>Next</button>
     </div>
