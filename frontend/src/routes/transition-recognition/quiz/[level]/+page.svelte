@@ -205,34 +205,6 @@
     goto('/transition-recognition/results');
   }
 
-    // Keep your existing round summary (results page uses this)
-    localStorage.setItem('quiz_results', JSON.stringify(results));
-    localStorage.setItem('quiz_score', String(scoreNum));
-    localStorage.setItem('quiz_total', String(clips.length));
-
-    // NEW: user-scoped keys + the exact shapes the stats page reads
-    const userKey = getUserKey();
-
-    // 1) Rich rows for the stats page (what it tries first)
-    localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
-
-    // 2) A "last run" bundle the stats page can also reconstruct from
-    //    (clips + your guesses)
-    localStorage.setItem(
-      `tr_last_run_${userKey}`,
-      JSON.stringify({
-        clips: clips.map(c => ({ href: c.media, from: c.from, to: c.to })),
-        guessFrom,
-        guessTo
-      })
-    );
-
-    // Optional: clean up old global key so it doesn’t confuse future debugging
-    localStorage.removeItem('tr_details');
-
-    goto('/transition-recognition/results');
-  }
-
   // build three choices that include the correct answer
   function makeChoices(correct: Emotion): Emotion[] {
     const pool = EMOTIONS.filter(e => e !== correct);
