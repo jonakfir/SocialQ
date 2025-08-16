@@ -1,37 +1,33 @@
-// frontend/src/routes/api/[...path]/server.ts
-import type { RequestHandler } from './$types';
 import { PRIVATE_API_BASE } from '$env/static/private';
 
-// e.g. "https://socialq-production.up.railway.app"
-const ORIGIN = (PRIVATE_API_BASE || '').replace(/\/$/, '');
+const BASE = (PRIVATE_API_BASE || '').replace(/\/$/, '');
 
-async function forward(request: Request, path: string) {
-  const url = `${ORIGIN}/${path}`;
+async function forward(event, suffix) {
+  const req = event.request;
+  const url = `${BASE}${suffix}`;
 
-  // Send body only when appropriate
   const body =
-    request.method === 'GET' || request.method === 'HEAD'
+    req.method === 'GET' || req.method === 'HEAD'
       ? undefined
-      : await request.arrayBuffer();
+      : await req.arrayBuffer();
 
   const resp = await fetch(url, {
-    method: request.method,
-    headers: request.headers,
+    method: req.method,
+    headers: req.headers,
     body,
-    redirect: 'manual',
+    redirect: 'manual'
   });
 
-  // Pass most headers through, but drop encodings Vercel can’t serve directly
-  const out = new Headers(resp.headers);
-  out.delete('content-encoding');
-  out.delete('content-length');
+  // Pass through headers, but drop compression so Vercel can serve it
+  const headers = new Headers(resp.headers);
+  headers.delete('content-encoding');
 
-  return new Response(resp.body, { status: resp.status, headers: out });
+  return new Response(resp.body, { status: resp.status, headers });
 }
 
-export const GET:     RequestHandler = ({ request, params }) => forward(request, params.path);
-export const POST:    RequestHandler = ({ request, params }) => forward(request, params.path);
-export const PUT:     RequestHandler = ({ request, params }) => forward(request, params.path);
-export const PATCH:   RequestHandler = ({ request, params }) => forward(request, params.path);
-export const DELETE:  RequestHandler = ({ request, params }) => forward(request, params.path);
-export const OPTIONS: RequestHandler = ({ request, params }) => forward(request, params.path);
+export const GET     = (e) => forward(e, '/' + e.params.path);
+export const POST    = (e) => forward(e, '/' + e.params.path);
+export const PUT     = (e) => forward(e, '/' + e.params.path);
+export const PATCH   = (e) => forward(e, '/' + e.params.path);
+export const DELETE  = (e) => forward(e, '/' + e.params.path);
+export const OPTIONS = (e) => forward(e, '/' + e.params.path);
