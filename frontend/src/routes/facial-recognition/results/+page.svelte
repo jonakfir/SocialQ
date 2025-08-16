@@ -1,24 +1,65 @@
 <script>
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
 
-	let score = 0;
-	let total = 0;
-	let results = [];
+  let score = 0;
+  let total = 0;
+  let results = [];
 
-	onMount(() => {
-		document.title = 'Quiz Result';
-		score = localStorage.getItem('quiz_score') || 0;
-		total = localStorage.getItem('quiz_total') || 0;
-		results = JSON.parse(localStorage.getItem('quiz_results') || '[]');
-	});
+  // Helper: read first array-like value from a list of keys
+  function readArray(keys) {
+    for (const k of keys) {
+      try {
+        const v = JSON.parse(localStorage.getItem(k) || 'null');
+        if (Array.isArray(v) && v.length) return v;
+      } catch {}
+    }
+    return [];
+  }
 
-	function clearAndRestart() {
-		localStorage.removeItem('quiz_results');
-		localStorage.removeItem('quiz_score');
-		localStorage.removeItem('quiz_total');
-		goto('/facial-recognition/settings');
-	}
+  onMount(() => {
+    document.title = 'Quiz Result';
+
+    score   = Number(localStorage.getItem('quiz_score')  || 0);
+    total   = Number(localStorage.getItem('quiz_total')  || 0);
+    results = JSON.parse(localStorage.getItem('quiz_results') || '[]');
+
+    // If we don't already have rich details, try to build them now
+    if (!localStorage.getItem('quiz_details')) {
+      // Try a few common keys you might be using in the game code
+      const questions = readArray(['fr_questions', 'quiz_questions', 'questions', 'fr_rounds', 'rounds']);
+      const picks     = readArray(['fr_picks', 'quiz_picks', 'picks', 'answers', 'selections']);
+
+      if (questions.length) {
+        const details = questions.map((q, i) => {
+          const correct = q.correct ?? q.answer ?? q.name ?? '(unknown)';
+          // Prefer a stable URL (NOT blob:). Adjust to your question shape.
+          let img = q.img ?? q.src ?? q.url ?? undefined;
+          if (typeof img === 'object' && img?.url) img = img.url; // handle {url:"..."} shapes
+          if (typeof img === 'string' && img.startsWith('blob:')) img = undefined;
+
+          const picked = picks[i] ?? '__timeout__';
+          return {
+            index: i,
+            img,
+            correct,
+            picked,
+            isCorrect: picked === correct
+          };
+        });
+
+        localStorage.setItem('quiz_details', JSON.stringify(details));
+      }
+    }
+  });
+
+  function clearAndRestart() {
+    localStorage.removeItem('quiz_results');
+    localStorage.removeItem('quiz_score');
+    localStorage.removeItem('quiz_total');
+    // keep quiz_details if you want to review after "Play Again"
+    goto('/facial-recognition/settings');
+  }
 </script>
 
 <style>
