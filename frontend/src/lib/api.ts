@@ -26,17 +26,12 @@ export function apiUrl(path: string): string {
 
 /** Low-level fetch with sane defaults for our API. */
 export async function apiFetch(path: string, init: RequestInit = {}) {
+  const url = `/api${path}`;
   const headers = new Headers(init.headers ?? {});
-  // If body is a string and no content-type set, default to JSON.
   if (!headers.has('content-type') && init.body && typeof init.body === 'string') {
     headers.set('content-type', 'application/json');
   }
-
-  return fetch(apiUrl(path), {
-    ...init,
-    headers,
-    credentials: 'include', // send/receive cookies
-  });
+  return fetch(url, { ...init, headers, credentials: 'include' });
 }
 
 /** JSON helper that throws on non-2xx with a meaningful message. */
