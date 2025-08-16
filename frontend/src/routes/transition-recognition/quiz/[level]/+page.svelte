@@ -22,11 +22,10 @@
   let guessFrom: (Emotion | null)[] = [];
   let guessTo:   (Emotion | null)[] = [];
 
-  // choices per question
+  // three choices per question
   let startChoices: Emotion[][] = [];
   let endChoices:   Emotion[][] = [];
 
-  // ---- NEW: small data-URL thumbnails we capture from the video ----
   let startThumbs: (string | undefined)[] = [];
   let endThumbs:   (string | undefined)[] = [];
 
@@ -67,8 +66,7 @@
     try { videoEl.pause(); videoEl.currentTime = 0; videoEl.play(); } catch {}
   }
 
-  // ---------- THUMBNAIL CAPTURE HELPERS ----------
-  const normalizeImg = (u: unknown) =>
+   const normalizeImg = (u: unknown) =>
     (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
 
   function waitForMetadata(v: HTMLVideoElement): Promise<void> {
@@ -167,24 +165,30 @@
       };
     });
 
-    // for result dots
+    // Keep your existing round summary (results page uses this)
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(scoreNum));
     localStorage.setItem('quiz_total', String(clips.length));
 
-    // for stats page (both global + user-scoped for safety)
+    // NEW: user-scoped keys + the exact shapes the stats page reads
     const userKey = getUserKey();
-    localStorage.setItem('tr_details', JSON.stringify(rows));
+
+    // 1) Rich rows for the stats page (what it tries first)
     localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
 
-    // optional “last run” bundle if you want to reconstruct later
+    // 2) A "last run" bundle the stats page can also reconstruct from
+    //    (clips + your guesses)
     localStorage.setItem(
       `tr_last_run_${userKey}`,
       JSON.stringify({
         clips: clips.map(c => ({ href: c.media, from: c.from, to: c.to })),
-        guessFrom, guessTo
+        guessFrom,
+        guessTo
       })
     );
+
+    // Optional: clean up old global key so it doesn’t confuse future debugging
+    localStorage.removeItem('tr_details');
 
     goto('/transition-recognition/results');
   }
@@ -219,8 +223,6 @@
       guessTo   = Array(clips.length).fill(null);
       startChoices = clips.map(c => makeChoices(c.from));
       endChoices   = clips.map(c => makeChoices(c.to));
-      startThumbs  = Array(clips.length).fill(undefined);
-      endThumbs    = Array(clips.length).fill(undefined);
 
       startTimer();
     } catch (e: any) {
