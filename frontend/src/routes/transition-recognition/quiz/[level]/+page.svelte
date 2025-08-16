@@ -31,22 +31,16 @@
   let timeLeft = LIMIT;
   let timerId: number | null = null;
 
-    // --- Off-screen thumbnail capture (does NOT touch the on-screen player) ---
-  function waitEvent<T extends keyof HTMLVideoElementEventMap>(
-    v: HTMLVideoElement,
-    name: T
-  ): Promise<void> {
-    return new Promise((resolve) => v.addEventListener(name, () => resolve(), { once: true }));
+  // ---------- thumbnail capture (off-screen, AFTER the quiz) ----------
+  function waitEvent<T extends keyof HTMLVideoElementEventMap>(v: HTMLVideoElement, name: T) {
+    return new Promise<void>((res) => v.addEventListener(name, () => res(), { once: true }));
   }
 
   async function captureFromUrl(url: string): Promise<{ start?: string; end?: string }> {
+    // keep the video in DOM (hidden) for best WebKit compatibility
     const v = document.createElement('video');
-    // keep it in the DOM for Safari/WebKit
-    Object.assign(v.style, {
-      position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px', opacity: '0',
-      pointerEvents: 'none',
-    });
-    v.crossOrigin = 'anonymous';           // requires the server to send ACAO
+    Object.assign(v.style, { position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
+    v.crossOrigin = 'anonymous';
     v.preload = 'auto';
     v.muted = true;
     (v as any).playsInline = true;
@@ -54,17 +48,10 @@
     document.body.appendChild(v);
 
     try {
-      // wait for dimensions/duration
-      if (!Number.isFinite(v.duration) || !v.videoWidth) {
-        await waitEvent(v, 'loadedmetadata');
-      }
-      // ensure a decodable frame is available
-      if (v.readyState < 2) {
-        await waitEvent(v, 'canplay');
-      }
+      if (!Number.isFinite(v.duration) || !v.videoWidth) await waitEvent(v, 'loadedmetadata');
+      if (v.readyState < 2) await waitEvent(v, 'canplay');
 
       const capFrame = async (t: number) => {
-        // clamp to [0, duration]
         const tt = Math.max(0, Math.min(v.duration || 0.1, t));
         v.currentTime = tt;
         await waitEvent(v, 'seeked');
@@ -72,7 +59,7 @@
         const w = v.videoWidth, h = v.videoHeight;
         if (!w || !h) return undefined;
 
-        const cap = 128; // thumbnail size
+        const cap = 128;
         const scale = Math.min(cap / w, cap / h);
         const cw = Math.max(1, Math.round(w * scale));
         const ch = Math.max(1, Math.round(h * scale));
@@ -85,15 +72,13 @@
         try {
           ctx.drawImage(v, 0, 0, cw, ch);
           return c.toDataURL('image/jpeg', 0.72);
-        } catch (err) {
-          console.warn('[thumb] canvas tainted (CORS?) for', url);
-          return undefined;
+        } catch {
+          return undefined; // CORS-tainted
         }
       };
 
       const start = await capFrame(0.05);
       const end   = await capFrame(Math.max(0.05, (v.duration || 0.1) - 0.08));
-
       return { start, end };
     } finally {
       try { v.pause(); } catch {}
@@ -106,20 +91,20 @@
   async function captureBatch(urls: string[]) {
     const starts: (string | undefined)[] = [];
     const ends: (string | undefined)[] = [];
-    // do them sequentially to stay lightweight
     for (const u of urls) {
       try {
         const { start, end } = await captureFromUrl(u);
-        starts.push(start);
-        ends.push(end);
+        starts.push(start); ends.push(end);
       } catch {
-        starts.push(undefined);
-        ends.push(undefined);
+        starts.push(undefined); ends.push(undefined);
       }
     }
     return { starts, ends };
   }
+  // --------------------------------------------------------------------
 
+  // preconnect + first-clip preload (set after fetch)
+  let firstOrigin: string | null = null;
 
   function startTimer() {
     if (level !== 'challenge') return;
@@ -148,6 +133,7 @@
   function back() { if (current > 0) { current -= 1; startTimer(); } }
 
   let videoEl: HTMLVideoElement | null = null;
+  function ensurePlays() { videoEl?.play().catch(() => {}); }
   function replay() {
     if (!videoEl) return;
     try { videoEl.pause(); videoEl.currentTime = 0; videoEl.play(); } catch {}
@@ -156,7 +142,6 @@
   async function finish() {
     stopTimer();
 
-    // score + matrix used by /results
     const pickedFrom = clips.map((_, i) => (guessFrom[i] ?? '__timeout__'));
     const pickedTo   = clips.map((_, i) => (guessTo[i]   ?? '__timeout__'));
 
@@ -170,15 +155,14 @@
       results.push([okFrom, okTo]);
     });
 
-    // Save simple round summary (used by /results)
+    // Used by /results
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(scoreNum));
     localStorage.setItem('quiz_total', String(clips.length));
 
-    // --- capture thumbnails OFF-SCREEN (works in Safari/WebKit) ---
+    // Thumbnails for stats (captured off-screen AFTER quiz)
     const { starts, ends } = await captureBatch(clips.map(c => c.media));
 
-    // Build rich rows for stats page — include BOTH naming schemes
     const rows = clips.map((c, i) => {
       const okFrom = results[i][0];
       const okTo   = results[i][1];
@@ -186,11 +170,11 @@
       const pEnd   = pickedTo[i];
 
       return {
-        // thumbnails
+        // thumbs
         startImg: starts[i],
         endImg:   ends[i],
 
-        // ✅ legacy names your stats page currently reads
+        // legacy names your stats page reads
         from: c.from,
         to: c.to,
         pickedFrom: pStart,
@@ -198,7 +182,7 @@
         okFrom,
         okTo,
 
-        // ✅ newer names (if you update the stats page later)
+        // unified names if you ever switch
         correctStart: c.from,
         correctEnd:   c.to,
         pickedStart:  pStart,
@@ -211,7 +195,6 @@
     localStorage.setItem('tr_details', JSON.stringify(rows));
     localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
 
-    // optional bundle for future reconstruction
     localStorage.setItem(
       `tr_last_run_${userKey}`,
       JSON.stringify({
@@ -223,7 +206,6 @@
     goto('/transition-recognition/results');
   }
 
-  // build three choices that include the correct answer
   function makeChoices(correct: Emotion): Emotion[] {
     const pool = EMOTIONS.filter(e => e !== correct);
     for (let i = pool.length - 1; i > 0; i--) {
@@ -249,6 +231,9 @@
 
       if (!clips.length) throw new Error('No transition videos found.');
 
+      // host hints for faster first paint
+      firstOrigin = new URL(clips[0].media, location.href).origin;
+
       guessFrom = Array(clips.length).fill(null);
       guessTo   = Array(clips.length).fill(null);
       startChoices = clips.map(c => makeChoices(c.from));
@@ -267,6 +252,17 @@
   function chooseFrom(e: Emotion) { guessFrom[current] = e; }
   function chooseTo(e: Emotion)   { guessTo[current]   = e; }
 </script>
+
+<svelte:head>
+  {#if firstOrigin}
+    <!-- Help the browser connect to the video host ASAP -->
+    <link rel="preconnect" href={firstOrigin} />
+  {/if}
+  {#if clips[0]}
+    <!-- Hint the first clip so it starts buffering immediately -->
+    <link rel="preload" as="video" href={clips[0].media} />
+  {/if}
+</svelte:head>
 
 <style>
   @import '/static/style.css';
@@ -386,6 +382,7 @@
   .ghost:hover{ background:#fff; }
 </style>
 
+<!-- blobs -->
 <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
 <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
@@ -411,9 +408,12 @@
           key={clips[current].media}
           class="clip"
           src={clips[current].media}
+          preload="auto"
           autoplay
           muted
           playsinline
+          on:loadedmetadata={ensurePlays}
+          on:canplay={ensurePlays}
         ></video>
       </div>
 
@@ -442,6 +442,13 @@
         <button class="btn ghost" on:click={back} disabled={current === 0}>Back</button>
         <button class="btn primary" on:click={() => next(false)}>Next</button>
       </div>
+    </div>
+
+    <!-- Hidden preloader: warms up the next 1–2 clips so “Next” feels instant -->
+    <div aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden;">
+      {#each [current + 1, current + 2].filter(i => i < clips.length) as i}
+        <video src={clips[i].media} preload="auto" muted playsinline />
+      {/each}
     </div>
   </div>
 {/if}
