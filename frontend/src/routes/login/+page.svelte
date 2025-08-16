@@ -6,17 +6,16 @@
   let password = '';
   let error = '';
 
+  function goCreate(){ goto('/create-account'); } // fix "goCreate is not defined"
+
   async function handleLogin(e: Event) {
     e.preventDefault();
     error = '';
-
     const res = await apiFetch('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password })
     });
-
-    const data = await res.json().catch(() => null);
-
+    const data = await res.json().catch(() => ({}));
     if (res.ok && data?.ok) {
       const u = data.user?.username ?? username;
       const id = data.user?.id ?? null;
@@ -26,10 +25,6 @@
     } else {
       error = data?.error ?? `Login failed (HTTP ${res.status})`;
     }
-  }
-
-  function goCreate() {
-    goto('/create-account');
   }
 </script>
 

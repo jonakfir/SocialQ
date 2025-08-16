@@ -1,34 +1,25 @@
-<script>
+<script lang="ts">
   import { goto } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
 
   let username = '';
   let password = '';
   let error = '';
   let loading = false;
 
-  async function handleCreate(e) {
+  async function handleCreate(e: Event) {
     e.preventDefault();
     error = '';
     loading = true;
-
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-      // If this is empty, you forgot to set the Vercel env var.
-      const res = await fetch(`${API_BASE}/auth/register`, {
+      const res = await apiFetch('/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ username, password })
       });
-
       const data = await res.json().catch(() => ({}));
-
-      if (res.ok && (data.ok || data.success)) {
-        goto('/login?created=1');
-      } else {
-        error = data.error || `Registration failed (HTTP ${res.status})`;
-      }
-    } catch (e) {
+      if (res.ok && (data.ok || data.success)) goto('/login?created=1');
+      else error = data.error || `Registration failed (HTTP ${res.status})`;
+    } catch {
       error = 'Network error';
     } finally {
       loading = false;
