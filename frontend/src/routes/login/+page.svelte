@@ -27,6 +27,10 @@
       error = data?.error ?? `Login failed (HTTP ${res.status})`;
     }
   }
+
+  function goCreate() {
+    goto('/create-account');
+  }
 </script>
 
 <style>
