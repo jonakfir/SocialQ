@@ -3,7 +3,8 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
-  
+  import { fade, fly, scale } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
 
   type Row = { img: string; options: string[]; correct: string };
 
@@ -32,9 +33,10 @@
   const C = 2 * Math.PI * R;
 
   // progress (0..1) based on time left
-  $: pct = difficulty === '5'
-    ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
-    : 0;
+  $: pct =
+    difficulty === '5'
+      ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
+      : 0;
 
   function stopTimer() {
     if (tickHandle) cancelAnimationFrame(tickHandle);
@@ -90,7 +92,7 @@
       loadError = '';
 
       // Persist minimal question info for the Stats page
-      const minimal = quizData.map(q => ({
+      const minimal = quizData.map((q) => ({
         img: normalizeImg(q.img),
         correct: q.correct
       }));
@@ -110,7 +112,7 @@
     userAnswers[currentIndex] = option;
 
     // keep a live copy of picks so refreshes don't lose state
-    const picksLive = userAnswers.map(v => (v == null ? null : v));
+    const picksLive = userAnswers.map((v) => (v == null ? null : v));
     localStorage.setItem('fr_picks', JSON.stringify(picksLive));
   }
 
@@ -152,11 +154,11 @@
     localStorage.setItem('quiz_total', String(quizData.length));
 
     // picks & questions for Stats page
-    const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
+    const picks = userAnswers.map((v) => (v == null ? '__timeout__' : v));
     localStorage.setItem('fr_picks', JSON.stringify(picks));
     localStorage.setItem(
       'fr_questions',
-      JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
+      JSON.stringify(quizData.map((q) => ({ img: normalizeImg(q.img), correct: q.correct })))
     );
 
     // prebuild rich details so Stats is instant
@@ -240,9 +242,9 @@
     width: 40px; height: 8px;
     background: #d3d3d3;
     border-radius: 4px;
-    transition: background .25s ease, width .25s ease;
+    transition: background .25s ease, width .25s ease, transform .25s ease;
   }
-  .dot.active { background: var(--brand); width: 60px; }
+  .dot.active { background: var(--brand); width: 60px; transform: translateY(-1px); }
 
   .option-btn {
     display: inline-block;
@@ -256,19 +258,21 @@
     border: 2px solid var(--brand);
     border-radius: 9999px;
     cursor: pointer;
-    transition: transform .05s ease,
-                background .2s, color .2s,
-                border-color .2s, box-shadow .2s;
+    transition: transform .06s ease, background .2s, color .2s, border-color .2s, box-shadow .2s;
   }
   .option-btn:not(.selected):hover {
     background: var(--brand);
     color: #fff;
     box-shadow: 0 6px 18px rgba(79,70,229,.25);
   }
+  .option-btn:active {
+    transform: translateY(1px) scale(0.98);
+  }
   .option-btn.selected {
     background: var(--brand-strong);
     border-color: var(--brand-strong);
     color: #fff;
+    transform: translateY(0) scale(1.02);
     box-shadow: 0 6px 18px rgba(124,58,237,.28);
   }
 
@@ -378,7 +382,7 @@
             class="fg"
             style="stroke-dasharray:{C}; stroke-dashoffset:{C * (1 - pct)}" />
         </svg>
-        <div class="ring-label">{Math.ceil(timeLeft / 1000)}</div>
+        <div class="ring-label" aria-live="polite">{Math.ceil(timeLeft / 1000)}</div>
       </div>
     {/if}
   </div>
@@ -392,17 +396,34 @@
 
     <h1 class="settings-title">Facial Recognition</h1>
 
-    <img id="emotion-img" src={quizData[currentIndex].img} alt="Emotion Face" />
+    <!-- Animate the question content on index change -->
+    {#key currentIndex}
+      <div
+        class="question-wrap"
+        in:fade={{ duration: 160, easing: cubicOut }}
+        out:fade={{ duration: 120, easing: cubicOut }}
+      >
+        <img
+          id="emotion-img"
+          src={quizData[currentIndex].img}
+          alt="Emotion Face"
+          in:fly={{ y: 12, duration: 180, easing: cubicOut }}
+          out:fly={{ y: -12, duration: 120, easing: cubicOut }}
+        />
 
-    <p style="font-size:18px; margin-bottom:15px;">What emotion do you see?</p>
+        <p style="font-size:18px; margin-bottom:15px;">What emotion do you see?</p>
 
-    <div id="options">
-      {#each quizData[currentIndex].options as option}
-        <button
-          class="option-btn {userAnswers[currentIndex] === option ? 'selected' : ''}"
-          on:click={() => selectOption(option)}>{option}</button>
-      {/each}
-    </div>
+        <div id="options">
+          {#each quizData[currentIndex].options as option, i}
+            <button
+              class="option-btn {userAnswers[currentIndex] === option ? 'selected' : ''}"
+              on:click={() => selectOption(option)}
+              in:fade={{ delay: i * 35, duration: 140 }}
+            >{option}</button>
+          {/each}
+        </div>
+      </div>
+    {/key}
 
     <div class="nav-row">
       <button class="back-question-btn" on:click={backQuestion} disabled={currentIndex === 0}>Back</button>
