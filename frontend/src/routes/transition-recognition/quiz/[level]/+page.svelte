@@ -156,12 +156,12 @@
   async function finish() {
     stopTimer();
 
-    // score + bool matrix for the results page
-    let scoreNum = 0;
-    const results: Array<[boolean, boolean]> = [];
-
+    // score + matrix used by /results
     const pickedFrom = clips.map((_, i) => (guessFrom[i] ?? '__timeout__'));
     const pickedTo   = clips.map((_, i) => (guessTo[i]   ?? '__timeout__'));
+
+    let scoreNum = 0;
+    const results: Array<[boolean, boolean]> = [];
 
     clips.forEach((c, i) => {
       const okFrom = pickedFrom[i] === c.from;
@@ -170,30 +170,48 @@
       results.push([okFrom, okTo]);
     });
 
-    // Save the simple round summary (used by /results)
+    // Save simple round summary (used by /results)
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(scoreNum));
     localStorage.setItem('quiz_total', String(clips.length));
 
-    // --- NEW: capture thumbnails OFF-SCREEN after the quiz is done ---
+    // --- capture thumbnails OFF-SCREEN (works in Safari/WebKit) ---
     const { starts, ends } = await captureBatch(clips.map(c => c.media));
 
-    // Build rich rows for stats (keeps all the words you want)
-    const rows = clips.map((c, i) => ({
-      startImg:     starts[i],             // data URL or undefined
-      endImg:       ends[i],               // data URL or undefined
-      correctStart: c.from,
-      correctEnd:   c.to,
-      pickedStart:  pickedFrom[i],
-      pickedEnd:    pickedTo[i],
-      isCorrect:    results[i][0] && results[i][1]
-    }));
+    // Build rich rows for stats page — include BOTH naming schemes
+    const rows = clips.map((c, i) => {
+      const okFrom = results[i][0];
+      const okTo   = results[i][1];
+      const pStart = pickedFrom[i];
+      const pEnd   = pickedTo[i];
+
+      return {
+        // thumbnails
+        startImg: starts[i],
+        endImg:   ends[i],
+
+        // ✅ legacy names your stats page currently reads
+        from: c.from,
+        to: c.to,
+        pickedFrom: pStart,
+        pickedTo:   pEnd,
+        okFrom,
+        okTo,
+
+        // ✅ newer names (if you update the stats page later)
+        correctStart: c.from,
+        correctEnd:   c.to,
+        pickedStart:  pStart,
+        pickedEnd:    pEnd,
+        isCorrect:    okFrom && okTo
+      };
+    });
 
     const userKey = getUserKey();
-    localStorage.setItem('tr_details', JSON.stringify(rows));                 // global
-    localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));      // user-scoped
+    localStorage.setItem('tr_details', JSON.stringify(rows));
+    localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
 
-    // Optional bundle if you ever want to reconstruct later
+    // optional bundle for future reconstruction
     localStorage.setItem(
       `tr_last_run_${userKey}`,
       JSON.stringify({
