@@ -1,33 +1,35 @@
-<script>
+<script lang="ts">
   import { goto } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
 
   let username = '';
   let password = '';
   let error = '';
   let loading = false;
 
-  async function handleCreate(e) {
+  async function handleCreate(e: Event) {
     e.preventDefault();
     error = '';
     loading = true;
 
     try {
-    const API_BASE = import.meta.env.VITE_API_BASE ?? '';
-    const res = await fetch(`${API}/auth/login`, {
+      // change the path here if your backend uses /auth/signup
+      const res = await apiFetch('/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ username, password })
-    });
-      const data = await res.json().catch(() => ({}));
+      });
 
-      if (res.ok && (data.ok || data.success)) {
-        goto('/login?created=1');
-      } else {
-        error = data.error || 'Registration failed';
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409) throw new Error(data?.error || 'Username already exists');
+        throw new Error(data?.error || 'Registration failed');
       }
-    } catch (_) {
-      error = 'Network error';
+
+      goto('/login?created=1');
+    } catch (err) {
+      console.error(err);
+      error = err?.message ?? 'Network error';
     } finally {
       loading = false;
     }
