@@ -5,14 +5,15 @@
   let details = [];
   let score = 0;
 
-  function readJSON(key, fallback) {
-    try { return JSON.parse(localStorage.getItem(key) ?? 'null') ?? fallback; }
-    catch { return fallback; }
-  }
-  function normalizeImg(u) { return (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined; }
+  const readJSON = (k, f) => {
+    try { return JSON.parse(localStorage.getItem(k) ?? 'null') ?? f; }
+    catch { return f; }
+  };
+  const normalizeImg = (u) =>
+    (typeof u === 'string' && !u.startsWith('blob:')) ? u : undefined;
 
-  function synthesizeDetails() {
-    const qs = readJSON('fr_questions', []);
+  function synthesizeFromFR() {
+    const qs    = readJSON('fr_questions', []);
     const picks = readJSON('fr_picks', []);
     if (!Array.isArray(qs) || !qs.length) return null;
 
@@ -28,19 +29,33 @@
   onMount(() => {
     document.title = 'Quiz Stats';
 
-    // Prefer existing details; repair/synthesize if missing or incomplete
+    // 1) try rich details
     let d = readJSON('quiz_details', null);
-    const needsRepair =
-      !Array.isArray(d) || !d.length || d.some(x => !('picked' in x) || !('correct' in x));
-    if (needsRepair) {
-      const synth = synthesizeDetails();
-      if (synth) {
-        d = synth;
+    const bad = !(Array.isArray(d) && d.length) || d.some(x => !('picked' in x) || !('correct' in x));
+
+    // 2) repair from fr_questions + fr_picks
+    if (bad) {
+      const repaired = synthesizeFromFR();
+      if (repaired) {
+        d = repaired;
         localStorage.setItem('quiz_details', JSON.stringify(d));
       }
     }
 
-    details = Array.isArray(d) ? d : [];
+    // 3) FINAL fallback to booleans so the page never shows 0/0 empty
+    if (!(Array.isArray(d) && d.length)) {
+      const bools = readJSON('quiz_results', []);
+      d = bools.map((ok, i) => ({
+        index: i,
+        img: undefined,
+        correct: '(unknown)',
+        picked: '(unknown)',
+        isCorrect: !!ok
+      }));
+      // don’t write this back; it’s just a display fallback
+    }
+
+    details = d;
     score = details.filter(x => x.isCorrect).length;
   });
 
@@ -48,7 +63,6 @@
     localStorage.removeItem('quiz_results');
     localStorage.removeItem('quiz_score');
     localStorage.removeItem('quiz_total');
-    // keep quiz_details so user can still review after replay if desired
     goto('/facial-recognition/settings');
   }
 </script>
