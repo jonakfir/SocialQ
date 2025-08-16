@@ -1,32 +1,23 @@
-<script>
-  import { onMount } from 'svelte';
+<script lang="ts">
   import { goto } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
 
-  let user = null;     // { id, username } | null
-  let loading = true;
-  let error = '';
+  export let data: { user: { id: number; username: string } };
 
-  async function loadUser() {
-    try {
-      const res = await fetch('http://localhost:4000/auth/me', { credentials: 'include' });
-      const data = await res.json().catch(() => ({}));
-      user = data?.user ?? null;
-      if (!user) goto('/login');
-    } catch {
-      error = 'Could not load profile.';
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(loadUser);
+  const user = data.user; // guaranteed by +page.ts (else we redirect)
 
   async function logout() {
     try {
-      await fetch('http://localhost:4000/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/auth/logout', { method: 'POST' });
+    } catch {}
+    try {
+      localStorage.removeItem('username');
+      localStorage.removeItem('userId');
     } catch {}
     goto('/login');
   }
+
+  $: initial = user?.username?.[0]?.toUpperCase() ?? '?';
 </script>
 
 <style>
@@ -45,33 +36,22 @@
     z-index: 3;
   }
   .profile-pic {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    border: 4px solid white;
-    display: grid;
-    place-items: center;
-    font-size: 46px;
-    font-weight: 900;
-    margin: 0 auto 20px;
-
-    /* New colorful gradient */
+    width: 120px; height: 120px; border-radius: 50%;
+    border: 4px solid white; display: grid; place-items: center;
+    font-size: 46px; font-weight: 900; margin: 0 auto 20px;
     background: linear-gradient(135deg,
       rgba(255,182,193,1) 0%,
       rgba(255,223,186,1) 25%,
       rgba(186,255,201,1) 50%,
       rgba(186,225,255,1) 75%,
       rgba(218,186,255,1) 100%);
-    background-size: 300% 300%;
-    animation: gradientMove 8s ease infinite;
-    color: white; /* Text color */
+    background-size: 300% 300%; animation: gradientMove 8s ease infinite;
+    color: white;
   }
-
-  /* Smoothly animate the gradient for extra effect */
   @keyframes gradientMove {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+    0% { background-position: 0% 50% }
+    50% { background-position: 100% 50% }
+    100% { background-position: 0% 50% }
   }
   h2{
     font-family: 'Georgia', serif; font-size:2.5rem; color:white;
@@ -98,20 +78,14 @@
 
 <div class="container">
   <div class="profile-box">
-    {#if loading}
-      <div>Loading…</div>
-    {:else if user}
-      <div class="profile-pic">{user.username?.[0]?.toUpperCase() || '?'}</div>
-      <h2>{user.username}</h2>
-      <div class="user-info">
-        <p><strong>User ID:</strong> {user.id}</p>
-      </div>
-      <a href="/edit-profile" class="btn">Edit Profile</a>
-      <a href="/dashboard" class="btn">Back to Dashboard</a>
-      <button class="btn" on:click={logout}>Logout</button>
-    {:else}
-      <div class="user-info">You’re not signed in.</div>
-      <button class="btn" on:click={() => goto('/login')}>Go to Login</button>
-    {/if}
+    <div class="profile-pic">{initial}</div>
+    <h2>{user.username}</h2>
+    <div class="user-info">
+      <p><strong>User ID:</strong> {user.id}</p>
+    </div>
+
+    <a href="/edit-profile" class="btn">Edit Profile</a>
+    <a href="/dashboard" class="btn">Back to Dashboard</a>
+    <button class="btn" on:click={logout}>Logout</button>
   </div>
 </div>
