@@ -204,7 +204,7 @@
     opacity: 1;
   }
   .wipe.show{
-    animation: wipe-expand 1040ms cubic-bezier(.22,.61,.36,1) forwards;
+    animation: wipe-expand 2340ms cubic-bezier(.22,.61,.36,1) forwards;
   }
   @keyframes wipe-expand{
     to{ clip-path: circle(160% at var(--cx) var(--cy)); }
