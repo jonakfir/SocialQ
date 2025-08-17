@@ -65,7 +65,7 @@
     const r = cardEl.getBoundingClientRect();
     const px = (ev.clientX - r.left) / r.width;   // 0..1
     const py = (ev.clientY - r.top)  / r.height;  // 0..1
-    const MAX = 10;                                // max degrees
+    const MAX = 4;                                // max degrees
 
     // rotateY follows x, rotateX follows y (invert X so “top” leans back)
     target.ry = (px - 0.5) * 2 * MAX;
