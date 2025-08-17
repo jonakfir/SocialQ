@@ -7,7 +7,6 @@
   let heroEl;
   let raf = 0;
 
-  // --- tilt parallax ---------------------------------------------------------
   function onPointerMove(e) {
     if (!heroEl) return;
     const r = heroEl.getBoundingClientRect();
@@ -43,7 +42,6 @@
     cancelAnimationFrame(raf);
   });
 
-  // --- click ripple ----------------------------------------------------------
   function ripple(e) {
     const btn = e.currentTarget;
     const span = document.createElement('span');
@@ -134,7 +132,6 @@
     text-shadow: 0 10px 10px rgba(0,0,0,0.4);
   }
 
-  /* even breathing bars */
   .dash{
     display:flex; justify-content:center; align-items:center;
     gap: clamp(10px, 2.2vw, 18px);
