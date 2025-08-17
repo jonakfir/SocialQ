@@ -16,8 +16,8 @@
   let evaluating = false;          // lock while countdown/eval runs
   let lastResult: any = null;
 
-  // targets from your /ekman endpoint
-  type Target = { img: string; label?: string; difficulty?: string };
+  // targets returned by your /ekman endpoint
+  type Target = { img: string; label?: string; difficulty?: string; correct?: string; emotion?: string; name?: string; answer?: string };
   let difficulty = '4';
   let targets: Target[] = [];
 
@@ -40,7 +40,7 @@
     surprised: 'surprise',
     neutral: 'neutral'
   };
-  function normEmotion(s?: string) {
+  function normEmotion(s?: string | null) {
     const k = (s || '').toLowerCase().trim();
     return EMO_MAP[k] ?? k; // fall back to whatever Human gives
   }
@@ -88,7 +88,9 @@
       audio: false
     });
     video.srcObject = stream;
-    await new Promise((r) => (video.onloadedmetadata = r));
+    await new Promise<void>((r) => {
+      video.onloadedmetadata = () => r();
+    });
     await video.play();
 
     // 4) canvas
@@ -120,15 +122,20 @@
 
     // 7) draw loop
     (async function drawLoop() {
-      // Keep a live result so overlay looks responsive; “scoring” is done
-      // at countdown zero with a fresh detect() call
-      lastResult = await human.detect(video);
+      // keep a live result so overlay looks responsive; scoring happens at countdown zero
+      try {
+        lastResult = await human.detect(video);
+      } catch (e) {
+        // swallow occasional WebGL hiccups
+      }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       // draw video
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       // overlay
-      if (showOverlay && lastResult) human.draw.all(canvas, lastResult);
+      if (showOverlay && lastResult) {
+        try { human.draw.all(canvas, lastResult); } catch {}
+      }
 
       requestAnimationFrame(drawLoop);
     })();
@@ -156,39 +163,43 @@
     );
   }
 
-  // ---------- game flow ----------
+  // ---------- scoring ----------
   async function evaluateCurrent() {
-    // Run a fresh detect for the evaluation moment
     const result = await human.detect(video);
 
-    // Target label (normalize)
-    const labelRaw = targets[currentIndex]['correct'] || '';
+    // normalize target label from multiple possible fields
+    const t = targets[currentIndex] || {};
+    const labelRaw =
+      (t as any).correct ?? t.label ?? t.emotion ?? t.name ?? t.answer ?? '';
     const target = normEmotion(labelRaw);
 
-    // Top predicted emotion
-    const predicted = topEmotionFrom(result);
-    let predicted2 = null;
-    if (result.face?.[0]?.emotion?.length > 1) {
-      predicted2 = (result.face?.[0]?.emotion[1]['emotion'])
+    // top predicted, normalized
+    const predicted = normEmotion(topEmotionFrom(result));
+
+    // second best if present
+    let predicted2: string | null = null;
+    const emo = result?.face?.[0]?.emotion;
+    if (Array.isArray(emo) && emo.length > 1) {
+      predicted2 = normEmotion(emo[1]?.emotion || '');
     }
 
-    // Debug in browser console
-    // console.log('Target:', target, 'Top Predicted:', result.face?.[0]?.emotion[0]['emotion'], 'Second Predicted:', predicted2);
-    console.log(result)
-    // result?.face?.[0]?.emotion,
+    const correct =
+      (!!predicted && predicted === target) ||
+      (!!predicted2 && predicted2 === target);
 
-    const correct = (!!predicted && predicted === target) || (!!predicted2 && predicted2 === target);
-    results.push(correct);
+    results.push(!!correct);
     if (correct) score += 1;
-    console.log('Current score = ', score)
+
+    // console.log({ target, predicted, predicted2, score });
   }
 
   function finish() {
-    // Reuse your existing results page keys
-    localStorage.setItem('quiz_results', JSON.stringify(results)); // [true,false,...]
-    localStorage.setItem('quiz_score', String(score));
-    localStorage.setItem('quiz_total', String(targets.length));
-    goto('/mirroring/results'); // reuse existing results page
+    // Use mirroring-specific keys so we never collide with Facial Recognition
+    localStorage.setItem('mirroring_results', JSON.stringify(results));
+    localStorage.setItem('mirroring_score', String(score));
+    localStorage.setItem('mirroring_total', String(targets.length));
+
+    goto('/mirroring/results');
   }
 
   function nextTarget() {
@@ -220,8 +231,7 @@
 
         setTimeout(async () => {
           countdown.style.display = 'none';
-          // EVALUATE HERE
-          await evaluateCurrent();
+          await evaluateCurrent();   // EVALUATE HERE
           evaluating = false;
           nextTarget();
         }, 450);
