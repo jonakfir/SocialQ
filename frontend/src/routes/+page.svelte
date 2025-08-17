@@ -2,14 +2,12 @@
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
 
-  const start = () => goto('/login');
-
-  // how many little bars to show
   const SEGMENTS = 8;
 
   let heroEl;
   let raf = 0;
 
+  // --- tilt parallax ---------------------------------------------------------
   function onPointerMove(e) {
     if (!heroEl) return;
     const r = heroEl.getBoundingClientRect();
@@ -45,7 +43,7 @@
     cancelAnimationFrame(raf);
   });
 
-  // click ripple
+  // --- click ripple ----------------------------------------------------------
   function ripple(e) {
     const btn = e.currentTarget;
     const span = document.createElement('span');
@@ -57,6 +55,31 @@
     span.style.top  = (e.clientY - rect.top  - d / 2) + 'px';
     btn.appendChild(span);
     span.addEventListener('animationend', () => span.remove(), { once: true });
+  }
+
+  // --- page wipe transition --------------------------------------------------
+  let wiping = false;
+  let wipeStyle = '';
+
+  function startWithTransition(e) {
+    // Respect reduced-motion users
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      goto('/login');
+      return;
+    }
+
+    ripple(e);
+
+    // compute where to center the wipe (button center)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = ((rect.left + rect.width / 2) / window.innerWidth)  * 100;
+    const cy = ((rect.top  + rect.height / 2) / window.innerHeight) * 100;
+
+    wipeStyle = `--cx:${cx}%; --cy:${cy}%;`;
+    wiping = true; // triggers CSS animations
+
+    // navigate after the wipe covers screen
+    setTimeout(() => goto('/login'), 620);
   }
 </script>
 
@@ -87,9 +110,9 @@
     box-shadow:0 20px 60px rgba(0,0,0,.18);
     text-align:center;
     transform:perspective(900px) rotateX(var(--rx)) rotateY(var(--ry));
-    transition:transform .3s ease;
+    transition:transform .3s ease, opacity .3s ease;
     position:relative;
-    will-change:transform;
+    will-change:transform, opacity;
   }
   .hero::after{
     content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
@@ -97,6 +120,10 @@
                 rgba(255,255,255,.18), transparent 60%);
     transition:opacity .2s ease;
   }
+  .hero.leaving{
+    animation: hero-out .45s ease forwards;
+  }
+  @keyframes hero-out { to { opacity:0; transform: translateY(6px) scale(.96); } }
 
   .title{
     font-size: clamp(42px, 7vw, 92px);
@@ -107,7 +134,7 @@
     text-shadow: 0 10px 10px rgba(0,0,0,0.4);
   }
 
-  /* NEW: perfectly even marching bars (no background tricks) */
+  /* even breathing bars */
   .dash{
     display:flex; justify-content:center; align-items:center;
     gap: clamp(10px, 2.2vw, 18px);
@@ -116,9 +143,7 @@
     opacity:0; transform: translateY(-8px) scale(.98);
     animation: dash-in .45s ease-out .15s forwards;
   }
-  @keyframes dash-in {
-    to { opacity:1; transform: translateY(0) scale(1); }
-  }
+  @keyframes dash-in { to { opacity:1; transform: translateY(0) scale(1);} }
 
   .seg{
     width: clamp(42px, 7vw, 64px);
@@ -126,8 +151,6 @@
     border-radius: 9999px;
     background:#10b981;
     filter: drop-shadow(0 2px 0 rgba(0,0,0,.06));
-    transform: translateY(0) scaleX(1);
-    /* gentle “breathing” wave, staggered */
     animation: seg-wave 1.2s ease-in-out calc(var(--i) * .08s) infinite;
   }
   @keyframes seg-wave{
@@ -159,6 +182,8 @@
   }
   .cta:hover{ filter:brightness(1.05); box-shadow:0 12px 32px rgba(79,70,229,.45); }
   .cta:active{ transform:translateY(1px) scale(.995); }
+  @keyframes popin{ to { opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes pulse{ 0%,100%{ transform: translateY(0) scale(1);} 50%{ transform: translateY(-1px) scale(1.02);} }
 
   .ripple{
     position:absolute; border-radius:50%; background:rgba(255,255,255,.6);
@@ -166,13 +191,30 @@
   }
   @keyframes rip{ to { transform:scale(2.6); opacity:0; } }
 
-  @keyframes popin{ to { opacity:1; transform:translateY(0) scale(1); } }
-  @keyframes pulse{ 0%,100%{ transform: translateY(0) scale(1);} 50%{ transform: translateY(-1px) scale(1.02);} }
+  /* Fullscreen wipe overlay */
+  .wipe{
+    position: fixed; inset: 0; z-index: 50; pointer-events:none;
+    /* Use CSS vars set from click point */
+    --cx: 50%; --cy: 50%;
+    background:
+      radial-gradient(120px 120px at var(--cx) var(--cy),
+        #4f46e5 0 40%,
+        #6d28d9 60%);
+    clip-path: circle(0% at var(--cx) var(--cy));
+    opacity: 1;
+  }
+  .wipe.show{
+    animation: wipe-expand 620ms cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  @keyframes wipe-expand{
+    to{ clip-path: circle(160% at var(--cx) var(--cy)); }
+  }
 
   @media (prefers-reduced-motion: reduce){
     .hero{ transform:none !important; }
     .hero::after{ display:none; }
     .dash, .seg, .subtitle, .cta{ animation:none !important; opacity:1; transform:none; }
+    .wipe{ display:none; }
   }
 </style>
 
@@ -182,10 +224,12 @@
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
 <div class="stage">
-  <div class="hero" bind:this={heroEl}>
+  <!-- expanding overlay for the page transition -->
+  <div class="wipe {wiping ? 'show' : ''}" style={wipeStyle} aria-hidden="true"></div>
+
+  <div class="hero {wiping ? 'leaving' : ''}" bind:this={heroEl}>
     <h1 class="title">Welcome to SocialQ</h1>
 
-    <!-- even, non-jittery bars -->
     <div class="dash" aria-hidden="true">
       {#each Array(SEGMENTS) as _, i}
         <span class="seg" style="--i:{i}"></span>
@@ -193,7 +237,11 @@
     </div>
 
     <p class="subtitle">Learn, practice, and level up your social–emotional skills.</p>
-    <button class="cta" on:click|preventDefault={(e) => { ripple(e); start(); }}>
+    <button
+      class="cta"
+      on:click|preventDefault={startWithTransition}
+      aria-label="Get started"
+    >
       Get Started
     </button>
   </div>
