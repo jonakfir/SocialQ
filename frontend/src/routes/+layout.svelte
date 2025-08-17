@@ -3,28 +3,22 @@
   import { page } from '$app/stores';
   import Header from '$lib/components/Header.svelte';
 
-  export let data; // { user } from +layout.ts
+  export let data;
 
-  function norm(p) {
-    if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-    return p.toLowerCase();
-  }
-
-  $: path = norm($page.url.pathname);
   const HIDE = new Set(['/', '/login', '/create-account']);
-  $: hideHeader = HIDE.has(path);
+  $: hideHeader = HIDE.has(($page.url.pathname || '/').replace(/\/$/, '').toLowerCase());
 </script>
 
 <svelte:head>
   <title>SocialQ</title>
 
-  <!-- Favicons (put these files in /static) -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="icon" sizes="any" href="/favicon.ico" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <!-- Favicons (must exist in /static) -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1" />
+  <link rel="icon" sizes="any" href="/favicon.ico?v=1" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1" />
 
-  <!-- Global styles -->
-  <link rel="stylesheet" href="/static/style.css" />
+  <!-- Your global CSS served from /static/style.css -> /style.css -->
+  <link rel="stylesheet" href="/style.css" />
 </svelte:head>
 
 {#if !hideHeader}
