@@ -12,11 +12,6 @@
 <svelte:head>
   <title>SocialQ</title>
 
-  <!-- Favicons (must exist in /static) -->
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1" />
-  <link rel="icon" sizes="any" href="/favicon.ico?v=1" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1" />
-
   <!-- Your global CSS served from /static/style.css -> /style.css -->
   <link rel="stylesheet" href="/style.css" />
 </svelte:head>
