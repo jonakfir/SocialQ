@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import Header from '$lib/components/Header.svelte';
 
-  export let data; // <- get { user } from +layout.ts
+  export let data; // { user } from +layout.ts
 
   function norm(p) {
     if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
@@ -17,13 +17,18 @@
 
 <svelte:head>
   <title>SocialQ</title>
-  <link rel="stylesheet" href="/style.css" />
+
+  <!-- Favicons (put these files in /static) -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" sizes="any" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- Global styles -->
+  <link rel="stylesheet" href="/static/style.css" />
 </svelte:head>
 
 {#if !hideHeader}
-  <!-- pass the user down -->
-  <Header user={data.user} />
+  <Header user={data?.user} />
 {/if}
 
 <slot />
-
