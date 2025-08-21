@@ -20,6 +20,9 @@
   let loading = true;
   let loadError = '';
 
+  // instructions modal gate
+  let instructionsOpen = true;
+
   // ---- helpers ----
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
@@ -100,7 +103,8 @@
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
       localStorage.removeItem('fr_picks'); // clear old picks
 
-      startTimer();
+      // wait for instructions dismissal before starting Level 5 timer
+      if (!instructionsOpen) startTimer();
     } catch (err: any) {
       loadError = err?.message ?? 'Failed to load quiz.';
     } finally {
@@ -108,8 +112,15 @@
     }
   });
 
+  function closeInstructions() {
+    instructionsOpen = false;
+    // start timer only after user closes instructions
+    if (difficulty === '5' && quizData.length) startTimer();
+  }
+
   // ---- interactions ----
   function selectOption(option: string) {
+    if (instructionsOpen) return; // gated until instructions closed
     userAnswers[currentIndex] = option;
 
     // keep a live copy of picks so refreshes don't lose state
@@ -118,6 +129,7 @@
   }
 
   function nextQuestion() {
+    if (instructionsOpen) return;
     if (!userAnswers[currentIndex]) {
       alert('Please select an option before continuing!');
       return;
@@ -131,6 +143,7 @@
   }
 
   function backQuestion() {
+    if (instructionsOpen) return;
     if (currentIndex > 0) {
       currentIndex--;
       startTimer();
@@ -198,6 +211,7 @@
   :root{
     --brand: #4f46e5;
     --brand-strong: #7c3aed;
+    --brand2: #22d3ee;
   }
 
   .quiz-box,
@@ -216,10 +230,14 @@
     width: 90%;
     max-width: 750px;
     padding: 30px;
-    background: rgba(255, 255, 255, 0.6);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.60), rgba(255,255,255,.52)),
+      radial-gradient(1200px 800px at 12% 0%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(1200px 800px at 88% 20%, rgba(34,211,238,.10), transparent 60%);
     backdrop-filter: blur(20px);
-    border-radius: 90px;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    border-radius: 24px;
+    border: 1px solid rgba(255,255,255,.75);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
     margin: 28px auto;
   }
 
@@ -274,6 +292,9 @@
     color: #fff;
     box-shadow: 0 6px 18px rgba(124,58,237,.28);
   }
+  .option-btn[disabled]{
+    opacity:.7; cursor:not-allowed; filter: grayscale(.1);
+  }
 
   .next-btn,
   .back-question-btn {
@@ -294,6 +315,7 @@
     border-color: var(--brand);
   }
   .next-btn:hover { filter: brightness(1.05); }
+  .next-btn[disabled]{ opacity:.7; cursor:not-allowed; }
 
   .back-question-btn {
     background: #e5e7eb;
@@ -301,6 +323,7 @@
     border-color: #111827;
   }
   .back-question-btn:hover { background: #fff; }
+  .back-question-btn[disabled]{ opacity:.7; cursor:not-allowed; }
 
   .nav-row {
     display: flex;
@@ -359,6 +382,71 @@
     font-size:0.95rem;
     color:var(--brand);
   }
+
+  /* colorful page backdrop behind blobs */
+  :global(body){
+    background:
+      radial-gradient(1200px 800px at 20% 0%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(1200px 800px at 80% 30%, rgba(34,211,238,.12), transparent 60%),
+      #f7f7fb;
+  }
+
+  /* modal */
+  .modal-backdrop{
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
+      radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
+      rgba(0,0,0,.45);
+    display: grid; place-items: center;
+    z-index: 50;
+    animation: fadeIn .18s ease;
+  }
+  .modal{
+    width: min(640px, 94vw);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
+      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
+      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
+    border: 1px solid rgba(79,70,229,.28);
+    border-radius: 16px;
+    box-shadow: 0 24px 68px rgba(0,0,0,.35);
+    padding: 18px 18px 14px;
+    text-align: left;
+    color: #0f172a;
+    animation: pop .18s ease;
+  }
+  .modal-header{
+    display:flex; align-items:center; gap:10px; margin-bottom: 6px;
+  }
+  .badge{
+    width: 34px; height: 34px; border-radius: 9999px;
+    display:grid; place-items:center;
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    box-shadow: 0 6px 18px rgba(79,70,229,.35);
+    color: #fff; font-size: 18px;
+  }
+  .modal h3{ margin: 0; font-size: 1.25rem; }
+  .modal-body{
+    color:#111; line-height:1.55; padding: 6px 2px 0;
+  }
+  .modal-body ul{ margin: 0; padding-left: 18px; }
+  .modal-body li{ margin: 6px 0; }
+  .modal-actions{
+    display:flex; justify-content:flex-end; gap:8px; margin-top: 12px;
+  }
+  .action{
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    color:#fff; border: none; border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
+  .action:active{ transform: translateY(1px); }
+
+  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
+  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
 </style>
 
 {#if loading}
@@ -386,7 +474,7 @@
     {/if}
   </div>
 
-  <div class="dashboard-box quiz-box">
+  <div class="dashboard-box quiz-box" aria-disabled={instructionsOpen}>
     <div class="progress-bar">
       {#each quizData as _, i}
         <div class="dot {i <= currentIndex ? 'active' : ''}"></div>
@@ -403,13 +491,37 @@
       {#each quizData[currentIndex].options as option}
         <button
           class="option-btn {userAnswers[currentIndex] === option ? 'selected' : ''}"
-          on:click={() => selectOption(option)}>{option}</button>
+          on:click={() => selectOption(option)}
+          disabled={instructionsOpen}
+        >{option}</button>
       {/each}
     </div>
 
     <div class="nav-row">
-      <button class="back-question-btn" on:click={backQuestion} disabled={currentIndex === 0}>Back</button>
-      <button class="next-btn" on:click={nextQuestion}>Next</button>
+      <button class="back-question-btn" on:click={backQuestion} disabled={instructionsOpen || currentIndex === 0}>Back</button>
+      <button class="next-btn" on:click={nextQuestion} disabled={instructionsOpen}>Next</button>
     </div>
   </div>
+
+  <!-- colorful instructions modal -->
+  {#if instructionsOpen}
+    <div class="modal-backdrop" on:click={closeInstructions}>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
+        <div class="modal-header">
+          <div class="badge">🧠</div>
+          <h3>How to play</h3>
+        </div>
+        <div class="modal-body">
+          <ul>
+            <li>Select the correct answer choice of emotion for the face that is shown.</li>
+            <li>Increase the difficulty for a harder quiz and decrease it for an easier quiz.</li>
+            <li>On the hardest level you have five seconds per question.</li>
+          </ul>
+        </div>
+        <div class="modal-actions">
+          <button class="action" type="button" on:click={closeInstructions}>Got it</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 {/if}

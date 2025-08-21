@@ -13,12 +13,15 @@
   // ---------- state ----------
   let currentIndex = 0;
   let showOverlay = true;
-  let evaluating = false;          // lock while countdown/eval runs
+  let evaluating = false;          // lock while countdown or eval runs
   let lastResult: any = null;
+
+  // instructions modal
+  let instructionsOpen = true;
 
   // targets returned by your /ekman endpoint
   type Target = { img: string; label?: string; difficulty?: string; correct?: string; emotion?: string; name?: string; answer?: string };
-  let difficulty = '4';
+  let difficulty = '1';
   let targets: Target[] = [];
 
   // scoring
@@ -26,7 +29,6 @@
   let score = 0;
 
   // ---------- helpers: emotions ----------
-  // map any synonyms Human might return -> our canonical label
   const EMO_MAP: Record<string, string> = {
     happy: 'happy',
     happiness: 'happy',
@@ -42,16 +44,13 @@
   };
   function normEmotion(s?: string | null) {
     const k = (s || '').toLowerCase().trim();
-    return EMO_MAP[k] ?? k; // fall back to whatever Human gives
+    return EMO_MAP[k] ?? k;
   }
   function topEmotionFrom(result: any): string | null {
     const face = result?.face?.[0];
     const arr = Array.isArray(face?.emotion) ? face.emotion : [];
     if (!arr.length) return null;
-    const best = arr.reduce(
-      (a: any, b: any) => (b.score > a.score ? b : a),
-      arr[0]
-    );
+    const best = arr.reduce((a: any, b: any) => (b.score > a.score ? b : a), arr[0]);
     return normEmotion(best?.emotion);
   }
 
@@ -88,9 +87,7 @@
       audio: false
     });
     video.srcObject = stream;
-    await new Promise<void>((r) => {
-      video.onloadedmetadata = () => r();
-    });
+    await new Promise<void>((r) => { video.onloadedmetadata = () => r(); });
     await video.play();
 
     // 4) canvas
@@ -122,17 +119,12 @@
 
     // 7) draw loop
     (async function drawLoop() {
-      // keep a live result so overlay looks responsive; scoring happens at countdown zero
       try {
         lastResult = await human.detect(video);
-      } catch (e) {
-        // swallow occasional WebGL hiccups
-      }
+      } catch (e) { /* ignore occasional hiccups */ }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // draw video
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      // overlay
       if (showOverlay && lastResult) {
         try { human.draw.all(canvas, lastResult); } catch {}
       }
@@ -145,6 +137,21 @@
   function setTargetImage(i: number) {
     const el = document.querySelector<HTMLImageElement>('.target-face');
     if (el && targets[i]) el.src = targets[i].img;
+  }
+
+  function logFramesFor(ms: number) {
+    const end = performance.now() + ms;
+    let frame = 0;
+    const tick = () => {
+      if (performance.now() >= end) return;
+      try {
+        console.log('countdown frame', frame++, structuredClone(lastResult));
+      } catch {
+        console.log('countdown frame', frame++, lastResult);
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   function renderDots() {
@@ -167,38 +174,27 @@
   async function evaluateCurrent() {
     const result = await human.detect(video);
 
-    // normalize target label from multiple possible fields
     const t = targets[currentIndex] || {};
-    const labelRaw =
-      (t as any).correct ?? t.label ?? t.emotion ?? t.name ?? t.answer ?? '';
+    const labelRaw = (t as any).correct ?? t.label ?? t.emotion ?? t.name ?? t.answer ?? '';
     const target = normEmotion(labelRaw);
 
-    // top predicted, normalized
     const predicted = normEmotion(topEmotionFrom(result));
 
-    // second best if present
     let predicted2: string | null = null;
     const emo = result?.face?.[0]?.emotion;
     if (Array.isArray(emo) && emo.length > 1) {
       predicted2 = normEmotion(emo[1]?.emotion || '');
     }
 
-    const correct =
-      (!!predicted && predicted === target) ||
-      (!!predicted2 && predicted2 === target);
-
+    const correct = (!!predicted && predicted === target) || (!!predicted2 && predicted2 === target);
     results.push(!!correct);
     if (correct) score += 1;
-
-    // console.log({ target, predicted, predicted2, score });
   }
 
   function finish() {
-    // Use mirroring-specific keys so we never collide with Facial Recognition
     localStorage.setItem('mirroring_results', JSON.stringify(results));
     localStorage.setItem('mirroring_score', String(score));
     localStorage.setItem('mirroring_total', String(targets.length));
-
     goto('/mirroring/results');
   }
 
@@ -214,12 +210,14 @@
 
   // ---------- countdown ----------
   function startCountdown() {
-    if (evaluating) return; // prevent double taps
+    if (evaluating || instructionsOpen) return; // block until instructions dismissed
     evaluating = true;
 
     let cnt = 3;
     countdown.style.display = 'block';
     countdown.textContent = String(cnt);
+
+    logFramesFor(3000);
 
     const iv = setInterval(() => {
       cnt -= 1;
@@ -228,10 +226,9 @@
       } else {
         clearInterval(iv);
         countdown.textContent = 'Go!';
-
         setTimeout(async () => {
           countdown.style.display = 'none';
-          await evaluateCurrent();   // EVALUATE HERE
+          await evaluateCurrent();
           evaluating = false;
           nextTarget();
         }, 450);
@@ -246,7 +243,7 @@
   <title>Mirroring Game – SocialQ</title>
 </svelte:head>
 
-<!-- background blobs (your existing ones) -->
+<!-- background blobs already on page -->
 <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
 <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
@@ -264,7 +261,7 @@
   </div>
 
   <div class="controls">
-    <button class="record-btn" on:click={startCountdown} aria-label="Start countdown"></button>
+    <button class="record-btn" on:click={startCountdown} aria-label="Start countdown" disabled={instructionsOpen}></button>
     <button class="toggle-ui" on:click={() => (showOverlay = !showOverlay)}>
       {showOverlay ? 'Hide UI' : 'Show UI'}
     </button>
@@ -272,21 +269,69 @@
   </div>
 </div>
 
+<!-- instructions modal -->
+{#if instructionsOpen}
+  <div class="modal-backdrop" on:click={() => (instructionsOpen = false)}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
+      <div class="modal-header">
+        <div class="badge">🪞</div>
+        <h3>How to play</h3>
+      </div>
+      <div class="modal-body">
+        <ul>
+          <li>Mirror the picture as close as possible.</li>
+          <li>When you are ready click the red button to start a countdown.</li>
+          <li>At the end you will get a score.</li>
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="action" type="button" on:click={() => (instructionsOpen = false)}>Got it</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  :global(body) { margin: 0; background: #fdfcfc; overflow: hidden; font-family: Arial, sans-serif; }
+  :root{
+    --brand: #4f46e5;
+    --brand2: #22d3ee;
+    --ink: #0f172a;
+    --glass: rgba(255,255,255,0.32);
+    --glass-strong: rgba(255,255,255,0.48);
+  }
+
+  :global(body) {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    overflow: hidden;
+    /* soft colorful backdrop behind your blobs */
+    background:
+      radial-gradient(1200px 800px at 20% 0%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(1200px 800px at 80% 30%, rgba(34,211,238,.12), transparent 60%),
+      #f7f7fb;
+  }
 
   .header {
     position: absolute; top: 0; width: 100%;
     display: flex; justify-content: center; align-items: center;
     padding: 12px 20px; z-index: 10;
   }
-  .header h1 { margin: 0; color: #fff; font-family: Georgia, serif; font-size: 3.2rem;
-    text-shadow: 0 3px 8px rgba(0,0,0,.6); }
+  .header h1 {
+    margin: 0; color: #fff; font-family: Georgia, serif; font-size: 3.2rem;
+    text-shadow: 0 3px 8px rgba(0,0,0,.6);
+  }
 
   .mirroring-container {
     position: absolute; top: 100px; bottom: 40px; left: 150px; right: 150px;
-    background: rgba(255,255,255,0.32); backdrop-filter: blur(20px);
-    border-radius: 16px; box-shadow: 0 8px 40px rgba(0,0,0,.5);
+    /* prettier glass with gentle color */
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.22)),
+      radial-gradient(1200px 800px at 10% 0%, rgba(79,70,229,.12), transparent 60%),
+      radial-gradient(1200px 800px at 90% 20%, rgba(34,211,238,.12), transparent 60%);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,.6);
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.45);
     display: flex; flex-direction: column; justify-content: space-between; align-items: center;
     z-index: 5; overflow: hidden;
   }
@@ -299,6 +344,7 @@
   canvas {
     position: absolute; width: 100%; height: auto; object-fit: cover;
     border-radius: 12px; z-index: 2; pointer-events: none;
+    box-shadow: 0 2px 18px rgba(0,0,0,.2) inset;
   }
 
   .target-face {
@@ -315,16 +361,84 @@
   .controls { padding: 16px; z-index: 6; display: flex; flex-direction: column; align-items: center; }
 
   .record-btn {
-    width: 52px; height: 52px; background: red; border: none; border-radius: 50%;
+    width: 52px; height: 52px; background: #ef4444; border: none; border-radius: 50%;
     box-shadow: 0 4px 12px rgba(0,0,0,.6); cursor: pointer; margin-bottom: 12px;
+    transition: transform .08s ease, filter .2s ease;
   }
+  .record-btn:hover { transform: translateY(-1px); }
+  .record-btn[disabled]{ opacity: .6; cursor: not-allowed; filter: grayscale(0.1); }
 
   .toggle-ui {
-    background: rgba(255,255,255,.9); border: 1px solid #111; border-radius: 8px;
-    padding: 6px 12px; cursor: pointer; margin-bottom: 12px;
+    background: linear-gradient(135deg, rgba(255,255,255,.96), #f5f3ff);
+    border: 1px solid rgba(79,70,229,.35);
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer; margin-bottom: 12px;
+    color: var(--ink);
+    box-shadow: 0 6px 18px rgba(79,70,229,.15);
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
   }
+  .toggle-ui:hover { filter: brightness(1.02); box-shadow: 0 10px 26px rgba(79,70,229,.22); }
+  .toggle-ui:active { transform: translateY(1px); }
 
   .progress-bar { display: flex; gap: 8px; }
-  .dot { width: 40px; height: 8px; background: #ddd; border-radius: 4px; transition: background .3s ease; }
-  .dot.active { background: #4f46e5; }
+  .dot { width: 40px; height: 8px; background: #e5e7eb; border-radius: 4px; transition: background .3s ease; }
+  .dot.active { background: var(--brand); }
+
+  /* modal styles with color */
+  .modal-backdrop{
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
+      radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
+      rgba(0,0,0,.45);
+    display: grid; place-items: center;
+    z-index: 50;
+    animation: fadeIn .18s ease;
+  }
+  .modal{
+    width: min(640px, 94vw);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
+      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
+      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
+    border: 1px solid rgba(79,70,229,.28);
+    border-radius: 16px;
+    box-shadow: 0 24px 68px rgba(0,0,0,.35);
+    padding: 18px 18px 14px;
+    text-align: left;
+    color: var(--ink);
+    animation: pop .18s ease;
+  }
+  .modal-header{
+    display:flex; align-items:center; gap:10px; margin-bottom: 6px;
+  }
+  .badge{
+    width: 34px; height: 34px; border-radius: 9999px;
+    display:grid; place-items:center;
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    box-shadow: 0 6px 18px rgba(79,70,229,.35);
+    color: #fff; font-size: 18px;
+  }
+  .modal h3{ margin: 0; font-size: 1.25rem; }
+  .modal-body{
+    color:#111; line-height:1.55; padding: 6px 2px 0;
+  }
+  .modal-body ul{ margin: 0; padding-left: 18px; }
+  .modal-body li{ margin: 6px 0; }
+  .modal-actions{
+    display:flex; justify-content:flex-end; gap:8px; margin-top: 12px;
+  }
+  .action{
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    color:#fff; border: none; border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
+  .action:active{ transform: translateY(1px); }
+
+  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
+  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
 </style>

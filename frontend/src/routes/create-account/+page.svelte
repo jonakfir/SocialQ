@@ -9,6 +9,47 @@
   let loading = false;
   let cardEl: HTMLDivElement | null = null;
 
+  // terms and modal
+  let accepted = false;
+  let termsOpen = false;
+
+  // motion and pointer checks for tilt
+  let motionOK = true;
+  let finePointer = true;
+  if (typeof window !== 'undefined') {
+    motionOK    = matchMedia('(prefers-reduced-motion: no-preference)').matches;
+    finePointer = matchMedia('(pointer: fine)').matches;
+  }
+
+  let rafId = 0;
+  function handleTilt(e: MouseEvent) {
+    if (!cardEl || !motionOK || !finePointer) return;
+    const r = cardEl.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+
+    const ry = (px - 0.5) * 5;
+    const rx = (0.5 - py) * 3;
+    const gx = px * 100;
+    const gy = py * 100;
+
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        cardEl!.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+        cardEl!.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+        cardEl!.style.setProperty('--gx', gx.toFixed(1) + '%');
+        cardEl!.style.setProperty('--gy', gy.toFixed(1) + '%');
+        rafId = 0;
+      });
+    }
+  }
+
+  function resetTilt() {
+    if (!cardEl) return;
+    cardEl.style.setProperty('--rx', '0deg');
+    cardEl.style.setProperty('--ry', '0deg');
+  }
+
   // Button ripple action
   function ripple(node: HTMLElement) {
     function onClick(e: MouseEvent) {
@@ -32,9 +73,14 @@
     e.preventDefault();
     error = '';
     const u = username.trim();
-    const p = password; // allow spaces if they want
+    const p = password;
     if (!u || !p) {
       error = 'Please enter a username and password.';
+      bump();
+      return;
+    }
+    if (!accepted) {
+      error = 'Please accept the Terms and Conditions.';
       bump();
       return;
     }
@@ -63,7 +109,6 @@
   function bump() {
     if (!cardEl) return;
     cardEl.classList.remove('shake');
-    // force reflow to restart animation
     void cardEl.offsetWidth;
     cardEl.classList.add('shake');
   }
@@ -83,6 +128,7 @@
     place-items: center;
     padding: 24px;
     z-index: 1;
+    perspective: 1000px; /* tilt depth */
   }
 
   .card{
@@ -96,7 +142,25 @@
     text-align: center;
     box-sizing: border-box;
     will-change: transform, opacity;
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform .12s ease, box-shadow .2s ease;
+    position: relative;
   }
+
+  /* soft glare */
+  .card::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(300px circle at var(--gx,50%) var(--gy,50%), rgba(255,255,255,.28), transparent 60%);
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+  .card:hover::before{ opacity: 1; }
+  .card:hover{ box-shadow: 0 18px 56px rgba(0,0,0,.28); }
 
   .title{
     font-size: 3.2rem;
@@ -134,9 +198,24 @@
     transform: translateY(-1px);
   }
 
+  .terms{
+    display:flex;
+    align-items:center;
+    text-align:left;
+    gap:10px;
+    font-size: 14px;
+    color:#111;
+    background: rgba(255,255,255,.85);
+    border: 1px solid rgba(17,17,17,.12);
+    padding: 10px 12px;
+    border-radius: 12px;
+  }
+  .terms input{ width:18px; height:18px; }
+  .terms a{ color:#4f46e5; text-decoration: underline; cursor: pointer; }
+
   .btn{
-    position: relative;           /* ripple container */
-    overflow: hidden;             /* clip ripple */
+    position: relative;
+    overflow: hidden;
     display:block;
     width:100%;
     padding:12px 16px;
@@ -158,10 +237,7 @@
     border-color:#4f46e5;
     color:#fff;
   }
-  .btn[disabled]{
-    opacity: .75;
-    cursor: not-allowed;
-  }
+  .btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   /* Ripple */
   .ripple{
@@ -172,9 +248,7 @@
     background: rgba(255,255,255,.55);
     pointer-events:none;
   }
-  @keyframes ripple{
-    to { transform: scale(4); opacity: 0; }
-  }
+  @keyframes ripple{ to { transform: scale(4); opacity: 0; } }
 
   /* Spinner inside primary button */
   .spinner{
@@ -195,9 +269,7 @@
   .error{ margin-top:10px; color:#b91c1c; font-weight:700; min-height: 1.2em; }
 
   /* Shake on error */
-  .shake{
-    animation: shake .5s ease;
-  }
+  .shake{ animation: shake .5s ease; }
   @keyframes shake{
     0%,100%{ transform: translateX(0); }
     20%{ transform: translateX(-6px); }
@@ -205,6 +277,27 @@
     60%{ transform: translateX(-4px); }
     80%{ transform: translateX(4px); }
   }
+
+  /* modal */
+  .modal-backdrop{
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.35);
+    display: grid;
+    place-items: center;
+    z-index: 3;
+  }
+  .modal{
+    width: min(560px, 92vw);
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    padding: 20px;
+    text-align: left;
+  }
+  .modal h3{ margin: 0 0 8px; }
+  .modal-body{ color:#111; line-height:1.5; min-height: 120px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top: 14px; }
 </style>
 
 <!-- blobs -->
@@ -215,18 +308,32 @@
 </div>
 
 <div class="auth-wrap">
-  <div class="card" bind:this={cardEl} in:fly={{ y: 28, duration: 280, opacity: 0.25 }}>
+  <div
+    class="card"
+    bind:this={cardEl}
+    in:fly={{ y: 28, duration: 280, opacity: 0.25 }}
+    on:mousemove={handleTilt}
+    on:mouseleave={resetTilt}
+  >
     <h2 class="title" in:fade={{ duration: 220 }}>Create Account</h2>
 
     <form on:submit={handleCreate} autocomplete="on" aria-busy={loading}>
       <input class="input" type="text" bind:value={username} placeholder="Username" required />
       <input class="input" type="password" bind:value={password} placeholder="Password" required />
 
+      <label class="terms">
+        <input type="checkbox" bind:checked={accepted} aria-label="Accept Terms and Conditions" />
+        <span>
+          I agree to the
+          <a href="#" on:click|preventDefault={() => (termsOpen = true)}>Terms and Conditions</a>
+        </span>
+      </label>
+
       <button
         use:ripple
         type="submit"
         class="btn primary"
-        disabled={loading}
+        disabled={loading || !accepted}
       >
         {#if loading}<span class="spinner" aria-hidden="true"></span>Creating…{:else}Create{/if}
       </button>
@@ -238,3 +345,15 @@
     <button use:ripple class="btn" type="button" on:click={() => goto('/login')}>Back to Login</button>
   </div>
 </div>
+
+{#if termsOpen}
+  <div class="modal-backdrop" transition:fade on:click={() => (termsOpen = false)}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Terms and Conditions" on:click|stopPropagation>
+      <h3>Terms and Conditions</h3>
+      <div class="modal-body">test</div>
+      <div class="modal-actions">
+        <button class="btn" type="button" on:click={() => (termsOpen = false)}>Close</button>
+      </div>
+    </div>
+  </div>
+{/if}

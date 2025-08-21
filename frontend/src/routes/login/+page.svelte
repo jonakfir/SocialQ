@@ -6,7 +6,44 @@
   let password = '';
   let error = '';
 
-  function goCreate(){ goto('/create-account'); } // fix "goCreate is not defined"
+  function goCreate(){ goto('/create-account'); }
+  function goHome(){ goto('/'); }
+
+  // tilt setup
+  let cardEl: HTMLDivElement | null = null;
+  let motionOK = true;
+  let finePointer = true;
+  if (typeof window !== 'undefined') {
+    motionOK    = matchMedia('(prefers-reduced-motion: no-preference)').matches;
+    finePointer = matchMedia('(pointer: fine)').matches;
+  }
+
+  let rafId = 0;
+  function handleTilt(e: MouseEvent) {
+    if (!cardEl || !motionOK || !finePointer) return;
+    const r = cardEl.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    const ry = (px - 0.5) * 5;
+    const rx = (0.5 - py) * 3;
+    const gx = px * 100;
+    const gy = py * 100;
+
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        cardEl!.style.setProperty('--rx', rx.toFixed(2) + 'deg');
+        cardEl!.style.setProperty('--ry', ry.toFixed(2) + 'deg');
+        cardEl!.style.setProperty('--gx', gx.toFixed(1) + '%');
+        cardEl!.style.setProperty('--gy', gy.toFixed(1) + '%');
+        rafId = 0;
+      });
+    }
+  }
+  function resetTilt() {
+    if (!cardEl) return;
+    cardEl.style.setProperty('--rx', '0deg');
+    cardEl.style.setProperty('--ry', '0deg');
+  }
 
   async function handleLogin(e: Event) {
     e.preventDefault();
@@ -30,13 +67,15 @@
 
 <style>
   .blobs { position: fixed; inset: 0; pointer-events: none; }
+
   .auth-wrap{
-    position: fixed;      /* fill the viewport regardless of page height */
-    inset: 0;             /* top right bottom left = 0 */
+    position: fixed;
+    inset: 0;
     display: grid;
-    place-items: center;  /* center both axes */
+    place-items: center;
     padding: 24px;
-    z-index: 1;           /* keep above the blobs */
+    z-index: 1;
+    perspective: 1000px; /* depth for tilt */
   }
 
   .card {
@@ -49,7 +88,27 @@
     box-shadow: 0 14px 48px rgba(0,0,0,.18);
     text-align: center;
     box-sizing: border-box;
+
+    /* tilt */
+    position: relative;
+    transform-style: preserve-3d;
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform .12s ease, box-shadow .2s ease;
   }
+
+  /* glare */
+  .card::before{
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(300px circle at var(--gx,50%) var(--gy,50%), rgba(255,255,255,.28), transparent 60%);
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+  .card:hover::before{ opacity: 1; }
+  .card:hover{ box-shadow: 0 18px 56px rgba(0,0,0,.28); }
 
   .title {
     font-size: 3.9rem;
@@ -76,6 +135,7 @@
     background: #fff; color: #111; transition: transform .05s ease, filter .2s ease, background .2s ease;
     box-sizing: border-box;
   }
+  .btn + .btn { margin-top: 10px; } /* small gap between stacked buttons */
   .btn:hover { filter: brightness(1.03); }
   .btn:active { transform: translateY(1px); }
   .btn.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
@@ -91,10 +151,14 @@
 </div>
 
 <div class="auth-wrap">
-  <div class="card">
+  <div
+    class="card"
+    bind:this={cardEl}
+    on:mousemove={handleTilt}
+    on:mouseleave={resetTilt}
+  >
     <h2 class="title">Login</h2>
 
-    <!-- use the correctly named handler -->
     <form on:submit={handleLogin} autocomplete="on">
       <input class="input" type="text" bind:value={username} placeholder="Username" required />
       <input class="input" type="password" bind:value={password} placeholder="Password" required />
@@ -106,7 +170,7 @@
     {/if}
 
     <p class="muted">No account yet?</p>
-    <!-- navigate with goto to avoid any form quirks -->
     <button class="btn" type="button" on:click={goCreate}>Create Account</button>
+    <button class="btn" type="button" on:click={goHome}>Back to Home</button>
   </div>
 </div>

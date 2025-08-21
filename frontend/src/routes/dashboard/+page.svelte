@@ -23,7 +23,8 @@
   const items = [
     { label: 'Mirroring Game', path: '/mirroring/settings' },
     { label: 'Recognition Quiz', path: '/facial-recognition/settings' },
-    { label: 'Transition Recognition', path: '/transition-recognition/settings' }
+    { label: 'Transition Recognition', path: '/transition-recognition/settings' },
+    { label: 'Training', path: '/training/training-pick-emotion' }
   ];
 
   function tcfg(i: number) {
@@ -237,6 +238,7 @@
 
     {#if !ready}
       <div class="stack">
+        <div class="skeleton"></div>
         <div class="skeleton"></div>
         <div class="skeleton"></div>
         <div class="skeleton"></div>

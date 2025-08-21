@@ -18,6 +18,9 @@
   let loading = true;
   let loadError = '';
 
+  // instructions modal (blocks UI until dismissed)
+  let instructionsOpen = true;
+
   // user selections
   let guessFrom: (Emotion | null)[] = [];
   let guessTo:   (Emotion | null)[] = [];
@@ -37,7 +40,6 @@
   }
 
   async function captureFromUrl(url: string): Promise<{ start?: string; end?: string }> {
-    // keep the video in DOM (hidden) for best WebKit compatibility
     const v = document.createElement('video');
     Object.assign(v.style, { position: 'fixed', left: '-9999px', top: '0', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
     v.crossOrigin = 'anonymous';
@@ -107,7 +109,7 @@
   let firstOrigin: string | null = null;
 
   function startTimer() {
-    if (level !== 'challenge') return;
+    if (level !== 'challenge') { timeLeft = LIMIT; return; }
     stopTimer();
     timeLeft = LIMIT;
     timerId = window.setInterval(() => {
@@ -122,6 +124,7 @@
 
   function next(auto = false) {
     if (!auto) {
+      if (instructionsOpen) return;
       if (!guessFrom[current] || !guessTo[current]) {
         alert('Pick BOTH the starting and ending emotions.');
         return;
@@ -130,12 +133,12 @@
     if (current < clips.length - 1) { current += 1; startTimer(); }
     else { finish(); }
   }
-  function back() { if (current > 0) { current -= 1; startTimer(); } }
+  function back() { if (!instructionsOpen && current > 0) { current -= 1; startTimer(); } }
 
   let videoEl: HTMLVideoElement | null = null;
   function ensurePlays() { videoEl?.play().catch(() => {}); }
   function replay() {
-    if (!videoEl) return;
+    if (instructionsOpen || !videoEl) return;
     try { videoEl.pause(); videoEl.currentTime = 0; videoEl.play(); } catch {}
   }
 
@@ -155,12 +158,10 @@
       results.push([okFrom, okTo]);
     });
 
-    // Used by /results
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(scoreNum));
     localStorage.setItem('quiz_total', String(clips.length));
 
-    // Thumbnails for stats (captured off-screen AFTER quiz)
     const { starts, ends } = await captureBatch(clips.map(c => c.media));
 
     const rows = clips.map((c, i) => {
@@ -170,19 +171,14 @@
       const pEnd   = pickedTo[i];
 
       return {
-        // thumbs
         startImg: starts[i],
         endImg:   ends[i],
-
-        // legacy names your stats page reads
         from: c.from,
         to: c.to,
         pickedFrom: pStart,
         pickedTo:   pEnd,
         okFrom,
         okTo,
-
-        // unified names if you ever switch
         correctStart: c.from,
         correctEnd:   c.to,
         pickedStart:  pStart,
@@ -231,7 +227,6 @@
 
       if (!clips.length) throw new Error('No transition videos found.');
 
-      // host hints for faster first paint
       firstOrigin = new URL(clips[0].media, location.href).origin;
 
       guessFrom = Array(clips.length).fill(null);
@@ -239,7 +234,7 @@
       startChoices = clips.map(c => makeChoices(c.from));
       endChoices   = clips.map(c => makeChoices(c.to));
 
-      startTimer();
+      // timer will start after instructions are closed
     } catch (e: any) {
       loadError = e?.message ?? 'Failed to load transitions.';
     } finally {
@@ -249,8 +244,13 @@
 
   onDestroy(stopTimer);
 
-  function chooseFrom(e: Emotion) { guessFrom[current] = e; }
-  function chooseTo(e: Emotion)   { guessTo[current]   = e; }
+  function chooseFrom(e: Emotion) { if (!instructionsOpen) guessFrom[current] = e; }
+  function chooseTo(e: Emotion)   { if (!instructionsOpen) guessTo[current]   = e; }
+
+  function closeInstructions() {
+    instructionsOpen = false;
+    startTimer();
+  }
 </script>
 
 <svelte:head>
@@ -267,12 +267,21 @@
 <style>
   @import '/static/style.css';
 
+  :root{
+    --brand: #4f46e5;
+    --brand2: #22d3ee;
+    --ink: #0f172a;
+  }
+
   .panel{
     width: min(980px, 92vw);
     max-height: 88vh;
     margin: 4vh auto;
     padding: 24px clamp(20px, 4vw, 36px);
-    background: rgba(255,255,255,0.6);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.60), rgba(255,255,255,.48)),
+      radial-gradient(1200px 800px at 10% 0%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(1200px 800px at 90% 20%, rgba(34,211,238,.10), transparent 60%);
     backdrop-filter: blur(18px);
     border-radius: 28px;
     box-shadow: 0 10px 40px rgba(0,0,0,.15);
@@ -373,6 +382,7 @@
   .pill.selected, .pill:hover{
     background:#7c3aed; color:#fff; border-color:#7c3aed; box-shadow:0 6px 18px rgba(124,58,237,.28);
   }
+  .pill[disabled]{ opacity:.6; cursor:not-allowed; }
 
   .nav-row{ display:flex; justify-content:center; gap:12px; margin-top:6px; }
   .btn{ padding: 12px 20px; border-radius: 9999px; font-weight: 800; border: 2px solid transparent; cursor: pointer; }
@@ -380,6 +390,58 @@
   .primary:hover{ filter: brightness(1.05); }
   .ghost{ background:#e5e7eb; color:#111827; border-color:#111827; }
   .ghost:hover{ background:#fff; }
+  .btn[disabled]{ opacity:.6; cursor:not-allowed; }
+
+  /* modal styles (same look as other quizzes) */
+  .modal-backdrop{
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
+      radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
+      rgba(0,0,0,.45);
+    display: grid; place-items: center;
+    z-index: 50;
+    animation: fadeIn .18s ease;
+  }
+  .modal{
+    width: min(640px, 94vw);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
+      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
+      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
+    border: 1px solid rgba(79,70,229,.28);
+    border-radius: 16px;
+    box-shadow: 0 24px 68px rgba(0,0,0,.35);
+    padding: 18px 18px 14px;
+    text-align: left;
+    color: var(--ink);
+    animation: pop .18s ease;
+  }
+  .modal-header{ display:flex; align-items:center; gap:10px; margin-bottom: 6px; }
+  .badge{
+    width: 34px; height: 34px; border-radius: 9999px;
+    display:grid; place-items:center;
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    color: #fff; font-size: 18px;
+  }
+  .modal h3{ margin: 0; font-size: 1.25rem; }
+  .modal-body{ color:#111; line-height:1.55; padding: 6px 2px 0; }
+  .modal-body ul{ margin: 0; padding-left: 18px; }
+  .modal-body li{ margin: 6px 0; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top: 12px; }
+  .action{
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    color:#fff; border: none; border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
+  .action:active{ transform: translateY(1px); }
+
+  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
+  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
 </style>
 
 <!-- blobs -->
@@ -392,7 +454,7 @@
 {:else if loadError}
   <div class="panel">Error: {loadError}</div>
 {:else if clips[current]}
-  <div class="panel">
+  <div class="panel" aria-disabled={instructionsOpen}>
     <div class="progress-bar">
       {#each clips as _, i}
         <div class="dot {i < current ? 'done' : i === current ? 'active' : ''}"></div>
@@ -426,21 +488,29 @@
       <div class="group-label">Starting emotion</div>
       <div class="options row3">
         {#each startChoices[current] as e}
-          <button class="pill {guessFrom[current] === e ? 'selected' : ''}" on:click={() => chooseFrom(e)}>{e}</button>
+          <button
+            class="pill {guessFrom[current] === e ? 'selected' : ''}"
+            disabled={instructionsOpen}
+            on:click={() => chooseFrom(e)}
+          >{e}</button>
         {/each}
       </div>
 
       <div class="group-label">Ending emotion</div>
       <div class="options row3">
         {#each endChoices[current] as e}
-          <button class="pill {guessTo[current] === e ? 'selected' : ''}" on:click={() => chooseTo(e)}>{e}</button>
+          <button
+            class="pill {guessTo[current] === e ? 'selected' : ''}"
+            disabled={instructionsOpen}
+            on:click={() => chooseTo(e)}
+          >{e}</button>
         {/each}
       </div>
 
       <div class="nav-row">
-        <button class="btn ghost" on:click={replay}>Replay</button>
-        <button class="btn ghost" on:click={back} disabled={current === 0}>Back</button>
-        <button class="btn primary" on:click={() => next(false)}>Next</button>
+        <button class="btn ghost" on:click={replay} disabled={instructionsOpen}>Replay</button>
+        <button class="btn ghost" on:click={back} disabled={current === 0 || instructionsOpen}>Back</button>
+        <button class="btn primary" on:click={() => next(false)} disabled={instructionsOpen}>Next</button>
       </div>
     </div>
 
@@ -451,4 +521,25 @@
       {/each}
     </div>
   </div>
+
+  {#if instructionsOpen}
+    <div class="modal-backdrop" on:click={closeInstructions}>
+      <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
+        <div class="modal-header">
+          <div class="badge">🎬</div>
+          <h3>How to play</h3>
+        </div>
+        <div class="modal-body">
+          <ul>
+            <li>Watch the short clip showing a <strong>transition between two emotions</strong>.</li>
+            <li>Select the <strong>starting</strong> emotion and the <strong>ending</strong> emotion.</li>
+            <li>Choose <em>challenge</em> for a timer, or <em>normal</em> for a relaxed pace.</li>
+          </ul>
+        </div>
+        <div class="modal-actions">
+          <button class="action" type="button" on:click={closeInstructions}>Got it</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 {/if}

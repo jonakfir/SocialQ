@@ -1,9 +1,8 @@
 import { PUBLIC_API_URL } from '$env/static/public';
-
-const BASE = (PUBLIC_API_URL || '').replace(/\/$/, '');
-
+const ABS_BASE = (PUBLIC_API_URL || '').replace(/\/$/, '');
+const buildURL = (p: string) => (ABS_BASE ? `${ABS_BASE}${p}` : `/api${p}`);
 export async function apiFetch(path: string, init: RequestInit = {}) {
-  const url = `/api${path}`;                     // <-- always the same-origin proxy
+  const url = buildURL(path);
   const headers = new Headers(init.headers ?? {});
   if (!headers.has('content-type') && init.body && typeof init.body === 'string') {
     headers.set('content-type', 'application/json');
