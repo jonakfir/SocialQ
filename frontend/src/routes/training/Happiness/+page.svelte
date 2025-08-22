@@ -301,7 +301,7 @@
     border:1px solid rgba(255,255,255,.6);
     border-radius:16px;
     box-shadow:0 8px 40px rgba(0,0,0,.45);
-    overflow:hidden;
+    overflow:visible;
   }
 
   .pane{ position:relative; display:grid; place-items:center; overflow:visible; }
