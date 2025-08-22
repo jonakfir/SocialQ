@@ -16,7 +16,7 @@
     if (e && motionOK) ripple(e);
     localStorage.setItem('train_emotion', emotion);
     // ⬇️ Go straight to the emotion training page (folder names are capitalized)
-    goto(`/training/${encodeURIComponent(emotion)}`);
+    goto(`/training/${encodeURIComponent(emotion)}?coach=true`);  
   }
 
   // click ripple
