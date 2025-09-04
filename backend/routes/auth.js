@@ -52,18 +52,18 @@ router.get('/_health', (req, res) => {
 router.post('/register', async (req, res) => {
   console.log('POST /auth/register');
   try {
-    const { username, password } = req.body || {};
-    if (!username || !password || String(username).length < 3 || String(password).length < 6) {
-      return res.status(400).json({ error: 'Username ≥ 3 chars, password ≥ 6 chars' });
+    const { email, password } = req.body || {};
+    if (!email || !password || String(email).length < 3 || String(password).length < 6) {
+      return res.status(400).json({ error: 'Email ≥ 3 chars, password ≥ 6 chars' });
     }
 
-    const exists = findUserByUsername(username);
-    if (exists) return res.status(409).json({ error: 'Username already taken' });
+    const exists = findUserByUsername(email);
+    if (exists) return res.status(409).json({ error: 'Email already used' });
 
     const hash = await bcrypt.hash(password, 12);
-    const user = createUser({ username, password: hash }); // { id, username }
+    const user = createUser({ email, password: hash }); // { id, email }
 
-    setSessionCookie(res, { uid: user.id, un: user.username });
+    setSessionCookie(res, { uid: user.id, un: user.email });
     return res.json({ ok: true, user });
   } catch (e) {
     console.error('register error', e);
@@ -75,24 +75,24 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   console.log('POST /auth/login');
   try {
-    // Use USERNAME + PASSWORD (your DB helpers are username-based)
-    const { username, password } = req.body || {};
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Missing username or password' });
+    // Use email + PASSWORD (your DB helpers are email-based)
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing email or password' });
     }
 
-    const user = findUserByUsername(username);
+    const user = findUserByUsername(email);
     if (!user) {
-      return res.status(401).json({ error: 'Invalid username or password' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
-      return res.status(401).json({ error: 'Invalid username or password' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    setSessionCookie(res, { uid: user.id, un: user.username });
-    return res.json({ ok: true, user: { id: user.id, username: user.username } });
+    setSessionCookie(res, { uid: user.id, un: user.email });
+    return res.json({ ok: true, user: { id: user.id, email: user.email } });
   } catch (e) {
     console.error('login error', e);
     return res.status(500).json({ error: 'Server error' });
@@ -123,42 +123,42 @@ router.get('/me', (req, res) => {
   try {
     const uid = getUserIdFromCookie(req);
     if (!uid) return res.json({ user: null });
-    const user = findUserById(uid); // { id, username, password }
-    return res.json({ user: user ? { id: user.id, username: user.username } : null });
+    const user = findUserById(uid); // { id, email, password }
+    return res.json({ user: user ? { id: user.id, email: user.email } : null });
   } catch (e) {
     console.error('me error', e);
     return res.json({ user: null });
   }
 });
 
-// POST /auth/update   (update username and/or password)
+// POST /auth/update   (update email and/or password)
 router.post('/update', async (req, res) => {
   console.log('POST /auth/update');
   try {
     const uid = getUserIdFromCookie(req);
     if (!uid) return res.status(401).json({ error: 'Not authenticated' });
 
-    let { username, password } = req.body || {};
-    if (!username || String(username).length < 3) {
-      return res.status(400).json({ error: 'Username ≥ 3 chars' });
+    let { email, password } = req.body || {};
+    if (!email || String(email).length < 3) {
+      return res.status(400).json({ error: 'email ≥ 3 chars' });
     }
 
-    // If username is changing, ensure it's not taken by someone else
-    const existing = findUserByUsername(username);
+    // If email is changing, ensure it's not taken by someone else
+    const existing = findUserByUsername(email);
     if (existing && existing.id !== uid) {
-      return res.status(409).json({ error: 'Username already taken' });
+      return res.status(409).json({ error: 'email already taken' });
     }
 
     if (password && String(password).length) {
       const hash = await bcrypt.hash(password, 12);
-      db.prepare('UPDATE users SET username = ?, password = ? WHERE id = ?').run(username, hash, uid);
+      db.prepare('UPDATE users SET email = ?, password = ? WHERE id = ?').run(email, hash, uid);
     } else {
-      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, uid);
+      db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, uid);
     }
 
-    // refresh cookie with possibly new username
-    setSessionCookie(res, { uid, un: username });
-    return res.json({ ok: true, user: { id: uid, username } });
+    // refresh cookie with possibly new email
+    setSessionCookie(res, { uid, un: email });
+    return res.json({ ok: true, user: { id: uid, email } });
   } catch (e) {
     console.error('update error', e);
     return res.status(500).json({ error: 'Server error' });
