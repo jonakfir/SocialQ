@@ -82,7 +82,7 @@
 </script>
 
 <svelte:head>
-  <title>SocialQ</title>
+  <title>AboutFace</title>
 </svelte:head>
 
 <style>
@@ -225,7 +225,7 @@
   <div class="wipe {wiping ? 'show' : ''}" style={wipeStyle} aria-hidden="true"></div>
 
   <div class="hero {wiping ? 'leaving' : ''}" bind:this={heroEl}>
-    <h1 class="title">Welcome to SocialQ</h1>
+    <h1 class="title">Welcome to AboutFace</h1>
 
     <div class="dash" aria-hidden="true">
       {#each Array(SEGMENTS) as _, i}

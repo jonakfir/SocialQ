@@ -234,7 +234,7 @@
     on:mouseenter={onMouseMove}
     on:mouseleave={onMouseLeave}
   >
-    <h2>SocialQ</h2>
+    <h2>AboutFace</h2>
 
     {#if !ready}
       <div class="stack">
