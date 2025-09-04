@@ -1,5 +1,5 @@
 // backend/server.js
-require('dotenv').config();           // no custom path; optional on Railway
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -7,32 +7,34 @@ const cookieParser = require('cookie-parser');
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json());
-app.use(cookieParser());
 app.set('trust proxy', 1);
 
-// CORS
-const devDefault = 'http://localhost:5173';
-const rawOrigins =
-  process.env.FRONTEND_ORIGINS ||
-  process.env.FRONTEND_ORIGIN ||
-  devDefault;
+// Body + cookies
+app.use(express.json());
+app.use(cookieParser());
 
-// exact origins you explicitly allow
-const exactAllowed = String(rawOrigins)
+// -------- CORS --------
+// Comma-separated list of exact origins you allow (prod + preview + local)
+const RAW_ORIGINS =
+  process.env.FRONTEND_ORIGINS /* e.g. "https://yourapp.vercel.app,https://yourapp-git-main-yourteam.vercel.app" */ ||
+  process.env.FRONTEND_ORIGIN ||
+  'http://localhost:5173';
+
+const exactAllowed = String(RAW_ORIGINS)
   .split(',')
-  .map((s) => s.trim())
+  .map(s => s.trim())
   .filter(Boolean);
 
-// allow all previews under your Vercel team/project domain
-const PREVIEW_SUFFIX = '-jonathan-kfirs-projects.vercel.app'; // adjust if your suffix differs
+// Optional: allow any preview whose host ends with this suffix.
+// Example: "-jonathan-kfirs-projects.vercel.app"
+const PREVIEW_SUFFIX = process.env.VERCEL_PREVIEW_SUFFIX || ''; // empty = disabled
 
 function isAllowedOrigin(origin) {
-  if (!origin) return true; // curl/healthchecks/postman
+  if (!origin) return true; // curl, health checks, server-to-server
   try {
     const { protocol, host } = new URL(origin);
     if (exactAllowed.includes(origin)) return true;
-    if (protocol === 'https:' && host.endsWith(PREVIEW_SUFFIX)) return true; // any Vercel preview of your project
+    if (PREVIEW_SUFFIX && protocol === 'https:' && host.endsWith(PREVIEW_SUFFIX)) return true;
     if (origin.startsWith('http://localhost:')) return true;
     return false;
   } catch {
@@ -43,50 +45,40 @@ function isAllowedOrigin(origin) {
 const corsOptions = {
   origin(origin, cb) {
     if (isAllowedOrigin(origin)) return cb(null, true);
-    return cb(new Error(`CORS blocked for origin: ${origin}`), false);
+    cb(new Error(`CORS blocked for origin: ${origin}`), false);
   },
-  credentials: true, // needed for cookies
+  credentials: true
 };
 
 app.use(cors(corsOptions));
-// IMPORTANT: use the SAME options for preflight
-app.options('*', cors(corsOptions));
+app.options('*', cors(corsOptions)); // preflight
 
-// HEALTHCHECK FIRST
+// Health
 app.get('/health', (_req, res) => {
   res.status(200).json({
     ok: true,
     env: process.env.NODE_ENV || 'development',
-    time: new Date().toISOString(),
+    time: new Date().toISOString()
   });
 });
 
-// ROUTES (guarded)
-let authRoutes = require('express').Router();
-try {
-  authRoutes = require('./routes/auth'); // if this throws, server still starts
-} catch (err) {
-  console.error('[BOOT] Failed to load ./routes/auth:', err);
-}
-app.use('/auth', authRoutes);
+// Routes
+app.use('/auth', require('./routes/auth'));
 
-// 404 + Error
+// 404 + errors
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 app.use((err, _req, res, _next) => {
   console.error('[Server Error]', err?.stack || err);
   res.status(err.status || 500).json({ error: err.message || 'Server error' });
 });
 
-// Crash logging
-process.on('unhandledRejection', e => console.error('[unhandledRejection]', e));
-process.on('uncaughtException', e => console.error('[uncaughtException]', e));
-
-// LISTEN on $PORT (Railway sets this)
+// Boot
 const PORT = Number(process.env.PORT) || 8080;
 app.listen(PORT, '0.0.0.0', () => {
   console.log('========================================');
   console.log(`API listening on :${PORT}`);
-  console.log('Allowed CORS origins:', allowedOrigins.join(', ') || '(none)');
+  console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
+  if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
   console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
   console.log('========================================');
 });

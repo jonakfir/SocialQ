@@ -9,24 +9,20 @@ const router = express.Router();
 const COOKIE_NAME = 'session';
 const JWT_SECRET  = process.env.AUTH_SECRET || 'dev-change-this';
 
-// ---------------- helpers ----------------
+// ---- helpers ----
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
 
-/**
- * Only sets the cookie. DOES NOT send a response.
- * Handlers should call res.json(...) after this.
- */
 function setSessionCookie(res, payload) {
   const token = signToken(payload);
   const isProd = process.env.NODE_ENV === 'production';
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: isProd ? 'none' : 'lax', // 'lax' locally, 'none' in prod
-    secure:   isProd,                  // only true in prod (https)
+    sameSite: isProd ? 'none' : 'lax',
+    secure:   isProd,
     path: '/',
-    maxAge: 1000 * 60 * 60 * 24 * 7    // 7 days
+    maxAge: 1000 * 60 * 60 * 24 * 7
   });
 }
 
@@ -41,27 +37,25 @@ function getUserIdFromCookie(req) {
   }
 }
 
-// --- tiny health route to confirm the router is mounted ---
-router.get('/_health', (req, res) => {
-  res.json({ ok: true });
-});
+// tiny health
+router.get('/_health', (_req, res) => res.json({ ok: true }));
 
-// ---------------- routes -----------------
+// ---- routes ----
 
 // POST /auth/register
 router.post('/register', async (req, res) => {
-  console.log('POST /auth/register');
   try {
     const { email, password } = req.body || {};
+    // Keep the message aligned with your UI text
     if (!email || !password || String(email).length < 3 || String(password).length < 6) {
       return res.status(400).json({ error: 'Email ≥ 3 chars, password ≥ 6 chars' });
     }
 
-    const exists = findUserByUsername(email);
-    if (exists) return res.status(409).json({ error: 'Email already used' });
+    const existing = findUserByUsername(email); // alias to email lookup
+    if (existing) return res.status(409).json({ error: 'Email already used' });
 
     const hash = await bcrypt.hash(password, 12);
-    const user = createUser({ email, password: hash }); // { id, email }
+    const user = createUser({ email, password: hash });
 
     setSessionCookie(res, { uid: user.id, un: user.email });
     return res.json({ ok: true, user });
@@ -73,23 +67,15 @@ router.post('/register', async (req, res) => {
 
 // POST /auth/login
 router.post('/login', async (req, res) => {
-  console.log('POST /auth/login');
   try {
-    // Use email + PASSWORD (your DB helpers are email-based)
     const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Missing email or password' });
-    }
+    if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
 
     const user = findUserByUsername(email);
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
 
     setSessionCookie(res, { uid: user.id, un: user.email });
     return res.json({ ok: true, user: { id: user.id, email: user.email } });
@@ -101,10 +87,8 @@ router.post('/login', async (req, res) => {
 
 // POST /auth/logout
 router.post('/logout', (req, res) => {
-  console.log('POST /auth/logout');
   try {
     const isProd = process.env.NODE_ENV === 'production';
-    // Properly clear the cookie (must match sameSite/secure/path)
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
       sameSite: isProd ? 'none' : 'lax',
@@ -123,7 +107,7 @@ router.get('/me', (req, res) => {
   try {
     const uid = getUserIdFromCookie(req);
     if (!uid) return res.json({ user: null });
-    const user = findUserById(uid); // { id, email, password }
+    const user = findUserById(uid);
     return res.json({ user: user ? { id: user.id, email: user.email } : null });
   } catch (e) {
     console.error('me error', e);
@@ -131,19 +115,17 @@ router.get('/me', (req, res) => {
   }
 });
 
-// POST /auth/update   (update email and/or password)
+// POST /auth/update
 router.post('/update', async (req, res) => {
-  console.log('POST /auth/update');
   try {
     const uid = getUserIdFromCookie(req);
     if (!uid) return res.status(401).json({ error: 'Not authenticated' });
 
-    let { email, password } = req.body || {};
+    const { email, password } = req.body || {};
     if (!email || String(email).length < 3) {
       return res.status(400).json({ error: 'email ≥ 3 chars' });
     }
 
-    // If email is changing, ensure it's not taken by someone else
     const existing = findUserByUsername(email);
     if (existing && existing.id !== uid) {
       return res.status(409).json({ error: 'email already taken' });
@@ -156,7 +138,6 @@ router.post('/update', async (req, res) => {
       db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, uid);
     }
 
-    // refresh cookie with possibly new email
     setSessionCookie(res, { uid, un: email });
     return res.json({ ok: true, user: { id: uid, email } });
   } catch (e) {
