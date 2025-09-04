@@ -185,4 +185,39 @@ video {
     display: none;
 }
 
+:root{
+  --space-1: clamp(8px, 1.2vw, 12px);
+  --space-2: clamp(12px, 2vw, 20px);
+  --space-3: clamp(18px, 3vw, 32px);
+  --radius: 16px;
+}
+
+/* Media scale and keep aspect */
+img, video, canvas { max-width: 100%; height: auto; }
+
+/* Better full-height on mobile */
+.full-viewport {
+  min-height: 100vh;   /* fallback */
+  min-height: 100svh;  /* stable viewport units */
+  min-height: 100dvh;  /* dynamic viewport (new Safari/Chrome) */
+}
+
+/* Respect device safe areas (notch/home indicator) */
+.safe-area {
+  padding-top: max(var(--space-2), env(safe-area-inset-top));
+  padding-right: max(var(--space-2), env(safe-area-inset-right));
+  padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
+  padding-left: max(var(--space-2), env(safe-area-inset-left));
+}
+
+/* Auto-wrapping grid utility; reuse anywhere */
+.auto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2);
+}
+
+@media (max-width: 900px){
+  .cta-row { gap: 8px; }
+}
 

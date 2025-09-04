@@ -1,8 +1,8 @@
 // frontend/src/routes/api/[...path]/+server.ts
 import type { RequestHandler } from './$types';
-import { PUBLIC_API_URL } from '$env/static/public';
+import { env as PUBLIC } from '$env/dynamic/public';
 
-const ORIGIN = (PUBLIC_API_URL || '').replace(/\/$/, '');
+const ORIGIN = (PUBLIC.PUBLIC_API_URL || '').replace(/\/$/, '');
 
 async function forward(request: Request, path: string) {
   const url = ORIGIN + (path.startsWith('/') ? path : `/${path}`);

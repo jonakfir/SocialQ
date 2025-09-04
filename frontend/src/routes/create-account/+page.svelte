@@ -3,7 +3,7 @@
   import { apiFetch } from '$lib/api';
   import { fade, fly } from 'svelte/transition';
 
-  let username = '';
+  let email = '';
   let password = '';
   let error = '';
   let loading = false;
@@ -72,10 +72,18 @@
   async function handleCreate(e: Event) {
     e.preventDefault();
     error = '';
-    const u = username.trim();
+    const u = email.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailCheck =  emailRegex.test(u);
+
     const p = password;
     if (!u || !p) {
-      error = 'Please enter a username and password.';
+      error = 'Please enter an email and password.';
+      bump();
+      return;
+    }
+    if (!emailCheck) {
+      error = 'Please enter a valid email.';
       bump();
       return;
     }
@@ -89,7 +97,7 @@
     try {
       const res = await apiFetch('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ username: u, password: p })
+        body: JSON.stringify({ email: u, password: p })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.ok || data.success)) {
@@ -318,7 +326,7 @@
     <h2 class="title" in:fade={{ duration: 220 }}>Create Account</h2>
 
     <form on:submit={handleCreate} autocomplete="on" aria-busy={loading}>
-      <input class="input" type="text" bind:value={username} placeholder="Username" required />
+      <input class="input" type="text" bind:value={email} placeholder="Email" required />
       <input class="input" type="password" bind:value={password} placeholder="Password" required />
 
       <label class="terms">
