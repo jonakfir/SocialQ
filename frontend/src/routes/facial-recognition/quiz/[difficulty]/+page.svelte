@@ -6,28 +6,28 @@
 
   type Row = { img: string; options: string[]; correct: string };
 
-  // ---- force exactly N questions ----
+  // Force exactly N questions
   const QUESTION_COUNT = 8;
 
-  // ---- difficulty from route param ----
+  // Difficulty from route param
   let difficulty = '1';
   $: difficulty = (($page.params?.difficulty ?? '1') as string).toString();
 
-  // ---- state ----
+  // State
   let quizData: Row[] = [];
   let currentIndex = 0;
   let userAnswers: (string | null)[] = [];
   let loading = true;
   let loadError = '';
 
-  // instructions modal gate
+  // Instructions modal gate
   let instructionsOpen = true;
 
-  // ---- helpers ----
+  // Helper to store safe image URLs
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
-  // ---- 5-second per-question timer (Level 5 only) ----
+  // 5-second per-question timer (Level 5 only)
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
@@ -75,7 +75,10 @@
 
   onDestroy(stopTimer);
 
-  // ---- mount: fetch questions & prepare storage for Stats ----
+  // Overall quiz timer (from instructions dismissed to finish)
+  let quizStartedAt: number | null = null;
+
+  // Mount: fetch questions & prepare storage for Stats
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
     try {
@@ -103,8 +106,11 @@
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
       localStorage.removeItem('fr_picks'); // clear old picks
 
-      // wait for instructions dismissal before starting Level 5 timer
-      if (!instructionsOpen) startTimer();
+      // If instructions already closed, start timers
+      if (!instructionsOpen) {
+        if (quizStartedAt == null) quizStartedAt = performance.now();
+        startTimer();
+      }
     } catch (err: any) {
       loadError = err?.message ?? 'Failed to load quiz.';
     } finally {
@@ -114,13 +120,17 @@
 
   function closeInstructions() {
     instructionsOpen = false;
-    // start timer only after user closes instructions
+    // start overall timer when user starts playing
+    if (quizData.length && quizStartedAt == null) {
+      quizStartedAt = performance.now();
+    }
+    // start per-question timer for level 5
     if (difficulty === '5' && quizData.length) startTimer();
   }
 
-  // ---- interactions ----
+  // Interactions
   function selectOption(option: string) {
-    if (instructionsOpen) return; // gated until instructions closed
+    if (instructionsOpen) return;
     userAnswers[currentIndex] = option;
 
     // keep a live copy of picks so refreshes don't lose state
@@ -188,11 +198,16 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
-    // lightweight per-user history
+    // lightweight per-user history with elapsed time
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
+
+    const endedAt = performance.now();
+    const elapsedMs = quizStartedAt != null ? Math.max(0, endedAt - quizStartedAt) : 0;
+
     const attempt = {
-      date: new Date().toISOString().slice(0, 10),
+      timeMs: elapsedMs,                        // new field used by Settings
+      // date: new Date().toISOString().slice(0, 10), // keep if you still want the date
       score,
       total: quizData.length,
       difficulty
@@ -383,7 +398,6 @@
     color:var(--brand);
   }
 
-  /* colorful page backdrop behind blobs */
   :global(body){
     background:
       radial-gradient(1200px 800px at 20% 0%, rgba(79,70,229,.10), transparent 60%),

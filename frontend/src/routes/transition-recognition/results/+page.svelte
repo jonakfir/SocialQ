@@ -64,111 +64,18 @@
 <style>
   @import '/static/style.css';
 
-  .page-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    position: relative;
-  }
-
-  .result-box {
-    width: 95%;
-    max-width: 600px;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(20px);
-    padding: 40px;
-    border-radius: 20px;
-    text-align: center;
-    margin: auto;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
-    position: relative;
-  }
-
-  .progress-bar {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    margin-bottom: 25px;
-    flex-wrap: wrap;
-  }
-
-  .progress-dot {
-    width: 45px;
-    height: 10px;
-    border-radius: 5px;
-
-    /* animation (same feel as FR results) */
-    opacity: 0;
-    transform: scale(.8) translateY(4px);
-    animation: pop .35s ease-out forwards;
-  }
-  @keyframes pop {
-    0%   { opacity: 0; transform: scale(.8) translateY(4px); }
-    60%  { opacity: 1; transform: scale(1.08) translateY(0); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-
-  /* three-band colors for transition quiz */
-  .good    { background: #22c55e; } /* green */
-  .partial { background: #f59e0b; } /* yellow */
-  .bad     { background: #ef4444; } /* red */
-
-  .title {
-    font-family: Georgia, serif;
-    font-size: 2.5rem;
-    margin: 0 0 8px;
-    color: white;
-    -webkit-text-stroke: 2px rgba(0,0,0,0.5);
-    text-shadow: 0 3px 8px rgba(0,0,0,0.35);
-
-    /* subtle slide-in */
-    animation: slideIn .45s ease both;
-  }
-  @keyframes slideIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .score-circle {
-    width: 200px;
-    height: 200px;
-    border-radius: 50%;
-    background: #4f46e5;
-    color: white;
-    font-size: 40px;
-    font-weight: bold;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 30px auto;
-
-    /* pulse once after number animates */
-    animation: pulseOnce .7s ease .62s 1 both;
-  }
-  @keyframes pulseOnce {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.04); }
-    100% { transform: scale(1); }
-  }
-
-  .btn {
-    display: block;
-    width: 80%;
-    max-width: 300px;
-    padding: 15px;
-    margin: 15px auto;
-    font-size: 20px;
-    font-weight: bold;
-    color: black;
-    background-color: white;
-    border: 2px solid black;
-    border-radius: 40px;
-    cursor: pointer;
-    text-align: center;
-    transition: transform .08s ease, background .3s ease, color .3s ease;
-  }
-  .btn:hover { background: #4f46e5; color: white; transform: translateY(-1px); }
+  .page-container { display:flex; justify-content:center; align-items:center; min-height:100vh; position:relative; }
+  .result-box { width:95%; max-width:600px; background:rgba(255,255,255,.8); backdrop-filter:blur(20px); padding:40px; border-radius:20px; text-align:center; margin:auto; box-shadow:0 4px 30px rgba(0,0,0,.2); position:relative; }
+  .progress-bar { display:flex; justify-content:center; gap:8px; margin-bottom:25px; flex-wrap:wrap; }
+  .progress-dot { width:45px; height:10px; border-radius:5px; opacity:0; transform:scale(.8) translateY(4px); animation:pop .35s ease-out forwards; }
+  @keyframes pop { 0%{opacity:0; transform:scale(.8) translateY(4px)} 60%{opacity:1; transform:scale(1.08) translateY(0)} 100%{opacity:1; transform:scale(1)} }
+  .good{background:#22c55e} .partial{background:#f59e0b} .bad{background:#ef4444}
+  .title { font-family:Georgia,serif; font-size:2.5rem; margin:0 0 8px; color:white; -webkit-text-stroke:2px rgba(0,0,0,.5); text-shadow:0 3px 8px rgba(0,0,0,.35); animation:slideIn .45s ease both; }
+  @keyframes slideIn { from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:translateY(0)} }
+  .score-circle { width:200px; height:200px; border-radius:50%; background:#4f46e5; color:#fff; font-size:40px; font-weight:bold; display:flex; justify-content:center; align-items:center; margin:30px auto; animation:pulseOnce .7s ease .62s 1 both; }
+  @keyframes pulseOnce { 0%{transform:scale(1)} 50%{transform:scale(1.04)} 100%{transform:scale(1)} }
+  .btn { display:block; width:80%; max-width:300px; padding:15px; margin:15px auto; font-size:20px; font-weight:bold; color:black; background:#fff; border:2px solid black; border-radius:40px; cursor:pointer; text-align:center; transition:transform .08s ease, background .3s ease, color .3s ease; }
+  .btn:hover { background:#4f46e5; color:#fff; transform:translateY(-1px); }
 </style>
 
 <!-- Blobs -->
@@ -182,10 +89,7 @@
 
     <div class="progress-bar" aria-label="Question results">
       {#each bands as band, i}
-        <div
-          class="progress-dot {band}"
-          style="animation-delay: {i * 60}ms"
-        ></div>
+        <div class="progress-dot {band}" style="animation-delay: {i * 60}ms"></div>
       {/each}
     </div>
 

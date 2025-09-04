@@ -79,8 +79,8 @@
     100% { opacity: 1; transform: scale(1); }
   }
 
-  .correct { background: #22c55e; }   /* green */
-  .wrong   { background: #ef4444; }   /* red   */
+  .correct { background: #22c55e; }
+  .wrong   { background: #ef4444; }
 
   .title {
     font-family: Georgia, serif;
@@ -89,8 +89,6 @@
     color: white;
     -webkit-text-stroke: 2px rgba(0,0,0,0.5);
     text-shadow: 0 3px 8px rgba(0,0,0,0.35);
-
-    /* subtle slide-in */
     animation: slideIn .45s ease both;
   }
 
@@ -111,8 +109,6 @@
     justify-content: center;
     align-items: center;
     margin: 30px auto;
-
-    /* pulse once when number finishes animating */
     animation: pulseOnce .7s ease .62s 1 both;
   }
 

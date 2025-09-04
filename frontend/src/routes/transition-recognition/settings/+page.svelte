@@ -3,11 +3,11 @@
   import { goto } from '$app/navigation';
   import { getUserKey } from '$lib/userKey';
 
-  let selectedLevel = 'easy';
-  let history = []; // [{ date, score, total, level }]
+  let selectedLevel = 'Normal';
+  // each row: { timeMs?, date?, score, total, level }
+  let history = [];
 
   function start() {
-    // <-- This path matches the [level] route below
     goto(`/transition-recognition/quiz/${selectedLevel}`);
   }
 
@@ -23,7 +23,6 @@
         localStorage.setItem(historyKey, legacy);
         localStorage.removeItem('tr_history');
       }
-
       const rows = JSON.parse(localStorage.getItem(historyKey) || '[]');
       if (Array.isArray(rows)) history = rows;
     } catch {
@@ -31,7 +30,17 @@
     }
   });
 
-  const fmt = (r) => `${r.score}/${r.total}`;
+  const fmtScore = (r) => `${r.score}/${r.total}`;
+  function fmtTime(r) {
+    if (r?.timeMs && Number.isFinite(r.timeMs)) {
+      const totalSec = Math.round(r.timeMs / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+    // fallback for old entries
+    return r?.date || '—';
+  }
 </script>
 
 <style>
@@ -51,6 +60,7 @@
     display: grid;
     place-items: center;
     position: relative;
+    z-index: 1;
   }
 
   .card {
@@ -123,7 +133,7 @@
       <table>
         <thead>
           <tr>
-            <th style="width:40%;">Date</th>
+            <th style="width:40%;">Time</th>
             <th style="width:30%;">Score</th>
             <th style="width:30%;">Mode</th>
           </tr>
@@ -134,8 +144,8 @@
           {:else}
             {#each history.slice(0, 8) as r}
               <tr>
-                <td>{r.date}</td>
-                <td>{fmt(r)}</td>
+                <td>{fmtTime(r)}</td>
+                <td>{fmtScore(r)}</td>
                 <td>{r.level}</td>
               </tr>
             {/each}
@@ -146,8 +156,8 @@
 
     <p style="font-size:16px; margin-bottom:10px;">Choose a mode:</p>
     <select bind:value={selectedLevel}>
-      <option value="easy">Normal</option>
-      <option value="challenge">Timed Challenge</option>
+      <option value="Normal">Normal</option>
+      <option value="Challenge">Timed Challenge</option>
     </select>
 
     <button class="btn primary" on:click={start}>Let's Begin</button>

@@ -4,7 +4,8 @@
   import { getUserKey } from '$lib/userKey';
 
   let selectedDifficulty = '1';
-  let history = [];  // [{date, score, total, difficulty}]
+  // Each row may be old shape ({date,...}) or new ({timeMs,...})
+  let history = [];  // [{ timeMs?, date?, score, total, difficulty }]
 
   function startQuiz() {
     goto(`/facial-recognition/quiz/${selectedDifficulty}`);
@@ -16,7 +17,7 @@
     const historyKey = `fr_history_${userKey}`;
 
     try {
-      // one-time migration: if old global key exists, move it into per-user key
+      // one-time migration from legacy global key (if present)
       const legacy = localStorage.getItem('fr_history');
       if (legacy && !localStorage.getItem(historyKey)) {
         localStorage.setItem(historyKey, legacy);
@@ -32,6 +33,17 @@
 
   function fmtScore(row) {
     return `${row.score}/${row.total}`;
+  }
+
+  // Show total elapsed time as mm:ss (falls back to old date if needed)
+  function fmtTime(row) {
+    if (row?.timeMs && Number.isFinite(row.timeMs)) {
+      const totalSec = Math.round(row.timeMs / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = String(totalSec % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+    return row?.date || '—';
   }
 
   function goDashboard() {
@@ -66,7 +78,7 @@
     border-radius: 40px;
     padding: 18px 30px 26px;
     width: 90%;
-    max-width: 520px; /* a bit wider to fit the table comfortably */
+    max-width: 520px;
     text-align: center;
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
     margin: auto;
@@ -141,12 +153,13 @@
 <div class="settings-screen">
   <div class="dashboard-box">
     <h2 class="settings-title">Facial Recognition</h2>
-	    <!-- Recent scores -->
+
+    <!-- Recent scores -->
     <div class="score-card" aria-label="Recent attempts">
       <table>
         <thead>
           <tr>
-            <th style="width:40%;">Date</th>
+            <th style="width:40%;">Time</th>   <!-- changed -->
             <th style="width:30%;">Score</th>
             <th style="width:30%;">Difficulty</th>
           </tr>
@@ -157,7 +170,7 @@
           {:else}
             {#each history.slice(0, 8) as row}
               <tr>
-                <td>{row.date}</td>
+                <td>{fmtTime(row)}</td>
                 <td>{fmtScore(row)}</td>
                 <td>{row.difficulty}</td>
               </tr>
