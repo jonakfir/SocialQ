@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { apiFetch } from '$lib/api';
 
-  let username = '';
+  let email = '';
   let password = '';
   let error = '';
 
@@ -48,19 +48,28 @@
   async function handleLogin(e: Event) {
     e.preventDefault();
     error = '';
-    const res = await apiFetch('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.ok) {
-      const u = data.user?.username ?? username;
-      const id = data.user?.id ?? null;
-      localStorage.setItem('username', u);
-      if (id != null) localStorage.setItem('userId', String(id));
-      goto('/dashboard');
-    } else {
-      error = data?.error ?? `Login failed (HTTP ${res.status})`;
+
+    try {
+      const res = await apiFetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, // ensure JSON
+        credentials: 'include',                           // keep cookie sessions
+        body: JSON.stringify({ email: email.trim(), password })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && (data.ok || data.user)) {
+        const u = data.user?.email ?? email;
+        const id = data.user?.id ?? null;
+        localStorage.setItem('email', u);
+        if (id != null) localStorage.setItem('userId', String(id));
+        goto('/dashboard');
+      } else {
+        error = data.error || `Login failed (HTTP ${res.status})`;
+      }
+    } catch {
+      error = 'Network error';
     }
   }
 </script>
@@ -135,7 +144,7 @@
     background: #fff; color: #111; transition: transform .05s ease, filter .2s ease, background .2s ease;
     box-sizing: border-box;
   }
-  .btn + .btn { margin-top: 10px; } /* small gap between stacked buttons */
+  .btn + .btn { margin-top: 10px; }
   .btn:hover { filter: brightness(1.03); }
   .btn:active { transform: translateY(1px); }
   .btn.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
@@ -160,14 +169,12 @@
     <h2 class="title">Login</h2>
 
     <form on:submit={handleLogin} autocomplete="on">
-      <input class="input" type="text" bind:value={username} placeholder="Username" required />
+      <input class="input" type="email" bind:value={email} placeholder="Email" required />
       <input class="input" type="password" bind:value={password} placeholder="Password" required />
       <button type="submit" class="btn primary">Log In</button>
     </form>
 
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
+    {#if error}<div class="error">{error}</div>{/if}
 
     <p class="muted">No account yet?</p>
     <button class="btn" type="button" on:click={goCreate}>Create Account</button>
