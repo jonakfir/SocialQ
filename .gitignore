@@ -1,0 +1,22 @@
+# root ignores
+.DS_Store
+
+# Node
+node_modules
+npm-debug.log*
+pnpm-lock.yaml
+yarn.lock
+
+# Env / secrets
+.env
+.env.*
+backend/.env
+frontend/.env
+
+# SvelteKit build output
+frontend/.svelte-kit
+frontend/build
+frontend/.vercel
+
+# Prisma (if used)
+backend/prisma/*.db-journal
