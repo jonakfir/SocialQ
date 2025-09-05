@@ -5,57 +5,78 @@
   export const ssr = false;
 </script>
 
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto, afterNavigate } from '$app/navigation';
   import { apiFetch } from '$lib/api';
 
-  // Passed in from +layout.svelte: <Header user={data.user} />
-  export let user = null;            // { id, username } | null
+  // Passed from +layout.svelte (prefer { id, email })
+  export let user: { id?: number; email?: string } | null = null;
   export let showProfile = true;
   export let showMenu = true;
 
   let isOpen = false;
-  let wrapEl;                        // ref for outside-click
+  let wrapEl: HTMLDivElement | undefined;
 
-  $: if (user && user.username && typeof localStorage !== 'undefined') {
-    localStorage.setItem('username', user.username);
-    if (user.id != null) localStorage.setItem('userId', String(user.id));
+  // ---------- helpers ----------
+  function initialFromEmail(email?: string): string {
+    if (!email) return '❔';
+    const local = email.includes('@') ? email.split('@')[0] : email;
+    const ch = local.trim().charAt(0);
+    return ch ? ch.toUpperCase() : '❔';
   }
 
-  // Optional: fallback to localStorage so the initial doesn't flicker
+  function persistUser(u: typeof user | null) {
+    if (typeof localStorage === 'undefined') return;
+    if (u && u.email) {
+      localStorage.setItem('email', u.email);
+      // keep legacy keys for older code paths
+      localStorage.setItem('username', u.email);
+      if (u.id != null) localStorage.setItem('userId', String(u.id));
+    }
+  }
+
+  async function refreshMe() {
+    try {
+      const res = await apiFetch('/auth/me');
+      const j = await res.json();
+      user = j?.user ?? null;
+      persistUser(user);
+    } catch {
+      // ignore network/unauth errors; keep current header state
+    }
+  }
+
+  // Fallback to localStorage immediately (prevents initial flicker)
   onMount(() => {
     if (!user && typeof localStorage !== 'undefined') {
-      const name = localStorage.getItem('username');
-      if (name) {
-        user = { id: Number(localStorage.getItem('userId')) || -1, username: name };
-      }
+      const email = localStorage.getItem('email') || localStorage.getItem('username') || '';
+      const idStr = localStorage.getItem('userId') || '';
+      if (email) user = { id: Number(idStr) || undefined, email };
     }
+    // Then fetch fresh session user
+    refreshMe();
   });
 
-  // --- menu behaviour ---
-  function toggleMenu(e) {
+  // Keep header in sync as the SPA navigates
+  afterNavigate(() => {
+    isOpen = false;
+    refreshMe();
+  });
+
+  // outside-click to close the menu
+  function onDocClick(e: MouseEvent) {
+    if (!wrapEl) return;
+    if (!wrapEl.contains(e.target as Node)) isOpen = false;
+  }
+  onMount(() => document.addEventListener('click', onDocClick));
+  onDestroy(() => document.removeEventListener('click', onDocClick));
+
+  function toggleMenu(e: MouseEvent) {
     e.stopPropagation();
     isOpen = !isOpen;
   }
   function closeMenu() { isOpen = false; }
-
-  function onDocClick(e) {
-    if (!wrapEl) return;
-    if (!wrapEl.contains(e.target)) isOpen = false;
-  }
-  onMount(() => {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('click', onDocClick);
-      return () => document.removeEventListener('click', onDocClick);
-    }
-  });
-  onDestroy(() => {
-    if (typeof document !== 'undefined') {
-      document.removeEventListener('click', onDocClick);
-    }
-  });
-  afterNavigate(() => { isOpen = false; });
 
   // --- navigation / auth actions ---
   function goToProfile() {
@@ -67,18 +88,20 @@
     goto('/dashboard');
   }
   async function doLogout() {
+    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
     try {
-      await apiFetch('/auth/logout', { method: 'POST' });
-    } catch {}
-    try {
-      localStorage.removeItem('username');
+      localStorage.removeItem('email');
+      localStorage.removeItem('username'); // legacy
       localStorage.removeItem('userId');
     } catch {}
+    user = null;
     closeMenu();
     goto('/login');
   }
 
-  $: initial = user?.username?.[0]?.toUpperCase?.() ?? '❔';
+  // reactive initial/title
+  $: initial = initialFromEmail(user?.email);
+  $: titleText = user?.email ?? 'Not signed in';
 </script>
 
 <div class="header">
@@ -86,7 +109,7 @@
     <button
       class="profile"
       aria-label="Profile"
-      title={user ? user.username : 'Not signed in'}
+      title={titleText}
       on:click={goToProfile}
     >
       {initial}
