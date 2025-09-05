@@ -1,10 +1,15 @@
+<!-- src/routes/edit-profile/+page.svelte -->
+
+<script context="module" lang="ts">
+  /* Run client-only so we read the browser cookie/localStorage
+     and let apiFetch's localhost mock kick in. */
+  export const ssr = false;
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-
-  // Same-origin API helper (includes cookies for auth)
-  const api = (path: string, init: RequestInit = {}) =>
-    fetch(`/api${path}`, { credentials: 'include', ...init });
+  import { apiFetch } from '$lib/api';
 
   let loading = true;
   let saving = false;
@@ -13,6 +18,7 @@
   let email = '';
   let originalEmail = '';
   let userId: number | null = null;
+  let unauth = false;  // show a friendly prompt instead of bouncing to /login
 
   // ----- local-storage migration helpers (if you keyed data by user) -----
   const norm = (s: string) => (s || '').trim().toLowerCase();
@@ -21,31 +27,25 @@
 
   function migrateLocalData(oldKey: string, newKey: string) {
     if (!oldKey || !newKey || oldKey === newKey) return;
-    const prefixes = [
-      'fr_history_',     // facial recognition attempts (example)
-      'tr_details_',     // transition recognition stats (example)
-      'tr_last_run_',    // transition last-run bundle (example)
-    ];
+    const prefixes = ['fr_history_', 'tr_details_', 'tr_last_run_'];
     for (const p of prefixes) {
       const oldK = p + oldKey;
       const newK = p + newKey;
       const val = localStorage.getItem(oldK);
       if (val != null) {
-        if (localStorage.getItem(newK) == null) {
-          localStorage.setItem(newK, val);
-        }
+        if (localStorage.getItem(newK) == null) localStorage.setItem(newK, val);
         localStorage.removeItem(oldK);
       }
     }
   }
 
-  // ----- load current user -----
+  // ----- load current user (uses apiFetch so localhost mock applies) -----
   async function loadMe() {
     try {
-      const res = await api('/auth/me');
+      const res = await apiFetch('/auth/me');
       const data = await res.json().catch(() => ({} as any));
       if (!data?.user) {
-        goto('/login');
+        unauth = true;            // don't redirect; let the user log in from here
         return;
       }
       userId = data.user.id ?? null;
@@ -81,7 +81,7 @@
 
     saving = true;
     try {
-      const res = await api('/auth/update', {
+      const res = await apiFetch('/auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,19 +93,19 @@
       const data = await res.json().catch(() => ({} as any));
 
       if (res.status === 401) {
-        goto('/login');
+        unauth = true;            // session expired; show prompt instead of redirect
+        error = 'Your session expired. Please log in again.';
         return;
       }
 
       if (res.ok && (data.ok || data.success)) {
-        // migrate any local user-keyed data & keep header initial in sync
+        // migrate any user-keyed local data & keep header initial in sync
         try {
           const id = (data?.user?.id ?? userId) as number | null;
           const newEmail = data?.user?.email ?? email;
           const oldKey = makeUserKey(id, originalEmail);
           const newKey = makeUserKey(id, newEmail);
           migrateLocalData(oldKey, newKey);
-
           localStorage.setItem('userEmail', newEmail);
           if (id != null) localStorage.setItem('userId', String(id));
         } catch {}
@@ -157,12 +157,7 @@
   }
   input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
 
-  .hint {
-    text-align: left;
-    font-size: 12px;
-    color: rgba(17,17,17,.6);
-    margin-top: -6px;
-  }
+  .hint { text-align: left; font-size: 12px; color: rgba(17,17,17,.6); margin-top: -6px; }
 
   .btn {
     display: block; width: 100%; padding: 12px 14px;
@@ -177,9 +172,17 @@
 
   .error { margin-top: 8px; color: #b91c1c; font-weight: 700; }
   .row { display: grid; gap: 8px; }
+
+  .notice {
+    background: rgba(255,255,255,.85);
+    border: 1px solid rgba(17,17,17,.2);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
 </style>
 
-<!-- Background blobs (from your global styles) -->
+<!-- blobs -->
 <div class="blobs">
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
@@ -193,37 +196,43 @@
     {#if loading}
       <div>Loading…</div>
     {:else}
-      <form on:submit={save} novalidate>
-        <div class="row">
-          <input
-            type="email"
-            bind:value={email}
-            placeholder="Email"
-            autocomplete="email"
-            required
-            aria-label="Email"
-          />
-          <div class="hint">Use the email you want to sign in with.</div>
-
-          <input
-            type="password"
-            bind:value={newPassword}
-            placeholder="New Password (optional)"
-            autocomplete="new-password"
-            aria-label="New password (optional)"
-          />
+      {#if unauth}
+        <div class="notice">
+          You’re not signed in. Log in to edit your profile.
         </div>
+        <button class="btn primary" on:click={() => goto('/login')}>Log in</button>
+        <button class="btn outline" on:click={() => goto('/dashboard')}>Back</button>
+      {:else}
+        <form on:submit={save} novalidate>
+          <div class="row">
+            <input
+              type="email"
+              bind:value={email}
+              placeholder="Email"
+              autocomplete="email"
+              required
+              aria-label="Email"
+            />
+            <div class="hint">Use the email you want to sign in with.</div>
 
-        <button class="btn primary" type="submit" disabled={saving}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-      </form>
+            <input
+              type="password"
+              bind:value={newPassword}
+              placeholder="New Password (optional)"
+              autocomplete="new-password"
+              aria-label="New password (optional)"
+            />
+          </div>
 
-      {#if error}
-        <div class="error" aria-live="polite">{error}</div>
+          <button class="btn primary" type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </form>
+
+        {#if error}<div class="error" aria-live="polite">{error}</div>{/if}
+
+        <button class="btn outline" on:click={() => goto('/profile')}>Cancel</button>
       {/if}
-
-      <button class="btn outline" on:click={() => goto('/profile')}>Cancel</button>
     {/if}
   </div>
 </div>
