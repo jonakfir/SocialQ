@@ -2,22 +2,31 @@
   import { goto } from '$app/navigation';
   import { apiFetch } from '$lib/api';
 
-  export let data: { user: { id: number; username: string } };
+  // Accept what the backend actually returns: { id, email }
+  export let data: { user: { id: number; email?: string } };
 
-  const user = data.user; // guaranteed by +page.ts (else we redirect)
+  const user = data?.user ?? { id: 0, email: '' };
+
+  // Display name = email (fallback to blank to avoid "undefined")
+  const displayEmail = (user.email ?? '').toString();
+
+  // Avatar initial = first letter of the local-part of the email
+  function initialFromEmail(email: string): string {
+    if (!email) return '?';
+    const local = email.includes('@') ? email.split('@')[0] : email;
+    const ch = local.trim().charAt(0);
+    return ch ? ch.toUpperCase() : '?';
+  }
+  const initial = initialFromEmail(displayEmail);
 
   async function logout() {
+    try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
     try {
-      await apiFetch('/auth/logout', { method: 'POST' });
-    } catch {}
-    try {
-      localStorage.removeItem('username');
+      localStorage.removeItem('username'); // legacy keys if you had them
       localStorage.removeItem('userId');
     } catch {}
     goto('/login');
   }
-
-  $: initial = user?.username?.[0]?.toUpperCase() ?? '?';
 </script>
 
 <style>
@@ -45,7 +54,8 @@
       rgba(186,255,201,1) 50%,
       rgba(186,225,255,1) 75%,
       rgba(218,186,255,1) 100%);
-    background-size: 300% 300%; animation: gradientMove 8s ease infinite;
+    background-size: 300% 300%;
+    animation: gradientMove 8s ease infinite;
     color: white;
   }
   @keyframes gradientMove {
@@ -54,9 +64,10 @@
     100% { background-position: 0% 50% }
   }
   h2{
-    font-family: 'Georgia', serif; font-size:2.5rem; color:white;
+    font-family: 'Georgia', serif; font-size:2.0rem; color:white;
     -webkit-text-stroke: 2px rgba(0,0,0,0.5);
     text-shadow: 0 4px 10px rgba(0,0,0,0.4); margin-bottom: 15px;
+    word-break: break-all; /* long emails won’t overflow */
   }
   .user-info{ font-size:18px; color:black; margin-bottom:20px; }
   .btn{
@@ -70,6 +81,7 @@
   .blobs{ position:absolute; inset:0; pointer-events:none; z-index:1; }
 </style>
 
+<!-- blobs -->
 <div class="blobs">
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
@@ -79,7 +91,7 @@
 <div class="container">
   <div class="profile-box">
     <div class="profile-pic">{initial}</div>
-    <h2>{user.username}</h2>
+    <h2>{displayEmail || '—'}</h2>
     <div class="user-info">
       <p><strong>User ID:</strong> {user.id}</p>
     </div>
