@@ -1,39 +1,36 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
 
-  // Call your API on same-origin and include cookies
-  const api = (path, init = {}) =>
+  // Same-origin API helper (includes cookies for auth)
+  const api = (path: string, init: RequestInit = {}) =>
     fetch(`/api${path}`, { credentials: 'include', ...init });
 
   let loading = true;
   let saving = false;
   let error = '';
 
-  let username = '';
-  let originalUsername = '';
-  let userId = null; // we’ll capture this from /auth/me so we can build a stable userKey
+  let email = '';
+  let originalEmail = '';
+  let userId: number | null = null;
 
-  // ---- helpers ----
-  const norm = (s) => (s || '').toString().trim().toLowerCase();
-  const makeUserKey = (id, name) => (id != null ? `${id}:${norm(name)}` : norm(name));
+  // ----- local-storage migration helpers (if you keyed data by user) -----
+  const norm = (s: string) => (s || '').trim().toLowerCase();
+  const makeUserKey = (id: number | null, key: string) =>
+    (id != null ? `${id}:${norm(key)}` : norm(key));
 
-  function migrateLocalData(oldKey, newKey) {
+  function migrateLocalData(oldKey: string, newKey: string) {
     if (!oldKey || !newKey || oldKey === newKey) return;
-
     const prefixes = [
-      'fr_history_',      // facial recognition attempts table
-      'tr_details_',      // transition stats rows
-      'tr_last_run_',     // transition last-run bundle
-      // add more here if you later namespace other features
+      'fr_history_',     // facial recognition attempts (example)
+      'tr_details_',     // transition recognition stats (example)
+      'tr_last_run_',    // transition last-run bundle (example)
     ];
-
     for (const p of prefixes) {
       const oldK = p + oldKey;
       const newK = p + newKey;
       const val = localStorage.getItem(oldK);
       if (val != null) {
-        // don’t overwrite if new already exists; merge logic could be added if you want
         if (localStorage.getItem(newK) == null) {
           localStorage.setItem(newK, val);
         }
@@ -42,36 +39,44 @@
     }
   }
 
+  // ----- load current user -----
   async function loadMe() {
     try {
       const res = await api('/auth/me');
-      if (res.status === 401) return goto('/login');
-      const data = await res.json().catch(() => ({}));
-      if (!data?.user) return goto('/login');
-
+      const data = await res.json().catch(() => ({} as any));
+      if (!data?.user) {
+        goto('/login');
+        return;
+      }
       userId = data.user.id ?? null;
-      username = data.user.username ?? '';
-      originalUsername = username;
+      email = data.user.email ?? '';
+      originalEmail = email;
     } catch {
-      error = 'Could not load profile.';
+      error = 'Could not load your profile.';
     } finally {
       loading = false;
     }
   }
   onMount(loadMe);
 
-  function validate() {
-    if (!username.trim()) { error = 'Username is required.'; return false; }
-    if (username.trim().length < 2) { error = 'Username must be at least 2 characters.'; return false; }
+  // ----- validation & save -----
+  function validate(): boolean {
+    const e = email.trim();
+    if (!e) { error = 'Email is required.'; return false; }
+    if (e.length < 3 || !e.includes('@') || !e.includes('.')) {
+      error = 'Please enter a valid email address.'; return false;
+    }
     return true;
   }
 
-  async function save(e) {
-    e.preventDefault();
+  let newPassword = '';
+
+  async function save(ev: Event) {
+    ev.preventDefault();
     error = '';
     if (!validate()) return;
 
-    const noChange = username.trim() === originalUsername && !newPassword;
+    const noChange = email.trim() === originalEmail && !newPassword;
     if (noChange) { error = 'Nothing to update.'; return; }
 
     saving = true;
@@ -80,36 +85,42 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: username.trim(),
+          email: email.trim(),
           ...(newPassword ? { password: newPassword } : {})
         })
       });
 
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 401) return goto('/login');
+      const data = await res.json().catch(() => ({} as any));
 
-      if (res.ok && (data.ok || data.success)) {
-        // if username changed, migrate localStorage keys
-        const newName = data?.user?.username ?? username;
-        const id = (data?.user?.id ?? userId);
-        const oldKey = makeUserKey(id, originalUsername);
-        const newKey = makeUserKey(id, newName);
-        migrateLocalData(oldKey, newKey);
-
-        return goto('/profile');
+      if (res.status === 401) {
+        goto('/login');
+        return;
       }
 
-      error = data.error || `Update failed (status ${res.status}).`;
+      if (res.ok && (data.ok || data.success)) {
+        // migrate any local user-keyed data & keep header initial in sync
+        try {
+          const id = (data?.user?.id ?? userId) as number | null;
+          const newEmail = data?.user?.email ?? email;
+          const oldKey = makeUserKey(id, originalEmail);
+          const newKey = makeUserKey(id, newEmail);
+          migrateLocalData(oldKey, newKey);
+
+          localStorage.setItem('userEmail', newEmail);
+          if (id != null) localStorage.setItem('userId', String(id));
+        } catch {}
+        goto('/profile');
+        return;
+      }
+
+      error = data?.error || `Update failed (status ${res.status}).`;
     } catch {
       error = 'Network error.';
     } finally {
       saving = false;
     }
   }
-
-  let newPassword = '';
 </script>
-
 
 <style>
   .blobs { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
@@ -135,9 +146,9 @@
     text-shadow: 0 4px 10px rgba(0,0,0,0.4);
   }
 
-  form { display: grid; gap: 10px; width: 100%; }
+  form { display: grid; gap: 12px; width: 100%; }
 
-  input[type="text"], input[type="password"] {
+  input[type="email"], input[type="password"] {
     width: 100%; box-sizing: border-box;
     padding: 10px 12px; border: 1.5px solid rgba(17,17,17,.18);
     border-radius: 10px; background: rgba(255,255,255,.95);
@@ -145,6 +156,13 @@
     transition: border-color .2s, box-shadow .2s;
   }
   input:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
+
+  .hint {
+    text-align: left;
+    font-size: 12px;
+    color: rgba(17,17,17,.6);
+    margin-top: -6px;
+  }
 
   .btn {
     display: block; width: 100%; padding: 12px 14px;
@@ -161,6 +179,7 @@
   .row { display: grid; gap: 8px; }
 </style>
 
+<!-- Background blobs (from your global styles) -->
 <div class="blobs">
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
@@ -174,17 +193,35 @@
     {#if loading}
       <div>Loading…</div>
     {:else}
-      <form on:submit={save}>
+      <form on:submit={save} novalidate>
         <div class="row">
-          <input type="text" bind:value={username} placeholder="Username" required />
-          <input type="password" bind:value={newPassword} placeholder="New Password (optional)" />
+          <input
+            type="email"
+            bind:value={email}
+            placeholder="Email"
+            autocomplete="email"
+            required
+            aria-label="Email"
+          />
+          <div class="hint">Use the email you want to sign in with.</div>
+
+          <input
+            type="password"
+            bind:value={newPassword}
+            placeholder="New Password (optional)"
+            autocomplete="new-password"
+            aria-label="New password (optional)"
+          />
         </div>
+
         <button class="btn primary" type="submit" disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </form>
 
-      {#if error}<div class="error" aria-live="polite">{error}</div>{/if}
+      {#if error}
+        <div class="error" aria-live="polite">{error}</div>
+      {/if}
 
       <button class="btn outline" on:click={() => goto('/profile')}>Cancel</button>
     {/if}
