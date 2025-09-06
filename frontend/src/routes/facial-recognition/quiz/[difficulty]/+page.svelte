@@ -6,37 +6,29 @@
 
   type Row = { img: string; options: string[]; correct: string };
 
-  // Force exactly N questions
   const QUESTION_COUNT = 8;
 
-  // Difficulty from route param
   let difficulty = '1';
   $: difficulty = (($page.params?.difficulty ?? '1') as string).toString();
 
-  // State
   let quizData: Row[] = [];
   let currentIndex = 0;
   let userAnswers: (string | null)[] = [];
   let loading = true;
   let loadError = '';
 
-  // Instructions modal gate
   let instructionsOpen = true;
 
-  // Helper to store safe image URLs
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
-  // 5-second per-question timer (Level 5 only)
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
 
-  // ring geometry (for the level-5 timer)
   const R = 28;
   const C = 2 * Math.PI * R;
 
-  // progress (0..1) based on time left
   $: pct = difficulty === '5'
     ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
     : 0;
@@ -75,10 +67,8 @@
 
   onDestroy(stopTimer);
 
-  // Overall quiz timer (from instructions dismissed to finish)
   let quizStartedAt: number | null = null;
 
-  // Mount: fetch questions & prepare storage for Stats
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
     try {
@@ -98,15 +88,13 @@
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      // Persist minimal question info for the Stats page
       const minimal = quizData.map(q => ({
         img: normalizeImg(q.img),
         correct: q.correct
       }));
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
-      localStorage.removeItem('fr_picks'); // clear old picks
+      localStorage.removeItem('fr_picks');
 
-      // If instructions already closed, start timers
       if (!instructionsOpen) {
         if (quizStartedAt == null) quizStartedAt = performance.now();
         startTimer();
@@ -120,20 +108,15 @@
 
   function closeInstructions() {
     instructionsOpen = false;
-    // start overall timer when user starts playing
     if (quizData.length && quizStartedAt == null) {
       quizStartedAt = performance.now();
     }
-    // start per-question timer for level 5
     if (difficulty === '5' && quizData.length) startTimer();
   }
 
-  // Interactions
   function selectOption(option: string) {
     if (instructionsOpen) return;
     userAnswers[currentIndex] = option;
-
-    // keep a live copy of picks so refreshes don't lose state
     const picksLive = userAnswers.map(v => (v == null ? null : v));
     localStorage.setItem('fr_picks', JSON.stringify(picksLive));
   }
@@ -163,7 +146,6 @@
   function finish() {
     stopTimer();
 
-    // Determine results + score
     let score = 0;
     const results: boolean[] = [];
     quizData.forEach((q, i) => {
@@ -172,12 +154,10 @@
       results.push(ok);
     });
 
-    // summary for Results page
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(quizData.length));
 
-    // picks & questions for Stats page
     const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
     localStorage.setItem('fr_picks', JSON.stringify(picks));
     localStorage.setItem(
@@ -185,7 +165,6 @@
       JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
     );
 
-    // prebuild rich details so Stats is instant
     const details = quizData.map((q, i) => {
       const picked = picks[i];
       return {
@@ -198,7 +177,6 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
-    // lightweight per-user history with elapsed time
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
 
@@ -206,8 +184,7 @@
     const elapsedMs = quizStartedAt != null ? Math.max(0, endedAt - quizStartedAt) : 0;
 
     const attempt = {
-      timeMs: elapsedMs,                        // new field used by Settings
-      // date: new Date().toISOString().slice(0, 10), // keep if you still want the date
+      timeMs: elapsedMs,
       score,
       total: quizData.length,
       difficulty
@@ -227,6 +204,14 @@
     --brand: #4f46e5;
     --brand-strong: #7c3aed;
     --brand2: #22d3ee;
+
+    /* scale helpers tied to viewport */
+    --pad: min(4vmin, 6vw);
+    --gap: min(2vmin, 3vw);
+    --radius: 3vmin;
+    --font-base: clamp(1.6vmin, 2.2vmin, 3vmin);
+    --font-lg: clamp(2.2vmin, 3vmin, 4vmin);
+    --font-xl: clamp(3vmin, 3.8vmin, 5vmin);
   }
 
   .quiz-box,
@@ -235,6 +220,8 @@
   .settings-title {
     font-family: 'Georgia', serif;
     font-weight: 700;
+    font-size: var(--font-xl);
+    margin: 0 0 calc(var(--gap) * 0.6);
   }
 
   .quiz-box {
@@ -242,54 +229,69 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    width: 90%;
-    max-width: 750px;
-    padding: 30px;
+
+    /* container sizing by viewport percent */
+    width: 92vw;
+    max-width: 92vw;
+    padding: var(--pad);
     background:
       linear-gradient(180deg, rgba(255,255,255,.60), rgba(255,255,255,.52)),
       radial-gradient(1200px 800px at 12% 0%, rgba(79,70,229,.10), transparent 60%),
       radial-gradient(1200px 800px at 88% 20%, rgba(34,211,238,.10), transparent 60%);
-    backdrop-filter: blur(20px);
-    border-radius: 24px;
-    border: 1px solid rgba(255,255,255,.75);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-    margin: 28px auto;
+    backdrop-filter: blur(1.4vmin);
+    border-radius: var(--radius);
+    border: 0.2vmin solid rgba(255,255,255,.75);
+    box-shadow: 0 2vmin 6vmin rgba(0, 0, 0, 0.2);
+    margin: 3vmin auto;
+    box-sizing: border-box;
   }
 
   .quiz-box img {
-    width: min(370px, 70%);
+    width: 70%;
+    max-width: 90vw;
     height: auto;
-    border-radius: 12px;
-    margin-bottom: 16px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.15);
+    border-radius: calc(var(--radius) * 0.6);
+    margin-bottom: var(--gap);
+    box-shadow: 0 1.6vmin 5vmin rgba(0,0,0,.15);
   }
 
   .progress-bar {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: calc(var(--gap) * 0.6);
+    margin-bottom: var(--gap);
     width: 100%;
   }
   .dot {
-    width: 40px; height: 8px;
+    width: 6%;
+    height: 0.9vmin;
     background: #d3d3d3;
-    border-radius: 4px;
+    border-radius: 0.9vmin;
     transition: background .25s ease, width .25s ease;
   }
-  .dot.active { background: var(--brand); width: 60px; }
+  .dot.active { background: var(--brand); width: 8%; }
+
+  #options{
+    display:flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: calc(var(--gap) * 0.7);
+    width: 100%;
+    margin-bottom: var(--gap);
+  }
 
   .option-btn {
     display: inline-block;
-    min-width: 160px;
-    margin: 10px 8px;
-    padding: 14px 18px;
-    font-size: 18px;
+    flex: 1 1 42%;
+    max-width: 48%;
+    min-width: 36%;
+    padding: 2vmin 2.4vmin;
+    font-size: var(--font-lg);
     font-weight: 700;
     color: var(--brand);
     background: #fff;
-    border: 2px solid var(--brand);
+    border: 0.4vmin solid var(--brand);
     border-radius: 9999px;
     cursor: pointer;
     transition: transform .05s ease,
@@ -299,30 +301,29 @@
   .option-btn:not(.selected):hover {
     background: var(--brand);
     color: #fff;
-    box-shadow: 0 6px 18px rgba(79,70,229,.25);
+    box-shadow: 0 1.2vmin 3vmin rgba(79,70,229,.25);
   }
   .option-btn.selected {
     background: var(--brand-strong);
     border-color: var(--brand-strong);
     color: #fff;
-    box-shadow: 0 6px 18px rgba(124,58,237,.28);
+    box-shadow: 0 1.2vmin 3vmin rgba(124,58,237,.28);
   }
-  .option-btn[disabled]{
-    opacity:.7; cursor:not-allowed; filter: grayscale(.1);
-  }
+  .option-btn[disabled]{ opacity:.7; cursor:not-allowed; filter: grayscale(.1); }
 
   .next-btn,
   .back-question-btn {
     display: inline-block;
-    width: 160px;
-    margin: 10px 8px;
-    padding: 14px 20px;
-    font-size: 18px;
+    width: 36%;
+    min-width: 28%;
+    max-width: 40%;
+    padding: 2vmin 2.6vmin;
+    font-size: var(--font-lg);
     font-weight: 700;
     border-radius: 9999px;
     cursor: pointer;
     transition: filter .2s ease, background .2s, color .2s, border-color .2s;
-    border: 2px solid transparent;
+    border: 0.4vmin solid transparent;
   }
   .next-btn {
     background: var(--brand);
@@ -343,15 +344,16 @@
   .nav-row {
     display: flex;
     justify-content: center;
-    gap: 12px;
-    margin-top: 6px;
+    gap: var(--gap);
+    margin-top: calc(var(--gap) * 0.5);
+    width: 100%;
   }
 
   .back-btn {
     position: absolute;
-    width: 50px; height: 50px;
-    top: 12px; left: 12px;
-    font-size: 20px; font-weight: bold;
+    width: 8vmin; height: 8vmin;
+    top: 2.4vmin; left: 2.4vmin;
+    font-size: var(--font-lg); font-weight: bold;
     background: none; border: none; color: black;
     cursor: pointer; z-index: 3;
   }
@@ -360,15 +362,17 @@
     display:flex;
     align-items:center;
     justify-content:center;
-    gap:18px;
-    margin-bottom:16px;
+    gap: var(--gap);
+    margin-bottom: var(--gap);
+    width: 100%;
   }
 
   .ring-wrap{
     position:relative;
-    width:64px; height:64px;
+    width: min(14vmin, 22vw);
+    height: min(14vmin, 22vw);
     flex:0 0 auto;
-    margin-bottom:-27px;
+    margin-bottom: calc(var(--gap) * -0.9);
   }
 
   .ring{
@@ -379,13 +383,13 @@
   .ring .bg{
     fill:none;
     stroke:rgba(0,0,0,.12);
-    stroke-width:6;
+    stroke-width: 0.9vmin;
   }
 
   .ring .fg{
     fill:none;
     stroke:var(--brand);
-    stroke-width:6;
+    stroke-width: 0.9vmin;
     stroke-linecap:round;
     transition:stroke-dashoffset .08s linear;
   }
@@ -394,7 +398,7 @@
     position:absolute; inset:0;
     display:flex; align-items:center; justify-content:center;
     font-weight:700;
-    font-size:0.95rem;
+    font-size: var(--font-base);
     color:var(--brand);
   }
 
@@ -417,47 +421,51 @@
     animation: fadeIn .18s ease;
   }
   .modal{
-    width: min(640px, 94vw);
+    width: 94vw;
+    max-width: 94vw;
     background:
       linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
       radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
       radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
-    border: 1px solid rgba(79,70,229,.28);
-    border-radius: 16px;
-    box-shadow: 0 24px 68px rgba(0,0,0,.35);
-    padding: 18px 18px 14px;
+    border: 0.3vmin solid rgba(79,70,229,.28);
+    border-radius: calc(var(--radius) * 0.7);
+    box-shadow: 0 3vmin 9vmin rgba(0,0,0,.35);
+    padding: calc(var(--pad) * 0.8);
     text-align: left;
     color: #0f172a;
     animation: pop .18s ease;
+    box-sizing: border-box;
   }
   .modal-header{
-    display:flex; align-items:center; gap:10px; margin-bottom: 6px;
+    display:flex; align-items:center; gap: calc(var(--gap) * 0.6); margin-bottom: 1vmin;
   }
   .badge{
-    width: 34px; height: 34px; border-radius: 9999px;
+    width: 6vmin; height: 6vmin; border-radius: 9999px;
     display:grid; place-items:center;
     background: linear-gradient(135deg, var(--brand), var(--brand2));
-    box-shadow: 0 6px 18px rgba(79,70,229,.35);
-    color: #fff; font-size: 18px;
+    box-shadow: 0 1.2vmin 3vmin rgba(79,70,229,.35);
+    color: #fff; font-size: var(--font-lg);
   }
-  .modal h3{ margin: 0; font-size: 1.25rem; }
+  .modal h3{ margin: 0; font-size: var(--font-lg); }
   .modal-body{
-    color:#111; line-height:1.55; padding: 6px 2px 0;
+    color:#111; line-height:1.55; padding: 1vmin 0.4vmin 0;
+    font-size: var(--font-base);
   }
-  .modal-body ul{ margin: 0; padding-left: 18px; }
-  .modal-body li{ margin: 6px 0; }
+  .modal-body ul{ margin: 0; padding-left: 4vmin; }
+  .modal-body li{ margin: 1vmin 0; }
   .modal-actions{
-    display:flex; justify-content:flex-end; gap:8px; margin-top: 12px;
+    display:flex; justify-content:flex-end; gap: calc(var(--gap) * 0.6); margin-top: 1.2vmin;
   }
   .action{
     background: linear-gradient(135deg, var(--brand), var(--brand2));
-    color:#fff; border: none; border-radius: 10px;
-    padding: 10px 16px; cursor: pointer;
-    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    color:#fff; border: none; border-radius: 2vmin;
+    padding: 1.6vmin 2.4vmin; cursor: pointer;
+    box-shadow: 0 2vmin 5vmin rgba(79,70,229,.28);
     transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    font-size: var(--font-base);
   }
-  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
-  .action:active{ transform: translateY(1px); }
+  .action:hover{ filter: brightness(1.02); box-shadow: 0 2.4vmin 6vmin rgba(79,70,229,.36); }
+  .action:active{ transform: translateY(0.2vmin); }
 
   @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
   @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
@@ -468,7 +476,7 @@
 {:else if loadError}
   <div class="dashboard-box quiz-box">Error: {loadError}</div>
 {:else}
-  <!-- blobs -->
+  <!-- blobs (kept as is) -->
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
   <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
@@ -499,7 +507,7 @@
 
     <img id="emotion-img" src={quizData[currentIndex].img} alt="Emotion Face" />
 
-    <p style="font-size:18px; margin-bottom:15px;">What emotion do you see?</p>
+    <p style="font-size: var(--font-lg); margin-bottom: calc(var(--gap) * 0.8);">What emotion do you see?</p>
 
     <div id="options">
       {#each quizData[currentIndex].options as option}
@@ -517,7 +525,6 @@
     </div>
   </div>
 
-  <!-- colorful instructions modal -->
   {#if instructionsOpen}
     <div class="modal-backdrop" on:click={closeInstructions}>
       <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
