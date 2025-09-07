@@ -17,18 +17,31 @@
   let loading = true;
   let loadError = '';
 
+  // instructions modal gate
   let instructionsOpen = true;
 
+  // lock body scroll while modal is open
+  $: if (typeof document !== 'undefined') {
+    document.body.style.overflow = instructionsOpen ? 'hidden' : '';
+  }
+  onDestroy(() => {
+    if (typeof document !== 'undefined') document.body.style.overflow = '';
+  });
+
+  // helper to store safe image URLs
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
+  // five second per question timer level five only
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
 
+  // ring geometry for level five timer
   const R = 28;
   const C = 2 * Math.PI * R;
 
+  // progress 0..1 based on time left
   $: pct = difficulty === '5'
     ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
     : 0;
@@ -67,6 +80,7 @@
 
   onDestroy(stopTimer);
 
+  // overall quiz timer from instructions dismissed to finish
   let quizStartedAt: number | null = null;
 
   onMount(async () => {
@@ -88,6 +102,7 @@
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
+      // persist minimal question info for the stats page
       const minimal = quizData.map(q => ({
         img: normalizeImg(q.img),
         correct: q.correct
@@ -95,6 +110,7 @@
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
       localStorage.removeItem('fr_picks');
 
+      // if instructions already closed, start timers
       if (!instructionsOpen) {
         if (quizStartedAt == null) quizStartedAt = performance.now();
         startTimer();
@@ -108,15 +124,20 @@
 
   function closeInstructions() {
     instructionsOpen = false;
+    // start overall timer when user starts playing
     if (quizData.length && quizStartedAt == null) {
       quizStartedAt = performance.now();
     }
+    // start per question timer for level five
     if (difficulty === '5' && quizData.length) startTimer();
   }
 
+  // interactions
   function selectOption(option: string) {
     if (instructionsOpen) return;
     userAnswers[currentIndex] = option;
+
+    // keep a live copy of picks so refreshes do not lose state
     const picksLive = userAnswers.map(v => (v == null ? null : v));
     localStorage.setItem('fr_picks', JSON.stringify(picksLive));
   }
@@ -146,6 +167,7 @@
   function finish() {
     stopTimer();
 
+    // determine results and score
     let score = 0;
     const results: boolean[] = [];
     quizData.forEach((q, i) => {
@@ -154,10 +176,12 @@
       results.push(ok);
     });
 
+    // summary for results page
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(quizData.length));
 
+    // picks and questions for stats page
     const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
     localStorage.setItem('fr_picks', JSON.stringify(picks));
     localStorage.setItem(
@@ -165,6 +189,7 @@
       JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
     );
 
+    // prebuild rich details so stats is instant
     const details = quizData.map((q, i) => {
       const picked = picks[i];
       return {
@@ -177,6 +202,7 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
+    // lightweight per user history with elapsed time
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
 
@@ -224,16 +250,18 @@
     margin: 0 0 calc(var(--gap) * 0.8);
   }
 
-  /* main card now hard limited by viewport */
+  /* main card hard limited by viewport */
+  .dashboard-box.quiz-box { position: relative; z-index: 10; }
+
   .quiz-box {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
 
-    width: min(72vw, 980px);
+    width: min(68vw, 920px);
     max-width: 92vw;
-    max-height: 86vh;
+    max-height: 82vh;
     padding: var(--pad);
     overflow: auto;
 
@@ -249,11 +277,11 @@
     box-sizing: border-box;
   }
 
-  /* image fits both width and height of viewport area */
+  /* image fits width and height of viewport area */
   .quiz-box img {
-    width: min(56vw, 840px);
+    width: min(48vw, 720px);
     max-width: 100%;
-    max-height: 42vh;
+    max-height: 38vh;
     height: auto;
     object-fit: contain;
     border-radius: calc(var(--radius) * 0.7);
@@ -346,6 +374,7 @@
     display:flex; align-items:center; justify-content:center;
     gap: var(--gap); margin-bottom: var(--gap); width: 100%;
   }
+
   .ring-wrap{
     position:relative;
     width: 10vmin; height: 10vmin;
@@ -357,13 +386,74 @@
   .ring .fg{ fill:none; stroke:var(--brand); stroke-width: 0.7vmin; stroke-linecap:round; transition:stroke-dashoffset .08s linear; }
   .ring-label{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size: var(--font-base); color:var(--brand); }
 
-  /* tighten the modal too */
-  .modal{ width: min(560px, 92vw); padding: 14px 16px; border-radius: 12px; }
+  :global(body){
+    background:
+      radial-gradient(1200px 800px at 20% 0%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(1200px 800px at 80% 30%, rgba(34,211,238,.12), transparent 60%),
+      #f7f7fb;
+  }
+
+  /* keep blobs below modal and card */
+  .blob { position: fixed; z-index: 0; }
+
+  /* modal centered on top with scroll lock friendly sizing */
+  .modal-backdrop{
+    position: fixed; inset: 0;
+    display: grid; place-items: center;
+    background:
+      radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
+      radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
+      rgba(0,0,0,.45);
+    z-index: 1000;
+    animation: fadeIn .18s ease;
+  }
+  .modal{
+    width: min(680px, 92vw);
+    max-height: 80vh;
+    overflow: auto;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
+      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
+      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
+    border: 0.3vmin solid rgba(79,70,229,.28);
+    border-radius: 14px;
+    box-shadow: 0 24px 68px rgba(0,0,0,.35);
+    padding: 16px 18px 14px;
+    text-align: left; color: #0f172a;
+    animation: pop .18s ease;
+    box-sizing: border-box;
+  }
+  .modal-header{ display:flex; align-items:center; gap: 10px; margin-bottom: 8px; }
+  .badge{
+    width: 34px; height: 34px; border-radius: 9999px;
+    display:grid; place-items:center;
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    box-shadow: 0 6px 18px rgba(79,70,229,.35);
+    color: #fff; font-size: 18px;
+  }
+  .modal h3{ margin: 0; font-size: var(--font-lg); }
+  .modal-body{ font-size: var(--font-base); line-height: 1.55; padding-top: 4px; }
+  .modal-body ul{ margin: 0; padding-left: 18px; }
+  .modal-body li{ margin: 6px 0; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap: 8px; margin-top: 10px; }
+  .action{
+    background: linear-gradient(135deg, var(--brand), var(--brand2));
+    color:#fff; border: none; border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    box-shadow: 0 10px 26px rgba(79,70,229,.28);
+    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    font-size: var(--font-base);
+  }
+  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
+  .action:active{ transform: translateY(1px); }
+
+  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
+  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1); } }
 
   /* phone rules */
   @media (max-width: 640px) {
-    .quiz-box { width: 94vw; max-height: 88vh; }
-    .quiz-box img { width: 88vw; max-height: 38vh; }
+    .quiz-box { width: 94vw; max-height: 86vh; }
+    .quiz-box img { width: 88vw; max-height: 36vh; }
     .option-btn { flex: 1 1 100%; max-width: 100%; min-width: 0; }
     .next-btn, .back-question-btn { width: 44%; min-width: 140px; }
   }
@@ -374,7 +464,7 @@
 {:else if loadError}
   <div class="dashboard-box quiz-box">Error: {loadError}</div>
 {:else}
-  <!-- blobs (kept as is) -->
+  <!-- blobs -->
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
   <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
