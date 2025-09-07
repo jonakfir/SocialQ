@@ -257,7 +257,7 @@
   .blob { position: fixed; z-index: 0; }
   .dashboard-box.quiz-box { position: relative; z-index: 10; }
 
-  /* main card constrained by viewport */
+  /* MAIN CARD — stretched down near the bottom */
   .quiz-box {
     display: flex;
     flex-direction: column;
@@ -266,7 +266,14 @@
 
     width: min(68vw, 920px);
     max-width: 92vw;
-    max-height: 82vh;
+
+    /* taller with small bottom gap */
+    min-height: 88vh;      /* fallback for older browsers */
+    min-height: 88svh;     /* address-bar aware on mobile */
+    max-height: 94vh;
+    max-height: 94svh;
+
+    margin: 1.2vmin auto 2.2vmin;  /* small top, ~2vmin above bottom */
     padding: var(--pad);
     overflow: auto;
 
@@ -278,7 +285,6 @@
     border-radius: var(--radius);
     border: 0.15vmin solid rgba(255,255,255,.75);
     box-shadow: 0 1.6vmin 4.8vmin rgba(0, 0, 0, 0.18);
-    margin: 2.2vmin auto;
     box-sizing: border-box;
   }
 
@@ -458,9 +464,16 @@
     to   { opacity: 1; }
   }
 
-  /* phone rules */
+  /* phones */
   @media (max-width: 640px) {
-    .quiz-box { width: 94vw; max-height: 86vh; }
+    .quiz-box {
+      width: 94vw;
+      min-height: 92vh;   /* fallback */
+      min-height: 92svh;  /* address-bar aware */
+      max-height: 96vh;
+      max-height: 96svh;
+      margin: 1vmin auto 2.4vmin;
+    }
     .quiz-box img { width: 88vw; max-height: 36vh; }
     .option-btn { flex: 1 1 100%; max-width: 100%; min-width: 0; }
     .next-btn, .back-question-btn { width: 44%; min-width: 140px; }
