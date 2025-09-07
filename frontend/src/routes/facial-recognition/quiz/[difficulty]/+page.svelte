@@ -236,7 +236,7 @@
 
     /* gentler scaling */
     --pad: 2.2vmin;
-    --gap: 1.4vmin;
+    --gap: 1.6vmin;
     --radius: 2vmin;
     --font-base: clamp(12px, 1.6vmin, 18px);
     --font-lg: clamp(14px, 2vmin, 20px);
@@ -250,31 +250,31 @@
     font-family: 'Georgia', serif;
     font-weight: 700;
     font-size: var(--font-xl);
-    margin: 0 0 calc(var(--gap) * 0.8);
+    margin: 0 0 calc(var(--gap) * 0.9);
   }
 
   /* keep blobs beneath main content; card above blobs, below modal */
   .blob { position: fixed; z-index: 0; }
   .dashboard-box.quiz-box { position: relative; z-index: 10; }
 
-  /* MAIN CARD — stretched down near the bottom */
+  /* MAIN CARD — lower on the page, almost to bottom */
   .quiz-box {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
 
-    width: min(68vw, 920px);
+    width: min(72vw, 1040px);
     max-width: 92vw;
 
-    /* taller with small bottom gap */
-    min-height: 88vh;      /* fallback for older browsers */
-    min-height: 88svh;     /* address-bar aware on mobile */
-    max-height: 94vh;
-    max-height: 94svh;
+    /* tall and lowered */
+    min-height: 88vh;      /* fallback */
+    min-height: 88svh;     /* mobile address-bar aware */
+    max-height: 95vh;
+    max-height: 95svh;
 
-    margin: 1.2vmin auto 2.2vmin;  /* small top, ~2vmin above bottom */
-    padding: var(--pad);
+    margin: 6vmin auto 1.2vmin;  /* push down from top, small gap at bottom */
+    padding: calc(var(--pad) * 1.1) calc(var(--pad) * 1.2);
     overflow: auto;
 
     background:
@@ -288,15 +288,15 @@
     box-sizing: border-box;
   }
 
-  /* image fits width and height area */
+  /* bigger face area */
   .quiz-box img {
-    width: min(48vw, 720px);
+    width: min(58vw, 880px);
     max-width: 100%;
-    max-height: 38vh;
+    max-height: 50vh;       /* was 38vh */
     height: auto;
     object-fit: contain;
     border-radius: calc(var(--radius) * 0.7);
-    margin-bottom: var(--gap);
+    margin: calc(var(--gap) * 0.6) 0 calc(var(--gap) * 1.2);
     box-shadow: 0 1.2vmin 3.6vmin rgba(0,0,0,.14);
   }
 
@@ -305,7 +305,7 @@
     justify-content: center;
     align-items: center;
     gap: calc(var(--gap) * 0.6);
-    margin: 0 0 var(--gap);
+    margin: 0 0 calc(var(--gap) * 1.1);
     width: 100%;
   }
   .dot {
@@ -317,21 +317,28 @@
   }
   .dot.active { background: var(--brand); width: 6.5%; }
 
+  /* headline under image */
+  .quiz-box p {
+    margin: 0 0 calc(var(--gap) * 1.2);
+    font-size: var(--font-lg);
+  }
+
   #options{
     display:flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: calc(var(--gap) * 0.8);
+    gap: calc(var(--gap) * 1.0);
     width: 100%;
-    margin-bottom: var(--gap);
+    margin-top: calc(var(--gap) * 1.2);     /* drop the buttons a bit */
+    margin-bottom: calc(var(--gap) * 1.2);
   }
 
-  /* two per row on desktop, full width on phones */
+  /* two per row on desktop, full width on phones; slightly chunkier */
   .option-btn {
     flex: 1 1 44%;
     max-width: 46%;
-    min-width: 260px;
-    padding: 1.2vmin 1.6vmin;
+    min-width: 280px;
+    padding: 1.4vmin 2vmin;
     font-size: var(--font-lg);
     font-weight: 700;
     color: var(--brand);
@@ -357,10 +364,10 @@
 
   .next-btn,
   .back-question-btn {
-    width: 30%;
-    min-width: 180px;
-    max-width: 260px;
-    padding: 1.2vmin 1.6vmin;
+    width: 32%;
+    min-width: 200px;
+    max-width: 300px;
+    padding: 1.4vmin 2vmin;
     font-size: var(--font-lg);
     font-weight: 700;
     border-radius: 9999px;
@@ -376,8 +383,8 @@
   .back-question-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   .nav-row {
-    display: flex; justify-content: center; gap: var(--gap);
-    margin-top: calc(var(--gap) * 0.6);
+    display: flex; justify-content: center; gap: calc(var(--gap) * 1.1);
+    margin-top: calc(var(--gap) * 1.2);
     width: 100%;
   }
 
@@ -472,11 +479,13 @@
       min-height: 92svh;  /* address-bar aware */
       max-height: 96vh;
       max-height: 96svh;
-      margin: 1vmin auto 2.4vmin;
+      margin: 5vmin auto 2.4vmin;
+      padding: calc(var(--pad) * 1.0);
     }
-    .quiz-box img { width: 88vw; max-height: 36vh; }
+    .quiz-box img { width: 88vw; max-height: 44vh; }
+    #options { gap: calc(var(--gap) * 0.9); margin-top: calc(var(--gap) * 1.0); }
     .option-btn { flex: 1 1 100%; max-width: 100%; min-width: 0; }
-    .next-btn, .back-question-btn { width: 44%; min-width: 140px; }
+    .next-btn, .back-question-btn { width: 46%; min-width: 140px; }
   }
 </style>
 
@@ -516,7 +525,7 @@
 
     <img id="emotion-img" src={quizData[currentIndex].img} alt="Emotion Face" />
 
-    <p style="font-size: var(--font-lg); margin-bottom: calc(var(--gap) * 0.8);">What emotion do you see?</p>
+    <p>What emotion do you see?</p>
 
     <div id="options">
       {#each quizData[currentIndex].options as option}
