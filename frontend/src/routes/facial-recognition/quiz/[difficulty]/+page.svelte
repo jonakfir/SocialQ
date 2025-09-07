@@ -30,20 +30,17 @@
     if (typeof document !== 'undefined') document.body.style.overflow = '';
   });
 
-  // Helper to store safe image URLs
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
-  // 5-second per-question timer (Level 5 only)
+  // Level-5 per-question timer
   const TIME_LIMIT_MS = 5000;
   let timeLeft = TIME_LIMIT_MS;
   let tickHandle: number | null = null;
 
-  // ring geometry (for the level-5 timer)
   const R = 28;
   const C = 2 * Math.PI * R;
 
-  // progress (0..1) based on time left
   $: pct = difficulty === '5'
     ? Math.max(0, Math.min(1, timeLeft / TIME_LIMIT_MS))
     : 0;
@@ -82,10 +79,9 @@
 
   onDestroy(stopTimer);
 
-  // Overall quiz timer (from instructions dismissed to finish)
+  // Overall timer
   let quizStartedAt: number | null = null;
 
-  // Mount: fetch questions & prepare storage for Stats
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
     try {
@@ -98,22 +94,16 @@
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
       const rows: Row[] = await res.json();
-
       quizData = (Array.isArray(rows) ? rows.slice(0, QUESTION_COUNT) : []);
       if (!quizData.length) throw new Error('No images found for this difficulty.');
 
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      // Persist minimal question info for the Stats page
-      const minimal = quizData.map(q => ({
-        img: normalizeImg(q.img),
-        correct: q.correct
-      }));
+      const minimal = quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct }));
       localStorage.setItem('fr_questions', JSON.stringify(minimal));
-      localStorage.removeItem('fr_picks'); // clear old picks
+      localStorage.removeItem('fr_picks');
 
-      // If instructions already closed, start timers
       if (!instructionsOpen) {
         if (quizStartedAt == null) quizStartedAt = performance.now();
         startTimer();
@@ -127,20 +117,15 @@
 
   function closeInstructions() {
     instructionsOpen = false;
-    // start overall timer when user starts playing
     if (quizData.length && quizStartedAt == null) {
       quizStartedAt = performance.now();
     }
-    // start per-question timer for level 5
     if (difficulty === '5' && quizData.length) startTimer();
   }
 
-  // Interactions
   function selectOption(option: string) {
     if (instructionsOpen) return;
     userAnswers[currentIndex] = option;
-
-    // keep a live copy of picks so refreshes don't lose state
     const picksLive = userAnswers.map(v => (v == null ? null : v));
     localStorage.setItem('fr_picks', JSON.stringify(picksLive));
   }
@@ -170,7 +155,6 @@
   function finish() {
     stopTimer();
 
-    // Determine results + score
     let score = 0;
     const results: boolean[] = [];
     quizData.forEach((q, i) => {
@@ -179,12 +163,10 @@
       results.push(ok);
     });
 
-    // summary for Results page
     localStorage.setItem('quiz_results', JSON.stringify(results));
     localStorage.setItem('quiz_score', String(score));
     localStorage.setItem('quiz_total', String(quizData.length));
 
-    // picks & questions for Stats page
     const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
     localStorage.setItem('fr_picks', JSON.stringify(picks));
     localStorage.setItem(
@@ -192,7 +174,6 @@
       JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
     );
 
-    // prebuild rich details so Stats is instant
     const details = quizData.map((q, i) => {
       const picked = picks[i];
       return {
@@ -205,19 +186,13 @@
     });
     localStorage.setItem('quiz_details', JSON.stringify(details));
 
-    // lightweight per-user history with elapsed time
     const userKey = getUserKey();
     const historyKey = `fr_history_${userKey}`;
 
     const endedAt = performance.now();
     const elapsedMs = quizStartedAt != null ? Math.max(0, endedAt - quizStartedAt) : 0;
 
-    const attempt = {
-      timeMs: elapsedMs,
-      score,
-      total: quizData.length,
-      difficulty
-    };
+    const attempt = { timeMs: elapsedMs, score, total: quizData.length, difficulty };
     const existing = JSON.parse(localStorage.getItem(historyKey) || '[]');
     existing.unshift(attempt);
     localStorage.setItem(historyKey, JSON.stringify(existing.slice(0, 50)));
@@ -234,12 +209,12 @@
     --brand-strong: #7c3aed;
     --brand2: #22d3ee;
 
-    --pad: 2.2vmin;
-    --gap: 1.6vmin;
+    --pad: 2vmin;
+    --gap: 1.4vmin;
     --radius: 2vmin;
-    --font-base: clamp(12px, 1.6vmin, 18px);
-    --font-lg: clamp(14px, 2vmin, 20px);
-    --font-xl: clamp(18px, 2.6vmin, 26px);
+    --font-base: clamp(12px, 1.55vmin, 18px);
+    --font-lg: clamp(14px, 1.95vmin, 20px);
+    --font-xl: clamp(18px, 2.5vmin, 26px);
   }
 
   .quiz-box,
@@ -249,53 +224,52 @@
     font-family: 'Georgia', serif;
     font-weight: 700;
     font-size: var(--font-xl);
-    margin: 0 0 calc(var(--gap) * 0.9);
+    margin: 0 0 calc(var(--gap) * 0.8);
   }
 
-  /* keep blobs beneath main content; card above blobs, below modal */
   .blob { position: fixed; z-index: 0; }
   .dashboard-box.quiz-box { position: relative; z-index: 10; }
 
-  /* MAIN CARD — skinnier, lower top, near bottom */
+  /* MAIN CARD — slim, moved UP, still near bottom */
   .quiz-box {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
 
-    width: min(58vw, 880px);   /* skinnier */
+    width: min(58vw, 880px);
     max-width: 92vw;
 
-    /* tall and placed a bit below top */
-    min-height: 88vh;      /* fallback */
-    min-height: 88svh;     /* address-bar aware */
-    max-height: 95vh;
-    max-height: 95svh;
+    /* almost full height */
+    min-height: 86vh;      /* fallback */
+    min-height: 86svh;
+    max-height: 94vh;
+    max-height: 94svh;
 
-    margin: 9vmin auto 1.4vmin;  /* pushed further down */
-    padding: calc(var(--pad) * 1.1) calc(var(--pad) * 1.2);
+    margin: 3.2vmin auto 1.6vmin; /* <-- pulled UP vs last version */
+    padding: calc(var(--pad) * 1.1) calc(var(--pad) * 1.25);
     overflow: auto;
 
     background:
       linear-gradient(180deg, rgba(255,255,255,.60), rgba(255,255,255,.52)),
       radial-gradient(1200px 800px at 12% 0%, rgba(79,70,229,.10), transparent 60%),
       radial-gradient(1200px 800px at 88% 20%, rgba(34,211,238,.10), transparent 60%);
-    backdrop-filter: blur(1.2vmin);
+    backdrop-filter: blur(1.1vmin);
     border-radius: var(--radius);
     border: 0.15vmin solid rgba(255,255,255,.75);
-    box-shadow: 0 1.6vmin 4.8vmin rgba(0, 0, 0, 0.18);
+    box-shadow: 0 1.6vmin 4.8vmin rgba(0,0,0,0.18);
     box-sizing: border-box;
   }
 
-  /* larger face area */
+  /* big but balanced face image */
   .quiz-box img {
-    width: min(50vw, 760px);
+    width: min(48vw, 760px);
     max-width: 100%;
-    max-height: 56vh;       /* larger */
+    max-height: 54vh;         /* roomy but won’t collide with buttons */
     height: auto;
     object-fit: contain;
-    border-radius: calc(var(--radius) * 0.7);
-    margin: calc(var(--gap) * 0.4) 0 calc(var(--gap) * 1.4);
+    border-radius: calc(var(--radius) * 0.6);
+    margin: calc(var(--gap) * 0.2) 0 calc(var(--gap) * 1.2);
     box-shadow: 0 1.2vmin 3.6vmin rgba(0,0,0,.14);
   }
 
@@ -304,46 +278,44 @@
     justify-content: center;
     align-items: center;
     gap: calc(var(--gap) * 0.6);
-    margin: 0 0 calc(var(--gap) * 1.1);
+    margin: 0 0 calc(var(--gap) * 1.0);
     width: 100%;
   }
   .dot {
     width: 5%;
-    height: 0.6vmin;
+    height: 0.55vmin;
     background: #d3d3d3;
     border-radius: 9999px;
     transition: background .2s ease, width .2s ease;
   }
   .dot.active { background: var(--brand); width: 6.5%; }
 
-  /* headline under image */
   .quiz-box p {
-    margin: 0 0 calc(var(--gap) * 1.6); /* move message down a touch */
+    margin: 0 0 calc(var(--gap) * 1.4);
     font-size: var(--font-lg);
   }
 
-  /* OPTIONS — “3 across, then 2 across”, centered last row */
+  /* OPTIONS — “3 across, then 2 across” */
   #options{
     display:flex;
     flex-wrap: wrap;
-    justify-content: center;  /* centers the last row when it has 2 */
+    justify-content: center; /* centers the last row if it has 1–2 */
     gap: calc(var(--gap) * 1.0);
     width: 100%;
-    margin-top: calc(var(--gap) * 1.8);     /* drop buttons further down */
-    margin-bottom: calc(var(--gap) * 1.6);
+    margin-top: calc(var(--gap) * 1.6);   /* gives breathing room below image */
+    margin-bottom: calc(var(--gap) * 1.4);
   }
 
-  /* Each option takes ~1/3 row on desktop; wraps nicely to 2 centered */
   .option-btn {
-    flex: 1 1 30%;          /* ~three across */
+    flex: 1 1 30%;          /* ~ three per row on desktop */
     max-width: 32%;
-    min-width: 240px;
-    padding: 1.4vmin 2vmin;
+    min-width: 220px;
+    padding: 1.2vmin 1.8vmin;
     font-size: var(--font-lg);
     font-weight: 700;
     color: var(--brand);
     background: #fff;
-    border: 0.35vmin solid var(--brand);
+    border: 0.32vmin solid var(--brand);
     border-radius: 9999px;
     cursor: pointer;
     transition: transform .05s ease,
@@ -363,17 +335,17 @@
   }
   .option-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
-  /* Nav buttons (Back/Next) — still two across, moved further down */
+  /* Back/Next — two across under the options */
   .next-btn,
   .back-question-btn {
     width: 32%;
-    min-width: 200px;
+    min-width: 190px;
     max-width: 300px;
-    padding: 1.4vmin 2vmin;
+    padding: 1.25vmin 1.8vmin;
     font-size: var(--font-lg);
     font-weight: 700;
     border-radius: 9999px;
-    border: 0.35vmin solid transparent;
+    border: 0.32vmin solid transparent;
     cursor: pointer;
   }
   .next-btn { background: var(--brand); color: #fff; border-color: var(--brand); }
@@ -385,8 +357,10 @@
   .back-question-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   .nav-row {
-    display: flex; justify-content: center; gap: calc(var(--gap) * 1.2);
-    margin-top: calc(var(--gap) * 2.2);  /* push nav buttons lower */
+    display: flex;
+    justify-content: center;
+    gap: calc(var(--gap) * 1.1);
+    margin-top: calc(var(--gap) * 1.8);  /* keeps buttons a touch lower */
     width: 100%;
   }
 
@@ -413,7 +387,7 @@
       #f7f7fb;
   }
 
-  /* modal — always on top and centered */
+  /* modal */
   .modal-backdrop{
     position: fixed; inset: 0;
     display: grid; place-items: center;
@@ -481,14 +455,11 @@
       min-height: 92svh;
       max-height: 96vh;
       max-height: 96svh;
-      margin: 7vmin auto 2.4vmin;
+      margin: 4vmin auto 2.4vmin;  /* up on phones, too */
       padding: calc(var(--pad) * 1.0);
     }
-    .quiz-box img { width: 88vw; max-height: 50vh; }
-    #options {
-      gap: calc(var(--gap) * 0.9);
-      margin-top: calc(var(--gap) * 1.4);
-    }
+    .quiz-box img { width: 88vw; max-height: 48vh; }
+    #options { gap: calc(var(--gap) * 0.9); margin-top: calc(var(--gap) * 1.2); }
     .option-btn { flex: 1 1 46%; max-width: 48%; min-width: 0; } /* 2 across on small screens */
     .next-btn, .back-question-btn { width: 46%; min-width: 140px; }
   }
@@ -548,7 +519,6 @@
     </div>
   </div>
 
-  <!-- colorful instructions modal -->
   {#if instructionsOpen}
     <div class="modal-backdrop" on:click={closeInstructions}>
       <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
