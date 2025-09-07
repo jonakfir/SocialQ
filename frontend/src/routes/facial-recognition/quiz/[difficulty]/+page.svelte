@@ -213,7 +213,7 @@
     const elapsedMs = quizStartedAt != null ? Math.max(0, endedAt - quizStartedAt) : 0;
 
     const attempt = {
-      timeMs: elapsedMs,                        // used by Settings
+      timeMs: elapsedMs,
       score,
       total: quizData.length,
       difficulty
@@ -234,7 +234,6 @@
     --brand-strong: #7c3aed;
     --brand2: #22d3ee;
 
-    /* gentler scaling */
     --pad: 2.2vmin;
     --gap: 1.6vmin;
     --radius: 2vmin;
@@ -257,23 +256,23 @@
   .blob { position: fixed; z-index: 0; }
   .dashboard-box.quiz-box { position: relative; z-index: 10; }
 
-  /* MAIN CARD — lower on the page, almost to bottom */
+  /* MAIN CARD — skinnier, lower top, near bottom */
   .quiz-box {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
 
-    width: min(72vw, 1040px);
+    width: min(58vw, 880px);   /* skinnier */
     max-width: 92vw;
 
-    /* tall and lowered */
+    /* tall and placed a bit below top */
     min-height: 88vh;      /* fallback */
-    min-height: 88svh;     /* mobile address-bar aware */
+    min-height: 88svh;     /* address-bar aware */
     max-height: 95vh;
     max-height: 95svh;
 
-    margin: 6vmin auto 1.2vmin;  /* push down from top, small gap at bottom */
+    margin: 9vmin auto 1.4vmin;  /* pushed further down */
     padding: calc(var(--pad) * 1.1) calc(var(--pad) * 1.2);
     overflow: auto;
 
@@ -288,15 +287,15 @@
     box-sizing: border-box;
   }
 
-  /* bigger face area */
+  /* larger face area */
   .quiz-box img {
-    width: min(58vw, 880px);
+    width: min(50vw, 760px);
     max-width: 100%;
-    max-height: 50vh;       /* was 38vh */
+    max-height: 56vh;       /* larger */
     height: auto;
     object-fit: contain;
     border-radius: calc(var(--radius) * 0.7);
-    margin: calc(var(--gap) * 0.6) 0 calc(var(--gap) * 1.2);
+    margin: calc(var(--gap) * 0.4) 0 calc(var(--gap) * 1.4);
     box-shadow: 0 1.2vmin 3.6vmin rgba(0,0,0,.14);
   }
 
@@ -319,25 +318,26 @@
 
   /* headline under image */
   .quiz-box p {
-    margin: 0 0 calc(var(--gap) * 1.2);
+    margin: 0 0 calc(var(--gap) * 1.6); /* move message down a touch */
     font-size: var(--font-lg);
   }
 
+  /* OPTIONS — “3 across, then 2 across”, centered last row */
   #options{
     display:flex;
     flex-wrap: wrap;
-    justify-content: center;
+    justify-content: center;  /* centers the last row when it has 2 */
     gap: calc(var(--gap) * 1.0);
     width: 100%;
-    margin-top: calc(var(--gap) * 1.2);     /* drop the buttons a bit */
-    margin-bottom: calc(var(--gap) * 1.2);
+    margin-top: calc(var(--gap) * 1.8);     /* drop buttons further down */
+    margin-bottom: calc(var(--gap) * 1.6);
   }
 
-  /* two per row on desktop, full width on phones; slightly chunkier */
+  /* Each option takes ~1/3 row on desktop; wraps nicely to 2 centered */
   .option-btn {
-    flex: 1 1 44%;
-    max-width: 46%;
-    min-width: 280px;
+    flex: 1 1 30%;          /* ~three across */
+    max-width: 32%;
+    min-width: 240px;
     padding: 1.4vmin 2vmin;
     font-size: var(--font-lg);
     font-weight: 700;
@@ -349,6 +349,7 @@
     transition: transform .05s ease,
                 background .2s, color .2s,
                 border-color .2s, box-shadow .2s;
+    text-align: center;
   }
   .option-btn:not(.selected):hover {
     background: var(--brand); color: #fff;
@@ -362,6 +363,7 @@
   }
   .option-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
+  /* Nav buttons (Back/Next) — still two across, moved further down */
   .next-btn,
   .back-question-btn {
     width: 32%;
@@ -383,8 +385,8 @@
   .back-question-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   .nav-row {
-    display: flex; justify-content: center; gap: calc(var(--gap) * 1.1);
-    margin-top: calc(var(--gap) * 1.2);
+    display: flex; justify-content: center; gap: calc(var(--gap) * 1.2);
+    margin-top: calc(var(--gap) * 2.2);  /* push nav buttons lower */
     width: 100%;
   }
 
@@ -475,16 +477,19 @@
   @media (max-width: 640px) {
     .quiz-box {
       width: 94vw;
-      min-height: 92vh;   /* fallback */
-      min-height: 92svh;  /* address-bar aware */
+      min-height: 92vh;
+      min-height: 92svh;
       max-height: 96vh;
       max-height: 96svh;
-      margin: 5vmin auto 2.4vmin;
+      margin: 7vmin auto 2.4vmin;
       padding: calc(var(--pad) * 1.0);
     }
-    .quiz-box img { width: 88vw; max-height: 44vh; }
-    #options { gap: calc(var(--gap) * 0.9); margin-top: calc(var(--gap) * 1.0); }
-    .option-btn { flex: 1 1 100%; max-width: 100%; min-width: 0; }
+    .quiz-box img { width: 88vw; max-height: 50vh; }
+    #options {
+      gap: calc(var(--gap) * 0.9);
+      margin-top: calc(var(--gap) * 1.4);
+    }
+    .option-btn { flex: 1 1 46%; max-width: 48%; min-width: 0; } /* 2 across on small screens */
     .next-btn, .back-question-btn { width: 46%; min-width: 140px; }
   }
 </style>
