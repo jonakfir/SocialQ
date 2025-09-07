@@ -6,7 +6,6 @@
 
   type Row = { img: string; options: string[]; correct: string };
 
-  // Force exactly N questions
   const QUESTION_COUNT = 8;
 
   // Difficulty from route param
@@ -22,6 +21,14 @@
 
   // Instructions modal gate
   let instructionsOpen = true;
+
+  // Lock body scroll while modal is open
+  $: if (typeof document !== 'undefined') {
+    document.body.style.overflow = instructionsOpen ? 'hidden' : '';
+  }
+  onDestroy(() => {
+    if (typeof document !== 'undefined') document.body.style.overflow = '';
+  });
 
   // Helper to store safe image URLs
   const normalizeImg = (u: unknown) =>
@@ -206,8 +213,7 @@
     const elapsedMs = quizStartedAt != null ? Math.max(0, endedAt - quizStartedAt) : 0;
 
     const attempt = {
-      timeMs: elapsedMs,                        // new field used by Settings
-      // date: new Date().toISOString().slice(0, 10), // keep if you still want the date
+      timeMs: elapsedMs,                        // used by Settings
       score,
       total: quizData.length,
       difficulty
@@ -227,6 +233,14 @@
     --brand: #4f46e5;
     --brand-strong: #7c3aed;
     --brand2: #22d3ee;
+
+    /* gentler scaling */
+    --pad: 2.2vmin;
+    --gap: 1.4vmin;
+    --radius: 2vmin;
+    --font-base: clamp(12px, 1.6vmin, 18px);
+    --font-lg: clamp(14px, 2vmin, 20px);
+    --font-xl: clamp(18px, 2.6vmin, 26px);
   }
 
   .quiz-box,
@@ -235,61 +249,88 @@
   .settings-title {
     font-family: 'Georgia', serif;
     font-weight: 700;
+    font-size: var(--font-xl);
+    margin: 0 0 calc(var(--gap) * 0.8);
   }
 
+  /* keep blobs beneath main content; card above blobs, below modal */
+  .blob { position: fixed; z-index: 0; }
+  .dashboard-box.quiz-box { position: relative; z-index: 10; }
+
+  /* main card constrained by viewport */
   .quiz-box {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    width: 90%;
-    max-width: 750px;
-    padding: 30px;
+
+    width: min(68vw, 920px);
+    max-width: 92vw;
+    max-height: 82vh;
+    padding: var(--pad);
+    overflow: auto;
+
     background:
       linear-gradient(180deg, rgba(255,255,255,.60), rgba(255,255,255,.52)),
       radial-gradient(1200px 800px at 12% 0%, rgba(79,70,229,.10), transparent 60%),
       radial-gradient(1200px 800px at 88% 20%, rgba(34,211,238,.10), transparent 60%);
-    backdrop-filter: blur(20px);
-    border-radius: 24px;
-    border: 1px solid rgba(255,255,255,.75);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-    margin: 28px auto;
+    backdrop-filter: blur(1.2vmin);
+    border-radius: var(--radius);
+    border: 0.15vmin solid rgba(255,255,255,.75);
+    box-shadow: 0 1.6vmin 4.8vmin rgba(0, 0, 0, 0.18);
+    margin: 2.2vmin auto;
+    box-sizing: border-box;
   }
 
+  /* image fits width and height area */
   .quiz-box img {
-    width: min(370px, 70%);
+    width: min(48vw, 720px);
+    max-width: 100%;
+    max-height: 38vh;
     height: auto;
-    border-radius: 12px;
-    margin-bottom: 16px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.15);
+    object-fit: contain;
+    border-radius: calc(var(--radius) * 0.7);
+    margin-bottom: var(--gap);
+    box-shadow: 0 1.2vmin 3.6vmin rgba(0,0,0,.14);
   }
 
   .progress-bar {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: calc(var(--gap) * 0.6);
+    margin: 0 0 var(--gap);
     width: 100%;
   }
   .dot {
-    width: 40px; height: 8px;
+    width: 5%;
+    height: 0.6vmin;
     background: #d3d3d3;
-    border-radius: 4px;
-    transition: background .25s ease, width .25s ease;
+    border-radius: 9999px;
+    transition: background .2s ease, width .2s ease;
   }
-  .dot.active { background: var(--brand); width: 60px; }
+  .dot.active { background: var(--brand); width: 6.5%; }
 
+  #options{
+    display:flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: calc(var(--gap) * 0.8);
+    width: 100%;
+    margin-bottom: var(--gap);
+  }
+
+  /* two per row on desktop, full width on phones */
   .option-btn {
-    display: inline-block;
-    min-width: 160px;
-    margin: 10px 8px;
-    padding: 14px 18px;
-    font-size: 18px;
+    flex: 1 1 44%;
+    max-width: 46%;
+    min-width: 260px;
+    padding: 1.2vmin 1.6vmin;
+    font-size: var(--font-lg);
     font-weight: 700;
     color: var(--brand);
     background: #fff;
-    border: 2px solid var(--brand);
+    border: 0.35vmin solid var(--brand);
     border-radius: 9999px;
     cursor: pointer;
     transition: transform .05s ease,
@@ -297,106 +338,58 @@
                 border-color .2s, box-shadow .2s;
   }
   .option-btn:not(.selected):hover {
-    background: var(--brand);
-    color: #fff;
-    box-shadow: 0 6px 18px rgba(79,70,229,.25);
+    background: var(--brand); color: #fff;
+    box-shadow: 0 1vmin 2.6vmin rgba(79,70,229,.22);
   }
   .option-btn.selected {
     background: var(--brand-strong);
     border-color: var(--brand-strong);
     color: #fff;
-    box-shadow: 0 6px 18px rgba(124,58,237,.28);
+    box-shadow: 0 1vmin 2.6vmin rgba(124,58,237,.24);
   }
-  .option-btn[disabled]{
-    opacity:.7; cursor:not-allowed; filter: grayscale(.1);
-  }
+  .option-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   .next-btn,
   .back-question-btn {
-    display: inline-block;
-    width: 160px;
-    margin: 10px 8px;
-    padding: 14px 20px;
-    font-size: 18px;
+    width: 30%;
+    min-width: 180px;
+    max-width: 260px;
+    padding: 1.2vmin 1.6vmin;
+    font-size: var(--font-lg);
     font-weight: 700;
     border-radius: 9999px;
+    border: 0.35vmin solid transparent;
     cursor: pointer;
-    transition: filter .2s ease, background .2s, color .2s, border-color .2s;
-    border: 2px solid transparent;
   }
-  .next-btn {
-    background: var(--brand);
-    color: #fff;
-    border-color: var(--brand);
-  }
+  .next-btn { background: var(--brand); color: #fff; border-color: var(--brand); }
   .next-btn:hover { filter: brightness(1.05); }
-  .next-btn[disabled]{ opacity:.7; cursor:not-allowed; }
+  .next-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
-  .back-question-btn {
-    background: #e5e7eb;
-    color: #111827;
-    border-color: #111827;
-  }
+  .back-question-btn { background: #e5e7eb; color: #111827; border-color: #111827; }
   .back-question-btn:hover { background: #fff; }
-  .back-question-btn[disabled]{ opacity:.7; cursor:not-allowed; }
+  .back-question-btn[disabled]{ opacity:.75; cursor:not-allowed; }
 
   .nav-row {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    margin-top: 6px;
-  }
-
-  .back-btn {
-    position: absolute;
-    width: 50px; height: 50px;
-    top: 12px; left: 12px;
-    font-size: 20px; font-weight: bold;
-    background: none; border: none; color: black;
-    cursor: pointer; z-index: 3;
+    display: flex; justify-content: center; gap: var(--gap);
+    margin-top: calc(var(--gap) * 0.6);
+    width: 100%;
   }
 
   .media-row{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:18px;
-    margin-bottom:16px;
+    display:flex; align-items:center; justify-content:center;
+    gap: var(--gap); margin-bottom: var(--gap); width: 100%;
   }
 
   .ring-wrap{
     position:relative;
-    width:64px; height:64px;
+    width: 10vmin; height: 10vmin;
     flex:0 0 auto;
-    margin-bottom:-27px;
+    margin-bottom: calc(var(--gap) * -0.6);
   }
-
-  .ring{
-    width:100%; height:100%;
-    transform:rotate(-90deg);
-  }
-
-  .ring .bg{
-    fill:none;
-    stroke:rgba(0,0,0,.12);
-    stroke-width:6;
-  }
-
-  .ring .fg{
-    fill:none;
-    stroke:var(--brand);
-    stroke-width:6;
-    stroke-linecap:round;
-    transition:stroke-dashoffset .08s linear;
-  }
-
-  .ring-label{
-    position:absolute; inset:0;
-    display:flex; align-items:center; justify-content:center;
-    font-weight:700;
-    font-size:0.95rem;
-    color:var(--brand);
-  }
+  .ring{ width:100%; height:100%; transform:rotate(-90deg); }
+  .ring .bg{ fill:none; stroke:rgba(0,0,0,.12); stroke-width: 0.7vmin; }
+  .ring .fg{ fill:none; stroke:var(--brand); stroke-width: 0.7vmin; stroke-linecap:round; transition:stroke-dashoffset .08s linear; }
+  .ring-label{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:700; font-size: var(--font-base); color:var(--brand); }
 
   :global(body){
     background:
@@ -405,34 +398,34 @@
       #f7f7fb;
   }
 
-  /* modal */
+  /* modal — always on top and centered */
   .modal-backdrop{
     position: fixed; inset: 0;
+    display: grid; place-items: center;
     background:
       radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
       radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
       rgba(0,0,0,.45);
-    display: grid; place-items: center;
-    z-index: 50;
+    z-index: 1000;
     animation: fadeIn .18s ease;
   }
   .modal{
-    width: min(640px, 94vw);
+    width: min(680px, 92vw);
+    max-height: 80vh;
+    overflow: auto;
     background:
       linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
       radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
       radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
-    border: 1px solid rgba(79,70,229,.28);
-    border-radius: 16px;
+    border: 0.3vmin solid rgba(79,70,229,.28);
+    border-radius: 14px;
     box-shadow: 0 24px 68px rgba(0,0,0,.35);
-    padding: 18px 18px 14px;
-    text-align: left;
-    color: #0f172a;
+    padding: 16px 18px 14px;
+    text-align: left; color: #0f172a;
     animation: pop .18s ease;
+    box-sizing: border-box;
   }
-  .modal-header{
-    display:flex; align-items:center; gap:10px; margin-bottom: 6px;
-  }
+  .modal-header{ display:flex; align-items:center; gap: 10px; margin-bottom: 8px; }
   .badge{
     width: 34px; height: 34px; border-radius: 9999px;
     display:grid; place-items:center;
@@ -440,27 +433,38 @@
     box-shadow: 0 6px 18px rgba(79,70,229,.35);
     color: #fff; font-size: 18px;
   }
-  .modal h3{ margin: 0; font-size: 1.25rem; }
-  .modal-body{
-    color:#111; line-height:1.55; padding: 6px 2px 0;
-  }
+  .modal h3{ margin: 0; font-size: var(--font-lg); }
+  .modal-body{ font-size: var(--font-base); line-height: 1.55; padding-top: 4px; }
   .modal-body ul{ margin: 0; padding-left: 18px; }
   .modal-body li{ margin: 6px 0; }
-  .modal-actions{
-    display:flex; justify-content:flex-end; gap:8px; margin-top: 12px;
-  }
+  .modal-actions{ display:flex; justify-content:flex-end; gap: 8px; margin-top: 10px; }
   .action{
     background: linear-gradient(135deg, var(--brand), var(--brand2));
     color:#fff; border: none; border-radius: 10px;
     padding: 10px 16px; cursor: pointer;
     box-shadow: 0 10px 26px rgba(79,70,229,.28);
     transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    font-size: var(--font-base);
   }
   .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
   .action:active{ transform: translateY(1px); }
 
-  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
-  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
+  @keyframes pop {
+    from { transform: scale(.96); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* phone rules */
+  @media (max-width: 640px) {
+    .quiz-box { width: 94vw; max-height: 86vh; }
+    .quiz-box img { width: 88vw; max-height: 36vh; }
+    .option-btn { flex: 1 1 100%; max-width: 100%; min-width: 0; }
+    .next-btn, .back-question-btn { width: 44%; min-width: 140px; }
+  }
 </style>
 
 {#if loading}
@@ -499,7 +503,7 @@
 
     <img id="emotion-img" src={quizData[currentIndex].img} alt="Emotion Face" />
 
-    <p style="font-size:18px; margin-bottom:15px;">What emotion do you see?</p>
+    <p style="font-size: var(--font-lg); margin-bottom: calc(var(--gap) * 0.8);">What emotion do you see?</p>
 
     <div id="options">
       {#each quizData[currentIndex].options as option}
