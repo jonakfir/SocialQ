@@ -3,12 +3,16 @@
   import { goto } from '$app/navigation';
 
   // ---------- NATIVE APP BRIDGE ----------
-  const isNative = typeof window !== 'undefined'
-    && !!(window as any).webkit?.messageHandlers?.app;
+  const isNative =
+    typeof window !== 'undefined' &&
+    !!(window as any).webkit?.messageHandlers?.app;
 
   function postToApp(payload: Record<string, any>) {
-    try { (window as any).webkit?.messageHandlers?.app?.postMessage(payload); }
-    catch { /* ignore if not available */ }
+    try {
+      (window as any).webkit?.messageHandlers?.app?.postMessage(payload);
+    } catch {
+      /* ignore if not available */
+    }
   }
 
   // ---------- refs ----------
@@ -30,7 +34,15 @@
   let instructionsOpen = true;
 
   // targets returned by your /ekman endpoint
-  type Target = { img: string; label?: string; difficulty?: string; correct?: string; emotion?: string; name?: string; answer?: string };
+  type Target = {
+    img: string;
+    label?: string;
+    difficulty?: string;
+    correct?: string;
+    emotion?: string;
+    name?: string;
+    answer?: string;
+  };
   let difficulty = '1';
   let targets: Target[] = [];
 
@@ -158,9 +170,14 @@
   }
 
   onMount(async () => {
+    // mark body so CSS can change layout when embedded in the native app
+    if (isNative) {
+      document.body.classList.add('native');
+    }
+
     // 1) load targets
     try {
-      const res = await fetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=12`, { cache: 'no-store' });
+      const res = await fetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=8`, { cache: 'no-store' });
       const rows = await res.json();
       if (!Array.isArray(rows) || rows.length === 0) throw new Error('No images');
       targets = rows;
@@ -300,7 +317,13 @@
     const result = await human.detect(video);
 
     const t = targets[currentIndex] || {};
-    const labelRaw = (t as any).correct ?? t.label ?? t.emotion ?? t.name ?? t.answer ?? '';
+    const labelRaw =
+      (t as any).correct ??
+      t.label ??
+      t.emotion ??
+      t.name ??
+      t.answer ??
+      '';
     const target = normEmotion(labelRaw);
 
     const predicted = normEmotion(topEmotionFrom(result));
@@ -311,7 +334,9 @@
       predicted2 = normEmotion(emo[1]?.emotion || '');
     }
 
-    const correct = (!!predicted && predicted === target) || (!!predicted2 && predicted2 === target);
+    const correct =
+      (!!predicted && predicted === target) ||
+      (!!predicted2 && predicted2 === target);
     results.push(!!correct);
     if (correct) score += 1;
   }
@@ -384,47 +409,54 @@
 <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
-<div class="header">
-  <h1>Mirroring</h1>
-</div>
+<!-- Header: HIDDEN inside the native app -->
+{#if !isNative}
+  <div class="header">
+    <h1>Mirroring</h1>
+  </div>
+{/if}
 
-<!-- The canvas fills this entire card, controls are overlaid on top -->
+<!-- The canvas fills this entire card; on native, the card becomes full-bleed -->
 <div class="mirroring-container" bind:this={cameraArea}>
   <div class="camera-area">
     <video bind:this={video} autoplay playsinline muted style="display:none;"></video>
     <canvas bind:this={canvas}></canvas>
+
+    <!-- keep the target face preview (you can hide it on native if you want) -->
     <img class="target-face" alt="Target Face" />
     <div bind:this={countdown} class="countdown"></div>
   </div>
 
-  <!-- Controls overlay: fully transparent -->
-  <div class="controls">
-    <button
-      class="record-btn"
-      on:click={startCountdown}
-      aria-label="Start countdown"
-      disabled={instructionsOpen}
-    ></button>
+  <!-- Controls overlay: HIDDEN inside the native app -->
+  {#if !isNative}
+    <div class="controls">
+      <button
+        class="record-btn"
+        on:click={startCountdown}
+        aria-label="Start countdown"
+        disabled={instructionsOpen}
+      ></button>
 
-    <!-- bottom left -->
-    <button class="toggle-ui hide-ui-fixed" on:click={() => (showOverlay = !showOverlay)}>
-      {showOverlay ? 'Hide UI' : 'Show UI'}
-    </button>
+      <!-- bottom left -->
+      <button class="toggle-ui hide-ui-fixed" on:click={() => (showOverlay = !showOverlay)}>
+        {showOverlay ? 'Hide UI' : 'Show UI'}
+      </button>
 
-    <!-- bottom right cluster: Auto zoom + scale + Recalibrate -->
-    <div class="zoom-row corner-right">
-      <label class="switch">
-        <input type="checkbox" bind:checked={autoZoom} />
-        <span>Auto zoom</span>
-      </label>
-      <button class="action small" type="button" on:click={recalibrate}>Recalibrate</button>
+      <!-- bottom right cluster: Auto zoom + scale + Recalibrate -->
+      <div class="zoom-row corner-right">
+        <label class="switch">
+          <input type="checkbox" bind:checked={autoZoom} />
+          <span>Auto zoom</span>
+        </label>
+        <button class="action small" type="button" on:click={recalibrate}>Recalibrate</button>
+      </div>
+
+      <div bind:this={bar} class="progress-bar"></div>
     </div>
-
-    <div bind:this={bar} class="progress-bar"></div>
-  </div>
+  {/if}
 </div>
 
-<!-- instructions modal -->
+<!-- instructions modal (keep visible for both; close with “Got it”) -->
 {#if instructionsOpen}
   <div class="modal-backdrop" on:click={() => (instructionsOpen = false)}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
@@ -618,4 +650,20 @@
 
   @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
   @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
+
+  /* ---------- NATIVE-ONLY OVERRIDES ---------- */
+  :global(body.native .mirroring-container) {
+    top: 0; bottom: 0; left: 0; right: 0;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+  }
+  :global(body.native canvas) {
+    border-radius: 0;
+    box-shadow: none;
+  }
+  /* optional: hide target preview in native too
+  :global(body.native .target-face) { display: none; }
+  */
 </style>
