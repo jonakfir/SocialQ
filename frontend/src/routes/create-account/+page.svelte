@@ -294,18 +294,30 @@
     display: grid;
     place-items: center;
     z-index: 3;
+    padding: 16px;
   }
   .modal{
-    width: min(560px, 92vw);
+    width: min(900px, 92vw);
     background: #fff;
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0,0,0,.35);
     padding: 20px;
     text-align: left;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
   }
   .modal h3{ margin: 0 0 8px; }
-  .modal-body{ color:#111; line-height:1.5; min-height: 120px; }
+  .modal-body{
+    color:#111; line-height:1.5;
+    overflow: auto; /* scroll long policy */
+    max-height: 75vh;
+    padding-right: 4px;
+  }
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top: 14px; }
+  .policy h4 { margin-top: 1rem; }
+  .policy ul { padding-left: 1.2rem; }
+  .policy address { font-style: normal; line-height: 1.4; }
 </style>
 
 <!-- blobs -->
@@ -356,9 +368,98 @@
 
 {#if termsOpen}
   <div class="modal-backdrop" transition:fade on:click={() => (termsOpen = false)}>
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Terms and Conditions" on:click|stopPropagation>
-      <h3>Terms and Conditions</h3>
-      <div class="modal-body">test</div>
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tc-title"
+      on:click|stopPropagation
+    >
+      <h3 id="tc-title">SocialQ Privacy Policy</h3>
+
+      <div class="modal-body">
+        <article class="policy">
+          <p><strong>Effective Date:</strong> August 29, 2025</p>
+
+          <h4>1. Introduction</h4>
+          <p>
+            SocialQ, Inc. (“SocialQ,” "we," "our," or "us") is committed to protecting the privacy of our users ("you").
+            This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our
+            website <a href="https://www.social-q.net" target="_blank" rel="noopener noreferrer">www.social-q.net</a> and use our services,
+            such as the mobile and web application known as AboutFace (the “Application,” or “AboutFace”).
+          </p>
+          <p>By accessing or using our services, you agree to the terms of this Privacy Policy. If you do not agree, please do not use our services.</p>
+
+          <h4>2. Information We Collect</h4>
+          <p>We may collect personal information that you voluntarily provide to us when you register on our site, place an order, subscribe to a newsletter, respond to a survey, fill out a form, or otherwise interact with our services. The types of personal information we may collect include:</p>
+          <ul>
+            <li><strong>Contact Information:</strong> Name, email address, mailing address, and phone number.</li>
+            <li><strong>Account Information:</strong> Username, password, and other registration details.</li>
+            <li><strong>Payment Information:</strong> Credit card numbers and other payment details (handled by a secure third-party processor).</li>
+            <li><strong>Demographic Information:</strong> Age, gender, and other demographic data.</li>
+            <li><strong>User Content:</strong> Any content you post, such as comments, reviews, or forum posts.</li>
+          </ul>
+          <p>We may also automatically collect certain information when you visit our website, including:</p>
+          <ul>
+            <li><strong>Log Data:</strong> IP address, browser type, device information, access times, and pages viewed.</li>
+            <li><strong>Usage Data:</strong> Information about how you use our services, such as the features you access and the time you spend on them.</li>
+            <li><strong>Cookies and Tracking Technologies:</strong> We use cookies, web beacons, and similar technologies to enhance your experience and analyze usage. You can control cookies through your browser settings.</li>
+          </ul>
+
+          <h4>3. How We Use Your Information</h4>
+          <ul>
+            <li>Provide, operate, and maintain our services.</li>
+            <li>Process and fulfill your orders and transactions.</li>
+            <li>Improve, personalize, and expand our services.</li>
+            <li>Understand and analyze how you use our services.</li>
+            <li>Communicate with you, including sending you updates, newsletters, and promotional materials.</li>
+            <li>Respond to your comments, questions, and requests.</li>
+            <li>Detect and prevent fraud and other malicious activities.</li>
+            <li>Comply with legal obligations.</li>
+          </ul>
+
+          <h4>4. How We Share Your Information</h4>
+          <ul>
+            <li><strong>With Service Providers:</strong> We may share your information with third-party vendors, consultants, and other service providers who perform services on our behalf, such as payment processing, data analysis, email delivery, and hosting services.</li>
+            <li><strong>For Business Transfers:</strong> In the event of a merger, acquisition, or sale of all or a portion of our assets, your information may be transferred to the new owner.</li>
+            <li><strong>For Legal Reasons:</strong> We may disclose your information if required to do so by law or in response to valid requests by public authorities (e.g., a court or government agency).</li>
+            <li><strong>With Your Consent:</strong> We may share your information with your explicit consent.</li>
+          </ul>
+
+          <h4>5. Your Choices and Rights</h4>
+          <ul>
+            <li><strong>Access:</strong> You have the right to request a copy of the personal data we hold about you.</li>
+            <li><strong>Correction:</strong> You can request that we correct any inaccurate or incomplete information.</li>
+            <li><strong>Deletion:</strong> You may request that we delete your personal data under certain circumstances.</li>
+            <li><strong>Objection:</strong> You may object to the processing of your data for specific purposes.</li>
+            <li><strong>Data Portability:</strong> You have the right to receive your data in a structured, commonly used, and machine-readable format.</li>
+            <li><strong>Unsubscribe:</strong> You can opt out of receiving promotional emails from us by following the unsubscribe instructions in those emails.</li>
+          </ul>
+
+          <h4>6. Data Security</h4>
+          <p>We implement reasonable security measures to protect your information from unauthorized access, alteration, disclosure, or destruction. However, please be aware that no method of transmission over the internet or electronic storage is 100% secure.</p>
+
+          <h4>7. Biometric Data Collection</h4>
+          <p>In order to <em>[clearly state the purpose, e.g., "verify your identity," "secure your account," or "enable facial recognition features"]</em>, we may collect, store, and use certain biometric data, including scans of your face geometry derived from the facial images you provide.</p>
+          <p><strong>How We Collect It:</strong> We collect this information directly from you when you <em>[describe the action, e.g., "upload a selfie for identity verification," "enroll in our facial recognition login feature," or "use a specific app function"]</em>.</p>
+          <p><strong>Purpose of Collection:</strong> We use this data solely for <em>[be very specific, e.g., "verifying your identity against the image on your government-issued ID," "authenticating your login to your account," or "providing the facial recognition feature you've opted into"]</em>. We do not use this data for any other commercial purposes, such as marketing or advertising.</p>
+          <p><strong>Data Security and Retention:</strong> We take reasonable security measures to protect your biometric data. We will not sell, lease, or trade your biometric data. We will retain your biometric data only for as long as is necessary to fulfill the purpose for which it was collected or as required by law. After this period, we will securely and permanently destroy the data.</p>
+          <p>By providing your facial image, you are giving us your explicit, informed consent to the collection, use, and storage of your biometric data as described in this policy. If you do not agree to this, please do not use the features that require biometric data.</p>
+
+          <h4>8. Children's Privacy</h4>
+          <p>Our services are only directed to individuals under the age of 18 with explicit informed consent from those individuals’ parents or guardians.</p>
+
+          <h4>9. Changes to This Privacy Policy</h4>
+          <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Effective Date." We encourage you to review this policy periodically.</p>
+
+          <h4>10. Contact Us</h4>
+          <address>
+            <div>Email: <a href="mailto:info@social-q.net">info@social-q.net</a></div>
+            <div>Address: SocialQ, Inc.<br/>18 Via Lampara<br/>San Clemente, CA 92673</div>
+          </address>
+        </article>
+      </div>
+
       <div class="modal-actions">
         <button class="btn" type="button" on:click={() => (termsOpen = false)}>Close</button>
       </div>
