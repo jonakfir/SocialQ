@@ -126,6 +126,6 @@
         </table> -->
 
         <button class="settings-btn" on:click={beginGame}>Let's Begin</button>
-        <button class="settings-btn" on:click={goToDashboard}>Main Menu</button>
+        <button class="settings-btn" on:click={goToDashboard}>Back to Dashboard</button>
     </div>
 </div>

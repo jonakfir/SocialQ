@@ -197,6 +197,7 @@ ${link}
     </div>
 
     <button class="btn" on:click={playAgain}>Play Again</button>
+    <button class="btn" on:click={() => goto('/facial-recognition/results/stats')}>See Stats</button>
     <button class="btn" on:click={() => goto('/dashboard')}>Back to Dashboard</button>
   </div>
 </div>

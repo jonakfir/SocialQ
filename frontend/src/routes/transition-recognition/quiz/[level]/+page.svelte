@@ -400,7 +400,7 @@
     position:relative;              /* NEW */
     z-index:2;                      /* NEW: ensure on top if anything overlaps */
   }
-  .group-label{ text-align:center; margin:6px 0 8px; font-weight:700; }
+  .group-label{ text-align:center; margin:6px 0 3px; font-weight:700; }
 
   .options.row3{
     display:grid;
