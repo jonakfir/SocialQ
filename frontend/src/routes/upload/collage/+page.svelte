@@ -116,9 +116,14 @@
     const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
 
     const c = target.getContext('2d')!;
-    c.clearRect(0,0,cw,ch);
-    // non-mirrored (no scaleX(-1))
+    c.clearRect(0, 0, cw, ch);
+
+    // 👇 mirror horizontally (selfie)
+    c.save();
+    c.translate(cw, 0);
+    c.scale(-1, 1);
     c.drawImage(videoEl, sx, sy, sw, sh, 0, 0, cw, ch);
+    c.restore();
   }
 
   function sizeAllTiles() {
@@ -487,11 +492,6 @@ ${APP_LINK}
       <canvas bind:this={focusCanvas}></canvas>
       {#if showPassFlash}<div class="flash"></div>{/if}
 
-      <div class="topbar">
-        <div class="title">Make a {titleCase(tiles[focusedIdx].emotion)} face</div>
-        <button class="x" on:click={closeFocus} aria-label="Close">✕</button>
-      </div>
-
       <div class="bottombar">
         {#if errorMsg}<div class="err">{errorMsg}</div>{/if}
         <button
@@ -504,7 +504,7 @@ ${APP_LINK}
       </div>
 
       <!-- Subtle manual approve for ALL emotions -->
-      <button class="approve-fab" on:click={approveAnyway} title="Use this frame anyway">Approve</button>
+      <button class="approve-fab" on:click={approveAnyway} title="Use this frame anyway">Approve Anyway</button>
     </div>
   </div>
 {/if}
