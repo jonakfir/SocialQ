@@ -1,5 +1,4 @@
 <!-- src/lib/components/Header.svelte -->
-
 <script context="module">
   // Client-only (safe to use document/window)
   export const ssr = false;
@@ -8,6 +7,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto, afterNavigate } from '$app/navigation';
+  import { page } from '$app/stores';
   import { apiFetch } from '$lib/api';
 
   // Passed from +layout.svelte (prefer { id, email })
@@ -17,6 +17,52 @@
 
   let isOpen = false;
   let wrapEl: HTMLDivElement | undefined;
+
+  // ---------- camera/mic gating (tracks & stops streams on disallowed routes) ----------
+  // Add any routes that legitimately need live camera here:
+  const ALLOW = [
+    /^\/upload(\/|$)/,                 // one-emotion, collage, etc.
+    /^\/training(\/|$)/,               // your training flows
+    /^\/mirroring(\/|$)/,              // mirroring game
+    /^\/facial-recognition(\/|$)/,     // if used
+    /^\/transition-recognition(\/|$)/  // if used
+  ];
+
+  let trackedStreams: MediaStream[] = [];
+  function stopAllStreams() {
+    for (const s of trackedStreams) {
+      try { s.getTracks().forEach((t) => t.stop()); } catch {}
+    }
+    trackedStreams = [];
+  }
+
+  // Wrap getUserMedia once so we can stop streams when navigating away
+  onMount(() => {
+    const md: any = navigator?.mediaDevices;
+    if (md && !md.__afWrapped) {
+      const orig = md.getUserMedia.bind(md);
+      md.getUserMedia = async (constraints: MediaStreamConstraints) => {
+        const s: MediaStream = await orig(constraints);
+        trackedStreams.push(s);
+        s.getTracks().forEach((t) =>
+          t.addEventListener?.('ended', () => {
+            trackedStreams = trackedStreams.filter((x) => x !== s);
+          })
+        );
+        return s;
+      };
+      md.__afWrapped = true;
+    }
+  });
+
+  // react to route changes & stop streams if current path is not allowed
+  $: currentPath = $page.url.pathname.toLowerCase();
+  $: canRecord = ALLOW.some((rx) => rx.test(currentPath));
+  $: if (!canRecord && trackedStreams.length) {
+    stopAllStreams();
+  }
+
+  onDestroy(() => stopAllStreams());
 
   // ---------- helpers ----------
   function initialFromEmail(email?: string): string {
