@@ -1,7 +1,0 @@
-{
-  "buildCommand": "npm run build",
-  "installCommand": "npm install --legacy-peer-deps",
-  "framework": "sveltekit",
-  "rootDirectory": "frontend",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD || echo 'changed'"
-}
