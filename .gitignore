@@ -20,3 +20,8 @@ frontend/.vercel
 
 # Prisma (if used)
 backend/prisma/*.db-journal
+
+# build artifacts
+frontend/out/
+frontend/Users:jonakfir:Projects:frontend.fileloc
+vercel.json
