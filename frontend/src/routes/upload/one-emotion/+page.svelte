@@ -1,17 +1,36 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { get } from 'svelte/store';
 
   const EMOTIONS = ['Angry','Disgust','Fear','Happy','Sad','Surprise'] as const;
   type Emotion = typeof EMOTIONS[number];
-  let currentTag: Emotion = 'Happy';
 
-  const titleCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s);
-  const canonicalEmotion = (s: string) => {
-    const n = (s || '').toLowerCase();
-    const map: Record<string, string> = {
+  // UI
+  let currentTag: Emotion = 'Happy';
+  let statusMsg = '';
+  let errorMsg = '';
+  let scoring = false;
+  let showPassFlash = false;
+  let toastMsg = '';
+
+  // Elements
+  let panelEl: HTMLDivElement;
+  let canvasEl: HTMLCanvasElement;
+  let videoEl: HTMLVideoElement;     // created in code (not in DOM)
+  let stream: MediaStream | null = null;
+
+  // Human.js
+  let human: any = null;
+  let humanReady = false;
+
+  // Tuning
+  const PASS_THRESHOLD = 0.45;
+  const APP_LINK = 'https://social-q-theta.vercel.app/';
+
+  const titleCase = (s:string)=> s ? s[0].toUpperCase()+s.slice(1).toLowerCase() : s;
+  const canonicalEmotion = (s:string)=>{
+    const n = (s||'').toLowerCase();
+    const map:Record<string,string> = {
       angry:'angry', anger:'angry',
       disgust:'disgust', disgusted:'disgust',
       fear:'fear', fearful:'fear', afraid:'fear',
@@ -22,132 +41,45 @@
     };
     return map[n] ?? n;
   };
-  const selectedCanon = () => canonicalEmotion(currentTag);
 
-  let panelEl: HTMLDivElement;
-  let videoEl: HTMLVideoElement;
-  let canvasEl: HTMLCanvasElement;
-  let ctx: CanvasRenderingContext2D;
-
-  // camera / human state
-  let human: any = null;
-  let humanReady = false;
-
-  let scoring = false;
-  let frozen = false;
-  let errorMsg = '';
-  let cameraError = '';
-  let statusMsg = '';
-
-  let showPassFrame = false;
-  let frameTimer: number | null = null;
-  let lastShotDataUrl = '';
-
-  // toast
-  let toastMsg = '';
-  let toastTimer: number | null = null;
-
-  const PASS_THRESHOLD = 0.45;
-  const APP_LINK = 'https://social-q-theta.vercel.app/';
-
-  // ───────────────── Camera ─────────────────
-  async function waitForVideoReady(timeoutMs = 5000) {
-    const start = performance.now();
-    while (performance.now() - start < timeoutMs) {
-      // Safari often reports 0x0 briefly even after canplay
-      if ((videoEl?.videoWidth ?? 0) > 0 && (videoEl?.videoHeight ?? 0) > 0) return true;
-      await new Promise((r) => setTimeout(r, 60));
-      try { await videoEl?.play(); } catch {}
-    }
-    return false;
-  }
-
+  // ───────────────────────────────── Camera (same as Collage) ─────────────────────────────────
   async function ensureCamera() {
-    statusMsg = 'Starting camera…';
-    cameraError = '';
-
-    // important for iOS autoplay
-    if (videoEl) {
-      videoEl.setAttribute('playsinline','');
-      videoEl.setAttribute('autoplay','');
-      videoEl.muted = true;
-    }
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode:'user', width:{ ideal:1280 }, height:{ ideal:720 } },
         audio: false
       });
 
+      videoEl = document.createElement('video');
+      videoEl.setAttribute('playsinline','');
+      videoEl.setAttribute('autoplay','');
+      videoEl.muted = true;
       videoEl.srcObject = stream;
 
-      // wait basic metadata
-      await new Promise<void>((resolve) => {
-        const to = setTimeout(resolve, 1500);
-        videoEl.onloadedmetadata = () => { clearTimeout(to); resolve(); };
+      await new Promise<void>((resolve)=>{
+        const to = setTimeout(resolve, 2500);
+        videoEl.onloadedmetadata = ()=>{ clearTimeout(to); resolve(); };
       });
-
-      // nudge play a couple of times
-      try { await videoEl.play(); } catch {}
-      await new Promise((r) => setTimeout(r, 80));
       try { await videoEl.play(); } catch {}
 
-      // HARD wait until we actually have dimensions
-      const ready = await waitForVideoReady(6000);
-      if (!ready) throw new Error('Camera stream did not become ready');
-
-      statusMsg = '';
-    } catch (e: any) {
-      cameraError = (e?.name === 'NotAllowedError')
-        ? 'Camera permission denied. Please allow camera access and refresh.'
-        : 'Unable to access camera.';
-      statusMsg = '';
+    } catch (e) {
+      console.warn('Camera error:', e);
+      statusMsg = 'Unable to access camera';
     }
   }
 
-  function sizeCanvasToPanel() {
-    const r = panelEl.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvasEl.width  = Math.max(1, Math.floor(r.width  * dpr));
-    canvasEl.height = Math.max(1, Math.floor(r.height * dpr));
-    // keep CSS size as visual pixels
-    canvasEl.style.width = `${Math.floor(r.width)}px`;
-    canvasEl.style.height = `${Math.floor(r.height)}px`;
-  }
-
-  function drawFrameToCanvas() {
-    const vw = videoEl?.videoWidth || 0;
-    const vh = videoEl?.videoHeight || 0;
-    if (!vw || !vh) return;
-
-    const cw = canvasEl.width, ch = canvasEl.height;
-    const arC = cw / ch, arV = vw / vh;
-
-    let sw: number, sh: number;
-    if (arV > arC) { sh = vh; sw = sh * arC; } else { sw = vw; sh = sw / arC; }
-    const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
-
-    ctx.clearRect(0, 0, cw, ch);
-    ctx.save();
-    ctx.translate(cw, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, cw, ch);
-    ctx.restore();
-  }
-
-  // ───────────────── Human.js ─────────────────
+  // ───────────────────────────────── Human.js (same as Collage) ────────────────────────────────
   async function loadHuman() {
     if ((window as any).Human?.Human) return (window as any).Human.Human;
-    await new Promise<void>((res, rej) => {
+    await new Promise<void>((res, rej)=>{
       const s = document.createElement('script');
       s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
-      s.onload = () => res();
+      s.onload = ()=>res();
       s.onerror = rej;
-      document.head.append(s);
+      document.head.appendChild(s);
     });
     return (window as any).Human.Human;
   }
-
   async function ensureHuman() {
     if (humanReady) return;
     statusMsg = statusMsg || 'Loading models…';
@@ -155,220 +87,129 @@
     human = new HumanCtor({
       backend: 'webgl',
       modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
-      face: { enabled: true, detector: { enabled: true, maxDetected: 1 }, mesh: { enabled: true }, emotion: { enabled: true } },
-      body: false, hand: false, object: false, gesture: false
+      face: { enabled:true, detector:{ enabled:true, maxDetected:1 }, mesh:{ enabled:true }, emotion:{ enabled:true } },
+      body:false, hand:false, object:false, gesture:false
     });
-    await human.load();
-    try { await human.warmup(); } catch {}
+    await human.load(); try { await human.warmup(); } catch {}
     humanReady = true;
     if (!scoring) statusMsg = '';
   }
 
-  // ───────────────── Scoring helpers ─────────────────
-  async function detectEmotionAvg(frames = 8, gapMs = 50) {
+  // ───────────────────────────────── Drawing (mirrored) ───────────────────────────────────────
+  function sizeCanvasToPanel() {
+    const r = panelEl.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvasEl.width  = Math.max(1, Math.floor(r.width  * dpr));
+    canvasEl.height = Math.max(1, Math.floor((r.height) * dpr));
+  }
+
+  function drawToCanvas(target: HTMLCanvasElement) {
+    if (!videoEl) return;
+    const vw = videoEl.videoWidth || 0, vh = videoEl.videoHeight || 0;
+    if (!vw || !vh) return;
+
+    const cw = target.width, ch = target.height;
+    const arC = cw / ch, arV = vw / vh;
+
+    let sw:number, sh:number;
+    if (arV > arC) { sh = vh; sw = sh*arC; } else { sw = vw; sh = sw/arC; }
+    const sx = (vw - sw)/2, sy = (vh - sh)/2;
+
+    const c = target.getContext('2d')!;
+    c.clearRect(0,0,cw,ch);
+    c.save();
+    c.translate(cw, 0);     // mirror like selfie
+    c.scale(-1, 1);
+    c.drawImage(videoEl, sx, sy, sw, sh, 0, 0, cw, ch);
+    c.restore();
+  }
+
+  function startLoop() {
+    (function loop(){
+      drawToCanvas(canvasEl);
+      requestAnimationFrame(loop);
+    })();
+  }
+
+  // ───────────────────────────────── Scoring (multi-frame avg) ────────────────────────────────
+  async function detectEmotionAvgOn(el: HTMLCanvasElement, frames=8, gapMs=50) {
     const keys = ['angry','disgust','fear','happy','sad','surprise'] as const;
     const sum: Record<string, number> = { angry:0, disgust:0, fear:0, happy:0, sad:0, surprise:0 };
 
-    for (let i = 0; i < frames; i++) {
-      drawFrameToCanvas();
-      const det = await human.detect(canvasEl);
+    for (let i=0; i<frames; i++) {
+      drawToCanvas(el); // sample exactly what the user sees
+      const det = await human.detect(el);
       const face = det?.face?.[0];
       const arr: Array<{ emotion:string; score:number }> = face?.emotion || face?.emotions || [];
       if (arr?.length) {
         const frameMax: Record<string, number> = { angry:0, disgust:0, fear:0, happy:0, sad:0, surprise:0 };
         for (const it of arr) {
           const k = canonicalEmotion(it.emotion);
-          if (k && k in frameMax) frameMax[k] = Math.max(frameMax[k], Number(it.score ?? 0));
+          if (k in frameMax) frameMax[k] = Math.max(frameMax[k], Number(it.score ?? 0));
         }
         for (const k of keys) sum[k] += frameMax[k];
       }
-      if (gapMs) await new Promise(r => setTimeout(r, gapMs));
+      if (gapMs) await new Promise(r=>setTimeout(r,gapMs));
     }
 
     let total = 0; for (const k in sum) total += sum[k];
-    if (!total) { for (const k in sum) sum[k] = 1e-6; total = 6e-6; }
-    const probs: Record<string, number> = {}; for (const k of keys) probs[k] = sum[k] / total;
+    if (!total){ for (const k in sum) sum[k]=1e-6; total=6e-6; }
+    const probs: Record<string, number> = {}; for (const k of keys) probs[k]=sum[k]/total;
+
     const topKey = (keys as unknown as string[]).reduce((a,b)=> probs[b] > probs[a] ? b : a, keys[0] as unknown as string);
-    return { probs, top: { emotion: topKey, score: probs[topKey] } };
-  }
-
-  function estimateBrightness(el: HTMLCanvasElement) {
-    const w = Math.max(1, Math.floor(el.width / 8));
-    const h = Math.max(1, Math.floor(el.height / 8));
-    const tmp = document.createElement('canvas');
-    tmp.width = w; tmp.height = h;
-    const tctx = tmp.getContext('2d')!;
-    tctx.drawImage(el, 0, 0, w, h);
-    const data = tctx.getImageData(0, 0, w, h).data;
-    let sum = 0;
-    for (let i=0; i<data.length; i+=4) sum += 0.2126*data[i] + 0.7152*data[i+1] + 0.0722*data[i+2];
-    return sum / (data.length/4);
-  }
-
-  // ───────────────── Share helpers ─────────────────
-  const isiOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const smsJoiner = () => (isiOS() ? '&' : '?');
-  function dataURL() { return canvasEl.toDataURL('image/jpeg', 0.95); }
-
-  async function dataURLtoFiles(dataUrl: string) {
-    const blob = await (await fetch(dataUrl)).blob();
-    const jpg = new File([blob], 'aboutface.jpg', { type: blob.type || 'image/jpeg' });
-    let png: File | null = null;
-    try {
-      const img = await new Promise<HTMLImageElement>((res, rej) => {
-        const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUrl;
-      });
-      const c = document.createElement('canvas');
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext('2d')!.drawImage(img, 0, 0);
-      const pngUrl = c.toDataURL('image/png', 1);
-      const pngBlob = await (await fetch(pngUrl)).blob();
-      png = new File([pngBlob], 'aboutface.png', { type: 'image/png' });
-    } catch {}
-    return { jpg, png };
-  }
-
-  async function copyImageToClipboard(file: File, alt?: File | null) {
-    const primary = alt?.type === 'image/png' ? alt : file;
-    try {
-      // @ts-ignore
-      if (navigator.clipboard?.write && window.ClipboardItem) {
-        const item = new ClipboardItem({ [primary.type]: primary } as Record<string, Blob>);
-        // @ts-ignore
-        await navigator.clipboard.write([item]);
-        return true;
-      }
-    } catch {}
-    return false;
-  }
-
-  async function copyImageViaContentEditable(dataUrl: string) {
-    try {
-      const host = document.createElement('div');
-      host.contentEditable = 'true';
-      host.style.cssText = 'position:fixed;left:-99999px;top:0;';
-      host.innerHTML = `<img src="${dataUrl}">`;
-      document.body.appendChild(host);
-      const sel = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(host);
-      sel?.removeAllRanges(); sel?.addRange(range);
-      const ok = document.execCommand('copy');
-      sel?.removeAllRanges(); document.body.removeChild(host);
-      return ok;
-    } catch { return false; }
-  }
-
-  function showToast(msg: string, ms = 2600) {
-    toastMsg = msg;
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => (toastMsg = ''), ms) as unknown as number;
-  }
-
-  function closeAllCards() { errorMsg = ''; showPassFrame = false; frozen = false; }
-
-  async function shareImage() {
-    const label = selectedCanon();
-    const text = `I just nailed a ${label} face on SocialQ’s AboutFace! Try it: ${APP_LINK}`;
-    const smsUrl = `sms:${smsJoiner()}body=${encodeURIComponent(text)}`;
-    try {
-      if (!lastShotDataUrl) {
-        try { await navigator.clipboard?.writeText?.(text); } catch {}
-        location.href = smsUrl; showToast('Message copied — paste in Messages'); closeAllCards(); return;
-      }
-      const { jpg, png } = await dataURLtoFiles(lastShotDataUrl);
-      let copied = await copyImageToClipboard(jpg, png);
-      if (!copied) copied = await copyImageViaContentEditable(lastShotDataUrl);
-      location.href = smsUrl;
-      if (copied) showToast('Photo copied — paste it in Messages');
-      else { try { await navigator.clipboard?.writeText?.(text); } catch {} showToast('Couldn’t copy photo — message text is copied'); }
-    } catch {
-      try { await navigator.clipboard?.writeText?.(`Try AboutFace: ${APP_LINK}`); } catch {}
-      showToast('Sharing unavailable — link copied');
-    } finally { closeAllCards(); }
+    return { probs, top:{ emotion: topKey, score: probs[topKey] } };
   }
 
   async function captureAndCheck() {
     if (scoring) return;
-    scoring = true; errorMsg = ''; showPassFrame = false;
+    scoring = true; errorMsg = '';
+
     try {
       await ensureHuman();
-      const { probs, top } = await detectEmotionAvg(8, 50);
-      drawFrameToCanvas();
-      lastShotDataUrl = dataURL();
-      frozen = true;
-      const want = selectedCanon();
+
+      const { probs, top } = await detectEmotionAvgOn(canvasEl, 8, 50);
+      const want = canonicalEmotion(currentTag);
       const wantProb = probs[want] ?? 0;
       const pass = top.emotion === want || wantProb >= PASS_THRESHOLD;
-      if (pass) {
-        showPassFrame = true;
-        if (frameTimer) clearTimeout(frameTimer);
-        frameTimer = window.setTimeout(() => { showPassFrame = false; }, 2000);
-        const b = estimateBrightness(canvasEl);
-        if (b < 70) {/* optional hint */}
-      } else {
-        const b = estimateBrightness(canvasEl);
-        const hint = b < 60 ? ' (try more light)' : '';
-        throw new Error(`Didn’t look like “${titleCase(currentTag)}”${hint}.`);
-      }
-    } catch (e: any) {
-      errorMsg = e?.message || 'scoring failed';
-    } finally { scoring = false; }
-  }
 
-  async function ensureLiveDrawing() {
-    const stream = videoEl?.srcObject as MediaStream | null;
-    const live = !!stream && stream.getVideoTracks().some((t) => t.readyState === 'live');
-    if (!live) await ensureCamera();
-    frozen = false;
+      showPassFlash = pass;
+      if (!pass) throw new Error(`Didn’t look like “${titleCase(currentTag)}”. Try again.`);
+      setTimeout(()=> showPassFlash = false, 450);
+
+    } catch (e:any) {
+      errorMsg = e?.message || 'Check failed';
+    } finally {
+      scoring = false;
+    }
   }
 
   function resetShot() {
-    errorMsg = ''; showPassFrame = false; frozen = false;
-    if (frameTimer) clearTimeout(frameTimer); frameTimer = null;
-    ensureLiveDrawing();
+    errorMsg = '';
+    showPassFlash = false;
+    // nothing else: the loop never stops and video keeps playing
+  }
+
+  function showToast(msg:string, ms=2400){
+    toastMsg = msg;
+    setTimeout(()=> toastMsg = '', ms);
   }
 
   function goBack(){ goto('/upload'); }
 
-  // ───────────────── Lifecycle ─────────────────
-  onMount(async () => {
-    // Preselect from query
-    const url = new URL(get(page).url);
-    const p = (url.searchParams.get('emotion') ?? '').toLowerCase();
-    const map: Record<string, Emotion> = {
-      happiness:'Happy', happy:'Happy', sadness:'Sad', sad:'Sad',
-      anger:'Angry', angry:'Angry', fear:'Fear', afraid:'Fear',
-      surprise:'Surprise', surprised:'Surprise', disgust:'Disgust'
-    };
-    if (map[p]) currentTag = map[p];
-
-    await ensureCamera();      // ensure real stream before we start drawing
+  // ───────────────────────────────── Lifecycle ────────────────────────────────────────────────
+  onMount(async ()=>{
+    await ensureCamera();
+    await ensureHuman();
 
     sizeCanvasToPanel();
-    ctx = canvasEl.getContext('2d')!;
+    window.addEventListener('resize', sizeCanvasToPanel);
 
-    const onResize = () => sizeCanvasToPanel();
-    window.addEventListener('resize', onResize);
+    startLoop(); // never stops
+  });
 
-    const onVis = () => { if (document.visibilityState === 'visible') ensureLiveDrawing(); };
-    window.addEventListener('focus', ensureLiveDrawing);
-    document.addEventListener('visibilitychange', onVis);
-
-    onDestroy(() => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('focus', ensureLiveDrawing);
-      document.removeEventListener('visibilitychange', onVis);
-      try { (videoEl.srcObject as MediaStream)?.getTracks()?.forEach(t => t.stop()); } catch {}
-    });
-
-    // continuous render
-    (function loop(){
-      if (!frozen) drawFrameToCanvas();
-      requestAnimationFrame(loop);
-    })();
-
-    ensureHuman().catch((e)=>console.warn('human load failed', e));
+  onDestroy(()=>{
+    window.removeEventListener('resize', sizeCanvasToPanel);
+    try { stream?.getTracks()?.forEach(t=>t.stop()); } catch {}
   });
 </script>
 
@@ -382,61 +223,31 @@
 <!-- chips -->
 <div class="chip-row">
   {#each EMOTIONS as e}
-    <button class="chip {currentTag === e ? 'active' : ''}" on:click={() => (currentTag = e)} aria-pressed={currentTag === e}>{e}</button>
+    <button class="chip {currentTag===e?'active':''}" on:click={()=> currentTag=e} aria-pressed={currentTag===e}>{e}</button>
   {/each}
 </div>
 
 <!-- camera panel -->
 <div class="panel" bind:this={panelEl}>
-  <video bind:this={videoEl} autoplay playsinline muted
-    style="position:absolute; inset:0; width:100%; height:100%; opacity:0; pointer-events:none;"></video>
+  <!-- hidden real video element (used only as source) -->
+  <video style="position:absolute;inset:0;width:0;height:0;opacity:0;pointer-events:none;"></video>
   <canvas bind:this={canvasEl}></canvas>
 
   <div class="bottom-bar">
     <div class="tag">Selected emotion: {titleCase(currentTag)}</div>
     <button class="record-btn" on:click={captureAndCheck} aria-label="Capture"></button>
-    <div></div>
+    <div class="right">{#if statusMsg}<span class="status">{statusMsg}</span>{/if}</div>
   </div>
 
-  {#if statusMsg}
-    <div class="status">{statusMsg}</div>
-  {/if}
+  {#if showPassFlash}<div class="flash"></div>{/if}
 </div>
 
-<!-- pass frame -->
-{#if showPassFrame}
-  <div class="antique-wrap">
-    <div class="antique-frame">
-      <div class="antique-inner">
-        <img src={lastShotDataUrl} alt="Captured"/>
-      </div>
-      <div class="gold-trim"></div>
-    </div>
-  </div>
-{/if}
-
-<!-- cards -->
-{#if cameraError}
-  <div class="card error">
-    <div class="title">Camera blocked</div>
-    <div class="sub">{cameraError}</div>
-  </div>
-{:else if scoring}
-  <div class="card"><div class="title">Checking…</div></div>
-{:else if errorMsg}
+<!-- Cards -->
+{#if errorMsg}
   <div class="card warn">
     <div class="title">Not quite!</div>
     <div class="sub">{errorMsg}</div>
     <button class="btn outline" on:click={resetShot}>Try again</button>
-  </div>
-{:else if lastShotDataUrl && !showPassFrame && frozen}
-  <div class="card success">
-    <div class="title">Great shot!</div>
-    <div class="sub">That looked like <b>{titleCase(currentTag)}</b>.</div>
-    <div class="row">
-      <button class="btn outline" on:click={resetShot}>Take another</button>
-      <button class="btn primary" on:click={shareImage}>Share</button>
-    </div>
   </div>
 {/if}
 
@@ -444,31 +255,27 @@
   <div class="toast">{toastMsg}</div>
 {/if}
 
-<button class="back-btn" on:click={() => goto('/upload')}>← Back</button>
+<button class="back-btn" on:click={goBack}>← Back</button>
 
 <style>
   @import '/style.css';
-  :root{ --brand:#4f46e5; --brand2:#22d3ee; --ink:#0f172a; }
-
-  .back-btn{
-    position: fixed; left: 16px; bottom: 16px; z-index: 1100;
-    background: #fff; border: 1px solid rgba(79,70,229,.35);
-    border-radius: 9999px; padding: 8px 14px; cursor: pointer; color: var(--ink);
-    box-shadow: 0 6px 18px rgba(79,70,229,.15);
-  }
+  :root{ --brand:#6d5ef6; --brand2:#22d3ee; --ink:#0f172a; }
 
   .chip-row{
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
     width: min(1100px, 95vw);
-    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(6, minmax(0,1fr));
     gap: 8px; padding: 8px 10px; border-radius: 9999px;
     backdrop-filter: blur(8px) saturate(130%);
     background: linear-gradient(90deg, rgba(79,70,229,.14), rgba(34,211,238,.14));
-    box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 1050;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 20;
   }
-  .chip{ width:100%; min-width:0; padding: clamp(6px,1.2vw,10px) clamp(10px,1.6vw,14px);
-    font-size: clamp(12px,1.4vw,15px); border-radius: 9999px; background: #fff; border: 1.6px solid #111;
-    box-shadow: 0 4px 12px rgba(0,0,0,.10); font-weight: 700; cursor: pointer; }
+  .chip{
+    width: 100%; padding: clamp(6px,1.2vw,10px) clamp(10px,1.6vw,14px);
+    font-size: clamp(12px,1.4vw,15px);
+    border-radius: 9999px; background: #fff; border: 1.6px solid #111;
+    box-shadow: 0 4px 12px rgba(0,0,0,.10); font-weight: 700; cursor: pointer;
+  }
   .chip.active{ background:#6d5ef6; color:#fff; border-color:#6d5ef6; }
 
   .panel{
@@ -483,43 +290,44 @@
   }
   canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; border-radius:24px; }
 
-  .bottom-bar{ position: absolute; left: 12px; right: 12px; bottom: 12px;
-    display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; }
-  .tag{ color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.7); font-weight: 800; }
-  .record-btn{ justify-self:center; width:58px; height:58px; background:#ef4444; border:none; border-radius:50%;
-    box-shadow:0 8px 20px rgba(0,0,0,.45); cursor:pointer; }
+  .bottom-bar{
+    position:absolute; left:12px; right:12px; bottom:12px;
+    display:grid; grid-template-columns: 1fr auto 1fr; align-items:end; gap:8px;
+  }
+  .tag{ color:#fff; text-shadow:0 2px 6px rgba(0,0,0,.7); font-weight:800; }
+  .right{ justify-self:end; }
+  .status{ background:rgba(0,0,0,.45); color:#fff; font-size:12px; padding:6px 8px; border-radius:8px; }
 
-  .status{ position:absolute; right:12px; top:12px; z-index:20;
-    background: rgba(0,0,0,.45); color:#fff; font-size:12px; padding:6px 8px; border-radius:8px; }
+  .record-btn{
+    justify-self:center; width:58px; height:58px; background:#ef4444; border:none; border-radius:50%;
+    box-shadow:0 8px 20px rgba(0,0,0,.45); cursor:pointer;
+  }
 
-  .antique-wrap{ position: absolute; inset: 0; display: grid; place-items: center; z-index: 30; animation: fadeIn .20s ease both; }
-  @keyframes fadeIn { from{ opacity:0 } to{ opacity:1 } }
-  .antique-frame{ position: relative; width: min(72vw, 820px); aspect-ratio: 4/3; transform: rotate(-0.6deg);
-    background: linear-gradient(135deg, #5a3a1a, #3e2a15); border-radius: 18px;
-    box-shadow: 0 24px 60px rgba(0,0,0,.35),
-      inset 0 0 0 10px #6b4c2a, inset 0 0 0 18px #3d2a18, inset 0 0 0 24px #b28b45; }
-  .gold-trim{ position:absolute; inset:16px; border-radius: 8px; pointer-events:none;
-    box-shadow: inset 0 0 0 2px rgba(255,255,255,.35), inset 0 0 0 6px rgba(184,134,11,.6); }
-  .antique-inner{ position:absolute; inset:34px; background: #eee; border-radius: 6px; overflow: hidden;
-    box-shadow: inset 0 0 40px rgba(0,0,0,.18); }
-  .antique-inner img{ width:100%; height:100%; object-fit: cover; display:block; filter: contrast(1.02) saturate(1.02); }
+  .flash{ position:absolute; inset:0; background:#fff; opacity:.65; animation:flash .28s ease-out forwards; pointer-events:none; }
+  @keyframes flash{ to{ opacity:0 } }
 
-  .card{ position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  .card{
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
     width: min(560px, 92vw); background: rgba(255,255,255,.95);
     border: 1px solid rgba(17,17,17,.14); border-radius: 18px;
-    box-shadow: 0 18px 48px rgba(0,0,0,.28); padding: 18px; text-align:center; z-index: 40; }
-  .card.success { border-color: rgba(34,197,94,.35); }
-  .card.warn    { border-color: rgba(234,179,8,.35); }
-  .card.error   { border-color: rgba(239,68,68,.35); }
-  .card .title { font-weight: 900; font-size: 1.1rem; margin-bottom: 6px; }
-  .card .sub   { opacity: .85; margin-bottom: 12px; }
-  .card .row   { display:flex; gap:10px; justify-content:center; }
+    box-shadow: 0 18px 48px rgba(0,0,0,.28); padding: 18px; text-align:center; z-index: 40;
+  }
+  .card .title{ font-weight:900; font-size:1.1rem; margin-bottom:6px; }
+  .card .sub{ opacity:.85; margin-bottom:12px; }
+  .btn{ border-radius:12px; padding:10px 16px; border:2px solid #111; background:#fff; font-weight:800; cursor:pointer; }
+  .btn:hover{ background:#f6f6f6; }
 
-  .btn{ border-radius: 12px; padding: 10px 16px; border: none; cursor: pointer; font-weight: 800; font-size: 14px; }
-  .btn.primary{ background:#6d5ef6; color:#fff; } .btn.outline{ background:#fff; border:2px solid #111; color:#111; }
-  .btn.primary:hover{ filter:brightness(1.06); } .btn.outline:hover{ background:#f6f6f6; }
-
-  .toast{ position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  .toast{
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
     background: rgba(17,17,17,.92); color:#fff; padding:10px 14px;
-    border-radius: 9999px; font-weight:700; box-shadow:0 10px 26px rgba(0,0,0,.28); z-index: 1200; }
+    border-radius: 9999px; font-weight:700; box-shadow:0 10px 26px rgba(0,0,0,.28);
+    z-index: 1200;
+  }
+
+  .back-btn{
+    position: fixed; left:16px; bottom:16px; z-index: 25;
+    background:#fff; border:1px solid rgba(79,70,229,.35);
+    border-radius:9999px; padding:8px 14px; cursor:pointer; color:#0f172a;
+    box-shadow:0 6px 18px rgba(79,70,229,.15);
+  }
 </style>
