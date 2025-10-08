@@ -181,7 +181,7 @@
   .item {
     display: block; width: 100%; text-align: left;
     background: #fff; border: 0; padding: 12px 14px;
-    border-radius: 8px; cursor: pointer; font-weight: 700;
+    border-radius: 8px; cursor: pointer; font-weight: 701;
   }
   .item:hover { background: #4f46e5; color: #fff; }
 </style>
