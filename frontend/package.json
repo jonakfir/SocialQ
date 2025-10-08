@@ -22,8 +22,9 @@
 	},
 	"dependencies": {
 		"@prisma/client": "^6.13.0",
-		"@vladmandic/human": "^3.3.5",
+		"@vladmandic/human": "^3.3.6",
 		"bcryptjs": "^3.0.2",
+		"canvas": "^3.2.0",
 		"jose": "^6.0.12"
 	}
 }

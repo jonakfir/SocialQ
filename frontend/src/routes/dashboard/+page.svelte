@@ -296,7 +296,7 @@
 </div>
 
 <!-- Floating Upload FAB -->
-<!-- <button
+<button
   class="fab"
   aria-label="Upload"
   title="Upload"
@@ -304,4 +304,4 @@
 >
   📤
   <span class="label">Upload</span>
-</button> -->
+</button>
