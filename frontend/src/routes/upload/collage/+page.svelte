@@ -514,9 +514,17 @@ ${APP_LINK}
   :root{ --brand:#6d5ef6; --ink:#0f172a; }
 
   .back-btn{
-    position: fixed; left: 16px; top: 16px; z-index: 30;
-    background: #fff; border: 1px solid rgba(79,70,229,.35);
-    border-radius: 9999px; padding: 8px 14px; cursor: pointer; color: var(--ink);
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    top: auto;    
+    z-index: 40;
+    background: #fff;
+    border: 1px solid rgba(79,70,229,.35);
+    border-radius: 9999px;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: var(--ink);
     box-shadow: 0 6px 18px rgba(79,70,229,.15);
   }
 
