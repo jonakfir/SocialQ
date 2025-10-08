@@ -1,3 +1,4 @@
+<!-- src/routes/upload/collage/+page.svelte -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
@@ -118,7 +119,7 @@
     const c = target.getContext('2d')!;
     c.clearRect(0, 0, cw, ch);
 
-    // 👇 mirror horizontally (selfie)
+    // mirror horizontally (selfie)
     c.save();
     c.translate(cw, 0);
     c.scale(-1, 1);
@@ -195,6 +196,10 @@
     focusedIdx = null;
     errorMsg = '';
     showPassFlash = false;
+  }
+  function onOverlayClick(e: MouseEvent) {
+    // Only close if you clicked the overlay itself (outside the cam-box)
+    if (e.target === e.currentTarget) closeFocus();
   }
 
   // ───────────────────────────────────────────────────────────
@@ -485,10 +490,9 @@ ${APP_LINK}
 {/if}
 
 {#if focusedIdx !== null}
-  <div class="scrim" on:click={closeFocus}></div>
-
-  <div class="cam-wrap" on:click|stopPropagation>
-    <div class="cam-box">
+  <!-- Single overlay that also acts as scrim; click outside .cam-box closes -->
+  <div class="cam-wrap" on:click={onOverlayClick}>
+    <div class="cam-box" on:click|stopPropagation>
       <canvas bind:this={focusCanvas}></canvas>
       {#if showPassFlash}<div class="flash"></div>{/if}
 
@@ -504,7 +508,7 @@ ${APP_LINK}
       </div>
 
       <!-- Subtle manual approve for ALL emotions -->
-      <button class="approve-fab" on:click={approveAnyway} title="Use this frame anyway">Approve Anyway</button>
+      <button class="approve-fab" on:click={approveAnyway} title="Use this frame anyway">Approve</button>
     </div>
   </div>
 {/if}
@@ -517,7 +521,6 @@ ${APP_LINK}
     position: fixed;
     left: 16px;
     bottom: 16px;
-    top: auto;    
     z-index: 40;
     background: #fff;
     border: 1px solid rgba(79,70,229,.35);
@@ -570,9 +573,16 @@ ${APP_LINK}
   }
   .share-fab:hover{ filter: brightness(1.03); }
 
-  /* Overlay */
-  .scrim{ position:fixed; inset:0; background:rgba(0,0,0,.55); z-index: 200; }
-  .cam-wrap{ position: fixed; inset: 0; display:grid; place-items:center; z-index: 210; padding: 18px; }
+  /* Overlay (acts as scrim & click target) */
+  .cam-wrap{
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 210;
+    padding: 18px;
+    background: rgba(0,0,0,.55);
+  }
   .cam-box{
     position: relative;
     width: min(1000px, 96vw);
@@ -585,17 +595,6 @@ ${APP_LINK}
 
   .flash{ position:absolute; inset:0; background:#fff; opacity:.65; animation: flash .28s ease-out forwards; pointer-events:none; }
   @keyframes flash{ to { opacity:0 } }
-
-  .topbar{
-    position:absolute; left:0; right:0; top:0;
-    display:flex; align-items:center; justify-content:space-between;
-    gap:8px; padding:10px 12px;
-    background: rgba(255,255,255,.26);
-    backdrop-filter: blur(14px) saturate(140%);
-    border-bottom: 1px solid rgba(255,255,255,.35);
-  }
-  .topbar .title{ font-weight:900; color:#111; }
-  .x{ background:transparent; border:none; font-size:18px; cursor:pointer; padding:6px 10px; }
 
   .bottombar{
     position:absolute; left:0; right:0; bottom:0;
