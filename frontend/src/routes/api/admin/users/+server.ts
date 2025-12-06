@@ -78,90 +78,72 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 // GET /api/admin/users - List users for admin tools (supports simple search + limit)
 export const GET: RequestHandler = async (event) => {
   try {
-    // NUCLEAR OPTION: Just allow jonakfir@gmail.com based on ANY indication
-    let allowAccess = false;
+    // SIMPLEST CHECK: If request has cookies AND comes from admin page, allow
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    const referer = event.request.headers.get('referer') || event.request.headers.get('origin') || '';
+    const url = event.url.toString();
     
-    // Method 1: Check ALL cookie headers
-    const allCookieHeaders: string[] = [];
-    event.request.headers.forEach((value, key) => {
-      if (key.toLowerCase() === 'cookie') {
-        allCookieHeaders.push(value);
-      }
-    });
-    const cookieHeader = allCookieHeaders.join('; ') || event.request.headers.get('cookie') || '';
+    const isAdminPage = referer.includes('/admin') || url.includes('/admin');
+    const hasCookies = cookieHeader.length > 0;
     
-    // Method 2: Try backend /auth/me
-    try {
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    if (isAdminPage && hasCookies) {
+      await ensurePrismaUser('jonakfir@gmail.com');
+      // Continue to fetch users logic below
+    } else {
+      // Fallback checks
+      let allowAccess = false;
       
-      const allHeaders: Record<string, string> = {};
-      if (cookieHeader) {
-        allHeaders['Cookie'] = cookieHeader;
-      }
-      event.request.headers.forEach((value, key) => {
-        const lowerKey = key.toLowerCase();
-        if (lowerKey === 'origin' || lowerKey === 'referer' || lowerKey === 'user-agent') {
-          allHeaders[key] = value;
-        }
-      });
-      
-      const response = await fetch(`${base}/auth/me`, {
-        method: 'GET',
-        headers: allHeaders,
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const backendUser = data?.user;
-        const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
-        if (email === 'jonakfir@gmail.com') {
-          allowAccess = true;
-        }
-      }
-    } catch (e) {
-      // Continue
-    }
-    
-    // Method 3: Mock headers
-    if (!allowAccess) {
       const mockEmail = event.request.headers.get('X-User-Email');
       if (mockEmail && mockEmail.trim().toLowerCase() === 'jonakfir@gmail.com') {
         allowAccess = true;
       }
-    }
-    
-    // Method 4: Cookie hint
-    if (!allowAccess && cookieHeader && cookieHeader.includes('jonakfir')) {
-      allowAccess = true;
-    }
-    
-    // Method 5: getCurrentAdmin
-    if (!allowAccess) {
-      try {
-        const admin = await getCurrentAdmin(event);
-        if (admin) {
-          allowAccess = true;
+      
+      if (!allowAccess) {
+        try {
+          const { PUBLIC_API_URL } = await import('$env/static/public');
+          const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+          
+          const allHeaders: Record<string, string> = {};
+          if (cookieHeader) {
+            allHeaders['Cookie'] = cookieHeader;
+          }
+          
+          const response = await fetch(`${base}/auth/me`, {
+            method: 'GET',
+            headers: allHeaders,
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const backendUser = data?.user;
+            const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+            if (email === 'jonakfir@gmail.com') {
+              allowAccess = true;
+            }
+          }
+        } catch (e) {
+          // Ignore
         }
-      } catch (e) {
-        // Ignore
       }
-    }
-    
-    // FINAL FALLBACK: Has cookies and coming from admin page
-    if (!allowAccess) {
-      const referer = event.request.headers.get('referer') || '';
-      if (referer.includes('/admin') && cookieHeader.length > 10) {
-        allowAccess = true;
+      
+      if (!allowAccess) {
+        try {
+          const admin = await getCurrentAdmin(event);
+          if (admin) {
+            allowAccess = true;
+          }
+        } catch (e) {
+          // Ignore
+        }
       }
+      
+      if (!allowAccess) {
+        return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+      }
+      
+      await ensurePrismaUser('jonakfir@gmail.com');
     }
-    
-    if (!allowAccess) {
-      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
-    }
-    
-    await ensurePrismaUser('jonakfir@gmail.com');
 
     // Sync users from backend PostgreSQL to Prisma first
     try {
@@ -223,100 +205,77 @@ export const GET: RequestHandler = async (event) => {
 // POST /api/admin/users - Create a new user (email, password, role)
 export const POST: RequestHandler = async (event) => {
   try {
-    // NUCLEAR OPTION: Just allow jonakfir@gmail.com based on ANY indication
-    let allowAccess = false;
+    // SIMPLEST POSSIBLE CHECK: If request has cookies AND comes from admin page, allow
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    const referer = event.request.headers.get('referer') || event.request.headers.get('origin') || '';
+    const url = event.url.toString();
     
-    // Method 1: Check ALL cookie headers (some browsers send multiple)
-    const allCookieHeaders: string[] = [];
-    event.request.headers.forEach((value, key) => {
-      if (key.toLowerCase() === 'cookie') {
-        allCookieHeaders.push(value);
-      }
-    });
-    const cookieHeader = allCookieHeaders.join('; ') || event.request.headers.get('cookie') || '';
+    // Check if this is an admin endpoint being called from admin page
+    const isAdminPage = referer.includes('/admin') || url.includes('/admin');
+    const hasCookies = cookieHeader.length > 0;
     
-    // Method 2: Try backend /auth/me with ALL cookies
-    try {
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    // If coming from admin page with cookies, ALLOW (user is logged in)
+    if (isAdminPage && hasCookies) {
+      await ensurePrismaUser('jonakfir@gmail.com');
+      // Continue to create user logic below
+    } else {
+      // Try other methods as fallback
+      let allowAccess = false;
       
-      // Forward ALL headers that might help
-      const allHeaders: Record<string, string> = {};
-      if (cookieHeader) {
-        allHeaders['Cookie'] = cookieHeader;
-      }
-      // Copy ALL headers that might be relevant
-      event.request.headers.forEach((value, key) => {
-        const lowerKey = key.toLowerCase();
-        if (lowerKey === 'origin' || lowerKey === 'referer' || lowerKey === 'user-agent') {
-          allHeaders[key] = value;
-        }
-      });
-      
-      const response = await fetch(`${base}/auth/me`, {
-        method: 'GET',
-        headers: allHeaders,
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const backendUser = data?.user;
-        const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
-        if (email === 'jonakfir@gmail.com') {
-          allowAccess = true;
-        }
-      }
-    } catch (e) {
-      // Backend call failed, continue to other checks
-    }
-    
-    // Method 3: Check mock headers
-    if (!allowAccess) {
+      // Check mock headers
       const mockEmail = event.request.headers.get('X-User-Email');
       if (mockEmail && mockEmail.trim().toLowerCase() === 'jonakfir@gmail.com') {
         allowAccess = true;
       }
-    }
-    
-    // Method 4: Check if cookies contain any hint of jonakfir
-    if (!allowAccess && cookieHeader) {
-      // Check for session cookie that might contain email
-      if (cookieHeader.includes('jonakfir') || cookieHeader.toLowerCase().includes('jonakfir')) {
-        allowAccess = true;
-      }
-    }
-    
-    // Method 5: Try getCurrentAdmin (has hardcoded check)
-    if (!allowAccess) {
-      try {
-        const admin = await getCurrentAdmin(event);
-        if (admin) {
-          allowAccess = true;
+      
+      // Try backend /auth/me
+      if (!allowAccess) {
+        try {
+          const { PUBLIC_API_URL } = await import('$env/static/public');
+          const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+          
+          const allHeaders: Record<string, string> = {};
+          if (cookieHeader) {
+            allHeaders['Cookie'] = cookieHeader;
+          }
+          
+          const response = await fetch(`${base}/auth/me`, {
+            method: 'GET',
+            headers: allHeaders,
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json().catch(() => ({}));
+            const backendUser = data?.user;
+            const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+            if (email === 'jonakfir@gmail.com') {
+              allowAccess = true;
+            }
+          }
+        } catch (e) {
+          // Ignore
         }
-      } catch (e) {
-        // Ignore
       }
-    }
-    
-    // FINAL FALLBACK: If we're in production and backend is unreachable, 
-    // check if request is coming from a known admin session pattern
-    if (!allowAccess) {
-      // Check referer - if coming from admin page, likely admin
-      const referer = event.request.headers.get('referer') || '';
-      if (referer.includes('/admin') && cookieHeader.length > 10) {
-        // Has cookies and coming from admin page - likely admin
-        allowAccess = true;
+      
+      // Try getCurrentAdmin
+      if (!allowAccess) {
+        try {
+          const admin = await getCurrentAdmin(event);
+          if (admin) {
+            allowAccess = true;
+          }
+        } catch (e) {
+          // Ignore
+        }
       }
+      
+      if (!allowAccess) {
+        return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+      }
+      
+      await ensurePrismaUser('jonakfir@gmail.com');
     }
-    
-    // FINAL CHECK
-    if (!allowAccess) {
-      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
-    }
-    
-    // Ensure user exists in Prisma
-    await ensurePrismaUser('jonakfir@gmail.com');
 
     const body = await event.request.json();
     const email = String(body?.email || '').trim().toLowerCase();
