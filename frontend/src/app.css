@@ -1,0 +1,116 @@
+/* ========= Mobile-Rescue Base (applies to all pages) ========= */
+
+/* Reset + sane defaults */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+img, video, canvas { max-width: 100%; height: auto; display: block; }
+button { font: inherit; }
+
+/* iOS + viewport units */
+:root{
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+html {
+  /* Prevent Safari auto-zooming text */
+  -webkit-text-size-adjust: 100%;
+  color-scheme: light;
+}
+body {
+  /* Fill the *visual* viewport height on iOS (no mysterious top gap) */
+  min-height: 100svh;
+  /* Never show page scroll on your full-screen sections */
+  overflow: hidden;
+  /* Keep your existing background (blobs etc.) visible */
+  background: transparent;
+}
+
+/* Utility: full-viewport page wrapper that centers content */
+.page {
+  position: fixed; /* detach from document flow so bars don’t push it */
+  inset: 0;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  /* Safe-area padding (very small, tweak if you want actual breathing room) */
+  padding-top: max(0px, var(--safe-top));
+  padding-bottom: max(0px, var(--safe-bottom));
+  padding-left: max(0px, var(--safe-left));
+  padding-right: max(0px, var(--safe-right));
+  overflow: hidden;
+}
+
+/* Utility: a centered card container for hero sections */
+.card {
+  width: min(92vw, 760px);
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,.45);
+  background: rgba(255,255,255,.55);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  padding: clamp(22px, 6vw, 56px);
+  text-align: center;
+}
+
+/* Keep your Georgia headline look without changing the rest of the site */
+.headline {
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #fff;
+  line-height: 1.05;
+  font-size: clamp(32px, 8vw, 72px);
+  -webkit-text-stroke: 1.5px rgba(0,0,0,.5);
+  text-shadow: 0 8px 12px rgba(0,0,0,.35);
+  margin: 0 0 18px;
+}
+
+/* Subhead text */
+.subtle {
+  color: #374151;
+  font-size: clamp(14px, 3.6vw, 18px);
+  margin: 0 0 22px;
+}
+
+/* CTA */
+.cta {
+  display: inline-grid;
+  place-items: center;
+  width: clamp(220px, 60vw, 360px);
+  min-height: 48px;
+  padding: 12px 20px;
+  font-weight: 900;
+  font-size: clamp(15px, 4.4vw, 18px);
+  color: #fff;
+  background: #4f46e5;
+  border: 2px solid #4f46e5;
+  border-radius: 9999px;
+  box-shadow: 0 10px 28px rgba(79,70,229,.35);
+  cursor: pointer;
+}
+.cta:active { transform: translateY(1px); }
+
+/* Your ripple effect (unchanged) */
+.ripple {
+  position: absolute; border-radius: 9999px; background: rgba(255,255,255,.6);
+  transform: scale(0); animation: rip 600ms ease-out; pointer-events: none;
+  mix-blend-mode: screen;
+}
+@keyframes rip { to { transform: scale(2.6); opacity: 0; } }
+
+/* Animated dash segments */
+.dash { display:flex; justify-content:center; align-items:center; gap: 10px; height: 12px; margin: 0 auto 16px; }
+.seg {
+  width: clamp(32px, 7vw, 56px); height: 9px; border-radius: 9999px; background:#10b981;
+  filter: drop-shadow(0 2px 0 rgba(0,0,0,.06));
+  animation: seg-wave 1.2s ease-in-out infinite;
+}
+@keyframes seg-wave{
+  0%,100% { transform: translateY(0) scaleX(1); opacity:.85; }
+  50%     { transform: translateY(-1px) scaleX(1.02); opacity:1; }
+}
+
+/* Blobs: make sure they’re fixed and behind everything so they fill edges */
+.blob { position: fixed; z-index: -1; pointer-events: none; }

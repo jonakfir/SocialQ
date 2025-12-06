@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String          @id // Will be set manually as 9-digit number
+  username         String          @unique
+  password         String
+  role             String          @default("personal") // "personal" | "admin"
+  invitationCode   String?         @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  collages         Collage[]
+  sentRequests     FriendRequest[] @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+  friendships1     Friendship[]    @relation("User1Friendships")
+  friendships2     Friendship[]    @relation("User2Friendships")
+  gameSessions     GameSession[]
+
+  // Organizations
+  organizationsCreated   Organization[]
+  organizationMemberships OrganizationMembership[]
+
+  @@index([role])
+}
+
+model Collage {
+  id        String   @id @default(cuid())
+  userId    String
+  imageUrl  String // Path to the saved image file
+  emotions  String? // JSON array of emotions: ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise"]
+  folder    String?  @default("Me")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model FriendRequest {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  status     String // 'pending', 'accepted', 'declined'
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  fromUser   User     @relation("SentRequests", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("ReceivedRequests", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+model Friendship {
+  id        String   @id @default(cuid())
+  userId1   String
+  userId2   String
+  createdAt DateTime @default(now())
+  user1     User     @relation("User1Friendships", fields: [userId1], references: [id], onDelete: Cascade)
+  user2     User     @relation("User2Friendships", fields: [userId2], references: [id], onDelete: Cascade)
+
+  @@unique([userId1, userId2])
+  @@index([userId1])
+  @@index([userId2])
+}
+
+model GameSession {
+  id         String         @id @default(cuid())
+  userId     String
+  gameType   String // "facial_recognition" | "transition_recognition" | "mirroring"
+  difficulty String? // For facial_recognition and mirroring
+  level      String? // For transition_recognition
+  score      Int
+  total      Int
+  timeMs     Int? // Completion time in milliseconds
+  createdAt  DateTime       @default(now())
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions  GameQuestion[]
+
+  @@index([userId])
+  @@index([gameType])
+  @@index([createdAt])
+  @@index([userId, gameType])
+}
+
+model GameQuestion {
+  id            String      @id @default(cuid())
+  sessionId     String
+  questionIndex Int
+  correct       String
+  picked        String
+  isCorrect     Boolean
+  createdAt     DateTime    @default(now())
+  session       GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+// Organizations enable org-scoped administration and analytics
+model Organization {
+  id              String                    @id @default(cuid())
+  name            String                    @unique
+  description     String?
+  status          String                    @default("pending") // 'pending' | 'approved' | 'rejected'
+  createdByUserId String
+  createdAt       DateTime                  @default(now())
+  memberships     OrganizationMembership[]
+  createdBy       User                      @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([createdByUserId])
+}
+
+model OrganizationMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String       @default("member") // 'member' | 'org_admin'
+  status         String       @default("pending") // 'pending' | 'approved' | 'removed'
+  joinedAt       DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([role])
+}
