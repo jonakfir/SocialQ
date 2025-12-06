@@ -11,8 +11,13 @@ const upload = multer(); // for form-data bodies (no files required here)
 let findUserById = () => null;
 let deleteUserById = () => {};
 let countUsers = () => Promise.resolve(0);
+let db = null;
+let pool = null;
+let usePostgres = false;
 try {
-  ({ findUserById, deleteUserById, countUsers } = require('./db/db'));
+  const dbModule = require('./db/db');
+  ({ findUserById, deleteUserById, countUsers, db, pool } = dbModule);
+  usePostgres = !!pool;
 } catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
