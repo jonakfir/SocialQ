@@ -4,15 +4,8 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { PUBLIC_API_URL } from '$env/static/public';
-import { DATABASE_URL } from '$env/static/private';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-
-// Ensure DATABASE_URL is set
-if (!DATABASE_URL && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = 'file:./prisma/dev.db';
-  console.warn('[api/collages] DATABASE_URL not set, using default: file:./prisma/dev.db');
-}
 
 // Get the static directory path
 const __filename = fileURLToPath(import.meta.url);
