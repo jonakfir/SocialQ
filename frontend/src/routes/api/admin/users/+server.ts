@@ -210,6 +210,13 @@ export const POST: RequestHandler = async (event) => {
       const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
       const cookieHeader = event.request.headers.get('cookie') || '';
       
+      console.log('[POST /api/admin/users] Checking backend auth:', { 
+        base, 
+        hasCookies: !!cookieHeader, 
+        cookieLength: cookieHeader.length,
+        cookiePreview: cookieHeader.substring(0, 100) 
+      });
+      
       // Forward ALL cookies from the incoming request
       const allHeaders: Record<string, string> = {};
       if (cookieHeader) {
@@ -227,16 +234,25 @@ export const POST: RequestHandler = async (event) => {
         credentials: 'include'
       });
       
-      const data = await response.json().catch(() => ({}));
+      const responseText = await response.text();
+      console.log('[POST /api/admin/users] Backend /auth/me response:', { 
+        status: response.status, 
+        statusText: response.statusText,
+        responsePreview: responseText.substring(0, 200)
+      });
+      
+      const data = JSON.parse(responseText || '{}');
       const backendUser = data?.user;
       const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
       
-      console.log('[POST /api/admin/users] Backend response:', { email, hasUser: !!backendUser, status: response.status });
+      console.log('[POST /api/admin/users] Backend response parsed:', { email, hasUser: !!backendUser, fullData: data });
       
       // HARDCODE: If email is jonakfir@gmail.com, ALWAYS allow
       if (email === 'jonakfir@gmail.com') {
         allowAccess = true;
         console.log('[POST /api/admin/users] ✅ ALLOWING - jonakfir@gmail.com detected from backend');
+      } else {
+        console.log('[POST /api/admin/users] ❌ Email mismatch:', email, '!== jonakfir@gmail.com');
       }
     } catch (e) {
       console.error('[POST /api/admin/users] Backend check failed:', e);
