@@ -24,10 +24,46 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     const data = await response.json();
     const backendUser = data?.user;
     if (!backendUser?.email) return null;
-    const prismaUser = await prisma.user.findFirst({
+    
+    let prismaUser = await prisma.user.findFirst({
       where: { username: backendUser.email },
       select: { id: true, role: true }
     });
+    
+    // If user doesn't exist in Prisma, create them (sync from backend)
+    if (!prismaUser) {
+      const bcrypt = await import('bcryptjs');
+      const { generateUserId } = await import('$lib/userId');
+      const { randomBytes } = await import('crypto');
+      
+      const userId = await generateUserId();
+      const defaultPassword = await bcrypt.hash('temp', 10);
+      
+      // Generate unique invitation code
+      let invitationCode: string;
+      let attempts = 0;
+      do {
+        invitationCode = randomBytes(8).toString('hex').toUpperCase();
+        attempts++;
+        if (attempts > 10) break;
+      } while (await prisma.user.findUnique({ where: { invitationCode } }));
+      
+      // Hardcode admin role for jonakfir@gmail.com
+      const isAdmin = backendUser.email === 'jonakfir@gmail.com';
+      const role = isAdmin ? 'admin' : 'personal';
+      
+      prismaUser = await prisma.user.create({
+        data: {
+          id: userId,
+          username: backendUser.email,
+          password: defaultPassword,
+          role,
+          invitationCode: invitationCode || undefined
+        },
+        select: { id: true, role: true }
+      });
+    }
+    
     return prismaUser || null;
   } catch {
     return null;
