@@ -6,7 +6,12 @@ import { dev } from '$app/environment';
 if (!process.env.DATABASE_URL) {
   if (typeof window === 'undefined') {
     // Only log in server context
-    console.warn('[db] DATABASE_URL not set. Please set DATABASE_URL environment variable.');
+    console.error('[db] DATABASE_URL not set! Please add DATABASE_URL to Vercel environment variables.');
+    console.error('[db] Go to Vercel Dashboard → Settings → Environment Variables');
+    console.error('[db] Add: DATABASE_URL = your PostgreSQL connection string');
+    // Set a dummy value ONLY for Prisma generate during build
+    // This allows the build to complete, but runtime will fail if DATABASE_URL is not set
+    process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
   }
 }
 
