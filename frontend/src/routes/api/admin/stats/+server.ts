@@ -63,7 +63,29 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
     }
     
-    // Get overview stats
+    // Fetch stats from backend (which uses PostgreSQL)
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    try {
+      const backendResponse = await fetch(`${base}/admin/stats`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        if (backendData.ok) {
+          return json(backendData);
+        }
+      }
+    } catch (e) {
+      console.error('[GET /api/admin/stats] Backend fetch failed, falling back to Prisma:', e);
+    }
+    
+    // Fallback to Prisma if backend fails
     const [totalUsers, totalSessions, todaySessions, adminCount] = await Promise.all([
       prisma.user.count(),
       prisma.gameSession.count(),

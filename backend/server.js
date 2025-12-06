@@ -10,9 +10,10 @@ const upload = multer(); // for form-data bodies (no files required here)
 // Optional DB helpers (keep if you use them)
 let findUserById = () => null;
 let deleteUserById = () => {};
+let countUsers = () => Promise.resolve(0);
 try {
-  ({ findUserById, deleteUserById } = require('./db/db'));
-} catch { /* ok if you don’t have db */ }
+  ({ findUserById, deleteUserById, countUsers } = require('./db/db'));
+} catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
 const PORT = Number(process.env.PORT) || 8080;
@@ -250,6 +251,37 @@ app.post('/notify/emotion', upload.none(), async (req, res) => {
   } catch (e) {
     console.error('[/notify/emotion]', e?.message || e);
     res.status(500).json({ ok: false, error: e?.message || 'Internal error' });
+  }
+});
+
+// ---------------- Admin Stats ----------------
+app.get('/admin/stats', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin (hardcoded for jonakfir@gmail.com)
+    const user = await findUserById(req.currentUserId);
+    const email = user?.email?.toLowerCase() || '';
+    const isAdmin = email === 'jonakfir@gmail.com';
+    
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const totalUsers = await countUsers();
+    
+    // For now, return basic stats (sessions would need a separate table)
+    return res.json({
+      ok: true,
+      stats: {
+        totalUsers,
+        totalSessions: 0, // TODO: implement if needed
+        todaySessions: 0,
+        todayActiveUsers: 0,
+        adminCount: 1 // Hardcoded admin
+      }
+    });
+  } catch (e) {
+    console.error('[/admin/stats] error:', e);
+    return res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 

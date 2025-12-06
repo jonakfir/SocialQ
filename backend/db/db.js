@@ -236,6 +236,16 @@ async function updateUserEmailAndOrPassword(id, { email, password }) {
   }
 }
 
+async function countUsers() {
+  if (usePostgres) {
+    const result = await pool.query('SELECT COUNT(*) as count FROM users');
+    return parseInt(result.rows[0].count, 10);
+  } else {
+    const result = db.prepare('SELECT COUNT(*) as count FROM users').get();
+    return result.count || 0;
+  }
+}
+
 module.exports = {
   db: usePostgres ? pool : db,
   pool: usePostgres ? pool : null,
@@ -244,5 +254,6 @@ module.exports = {
   findUserByUsername,
   findUserById,
   deleteUserById,
-  updateUserEmailAndOrPassword
+  updateUserEmailAndOrPassword,
+  countUsers
 };
