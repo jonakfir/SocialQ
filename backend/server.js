@@ -55,6 +55,8 @@ function isAllowedOrigin(origin) {
     const { protocol, host } = new URL(origin);
     if (exactAllowed.includes(origin)) return true;
     if (origin.startsWith('http://localhost:')) return true;
+    // Allow all Vercel preview and production domains
+    if (protocol === 'https:' && (host.endsWith('.vercel.app') || host.endsWith('.vercel.app/'))) return true;
     if (PREVIEW_SUFFIX && protocol === 'https:' && host.endsWith(PREVIEW_SUFFIX)) return true;
     return false;
   } catch {
