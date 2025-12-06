@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "prisma generate && prisma db push --accept-data-loss && vite build",
+		"build": "prisma generate && (prisma db push --accept-data-loss --skip-generate || echo 'Migration skipped') && vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "prisma generate",
