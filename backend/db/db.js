@@ -135,8 +135,17 @@ async function initializeSchema() {
   }
 }
 
-// Initialize schema on load
-initializeSchema().catch(err => console.error('[DB] Schema initialization error:', err));
+// Initialize schema on load - but export a promise so server can wait
+const schemaInitPromise = initializeSchema()
+  .then(() => {
+    console.log('[DB] ✅ Schema initialization completed successfully');
+    return true;
+  })
+  .catch(err => {
+    console.error('[DB] ❌ Schema initialization error:', err);
+    console.error('[DB] Error details:', err.message);
+    throw err;
+  });
 
 // -------------------------
 // Helpers (email-centric)
@@ -255,5 +264,6 @@ module.exports = {
   findUserById,
   deleteUserById,
   updateUserEmailAndOrPassword,
-  countUsers
+  countUsers,
+  schemaInitPromise // Export so server can wait for it
 };
