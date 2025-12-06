@@ -11,8 +11,14 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     const mockUserEmail = event.request.headers.get('X-User-Email');
     
     if (mockUserId && mockUserEmail) {
+      const email = mockUserEmail.trim().toLowerCase();
+      // HARDCODE: jonakfir@gmail.com is ALWAYS admin
+      if (email === 'jonakfir@gmail.com') {
+        const user = await ensurePrismaUser(email);
+        return user ? { id: user.id, role: 'admin' } : null;
+      }
       const user = await prisma.user.findFirst({
-        where: { username: mockUserEmail.trim().toLowerCase() },
+        where: { username: email },
         select: { id: true, role: true }
       });
       if (user) return { id: user.id, role: user.role || 'personal' };
@@ -36,13 +42,19 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       return null;
     }
     
-    // Ensure user exists in Prisma with correct role
-    const email = backendUser.email || backendUser.username;
-    const prismaUser = await ensurePrismaUser(email);
+    // HARDCODE: jonakfir@gmail.com is ALWAYS admin
+    const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
+    if (email === 'jonakfir@gmail.com') {
+      const user = await ensurePrismaUser(email);
+      return user ? { id: user.id, role: 'admin' } : null;
+    }
     
+    // For other users, ensure they exist in Prisma
+    const prismaUser = await ensurePrismaUser(email);
     if (prismaUser) return { id: prismaUser.id, role: prismaUser.role || 'personal' };
     return null;
-  } catch {
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
     return null;
   }
 }

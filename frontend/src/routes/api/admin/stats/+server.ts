@@ -12,8 +12,14 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
     const mockUserEmail = event.request.headers.get('X-User-Email');
     
     if (mockUserId && mockUserEmail) {
+      const email = mockUserEmail.trim().toLowerCase();
+      // HARDCODE: jonakfir@gmail.com is ALWAYS admin
+      if (email === 'jonakfir@gmail.com') {
+        const user = await ensurePrismaUser(email);
+        return user ? { id: user.id } : null;
+      }
       const user = await prisma.user.findFirst({
-        where: { username: mockUserEmail.trim().toLowerCase() },
+        where: { username: email },
         select: { id: true, role: true }
       });
       if (user && user.role === 'admin') return { id: user.id };
@@ -38,13 +44,36 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
       return null;
     }
     
-    // Ensure user exists in Prisma with correct role
-    const email = backendUser.email || backendUser.username;
-    const prismaUser = await ensurePrismaUser(email);
+    // HARDCODE: jonakfir@gmail.com is ALWAYS admin - bypass all checks
+    const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
+    if (email === 'jonakfir@gmail.com') {
+      const user = await ensurePrismaUser(email);
+      return user ? { id: user.id } : null;
+    }
     
+    // For other users, check Prisma role
+    const prismaUser = await ensurePrismaUser(email);
     if (prismaUser && prismaUser.role === 'admin') return { id: prismaUser.id };
     return null;
-  } catch {
+  } catch (error) {
+    console.error('[getCurrentAdmin] Error:', error);
+    // If everything fails but email is jonakfir@gmail.com, still allow
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      const response = await fetch(`${base}/auth/me`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      const data = await response.json();
+      const backendUser = data?.user;
+      const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+      if (email === 'jonakfir@gmail.com') {
+        return { id: 'admin-override' }; // Temporary ID for hardcoded admin
+      }
+    } catch {}
     return null;
   }
 }
