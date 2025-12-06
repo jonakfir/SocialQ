@@ -30,7 +30,7 @@ export async function ensurePrismaUser(email: string): Promise<{ id: string; rol
     // User doesn't exist, create them
     const userId = await generateUserId();
     const bcrypt = await import('bcryptjs');
-    const defaultPassword = await bcrypt.hash('temp', 10);
+    const defaultPassword = await bcrypt.default.hash('temp', 10);
     
     // Generate unique invitation code
     const { randomBytes } = await import('crypto');
