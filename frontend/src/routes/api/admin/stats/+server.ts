@@ -63,29 +63,69 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
     }
     
-    // Fetch stats from backend (which uses PostgreSQL)
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
+    // Sync users from backend to Prisma first
     try {
-      const backendResponse = await fetch(`${base}/admin/stats`, {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      // Get all users from backend
+      const backendUsersResponse = await fetch(`${base}/admin/users`, {
         method: 'GET',
         headers: { 'Cookie': cookieHeader },
         credentials: 'include'
       });
       
-      if (backendResponse.ok) {
-        const backendData = await backendResponse.json();
-        if (backendData.ok) {
-          return json(backendData);
+      if (backendUsersResponse.ok) {
+        const backendUsersData = await backendUsersResponse.json();
+        if (backendUsersData.ok && backendUsersData.users) {
+          // Sync each backend user to Prisma
+          for (const backendUser of backendUsersData.users) {
+            const email = backendUser.email || backendUser.username;
+            const existingPrismaUser = await prisma.user.findFirst({
+              where: { username: email }
+            });
+            
+            if (!existingPrismaUser) {
+              // Create Prisma user from backend user
+              const bcrypt = await import('bcryptjs');
+              const { generateUserId } = await import('$lib/userId');
+              const { randomBytes } = await import('crypto');
+              
+              const userId = await generateUserId();
+              const defaultPassword = await bcrypt.hash('temp', 10);
+              
+              // Generate unique invitation code
+              let invitationCode: string;
+              let attempts = 0;
+              do {
+                invitationCode = randomBytes(8).toString('hex').toUpperCase();
+                attempts++;
+                if (attempts > 10) break;
+              } while (await prisma.user.findUnique({ where: { invitationCode } }));
+              
+              // Hardcode admin role for jonakfir@gmail.com
+              const isAdmin = email === 'jonakfir@gmail.com';
+              const role = isAdmin ? 'admin' : 'personal';
+              
+              await prisma.user.create({
+                data: {
+                  id: userId,
+                  username: email,
+                  password: defaultPassword,
+                  role,
+                  invitationCode: invitationCode || undefined
+                }
+              });
+            }
+          }
         }
       }
-    } catch (e) {
-      console.error('[GET /api/admin/stats] Backend fetch failed, falling back to Prisma:', e);
+    } catch (syncError) {
+      console.warn('[GET /api/admin/stats] Failed to sync users from backend:', syncError);
     }
     
-    // Fallback to Prisma if backend fails
+    // Use Prisma for stats (now synced with backend)
     const [totalUsers, totalSessions, todaySessions, adminCount] = await Promise.all([
       prisma.user.count(),
       prisma.gameSession.count(),
