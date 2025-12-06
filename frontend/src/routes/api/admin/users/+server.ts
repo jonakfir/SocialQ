@@ -55,11 +55,73 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
     }
 
+    // Sync users from backend PostgreSQL to Prisma first
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      // Get all users from backend
+      const backendResponse = await fetch(`${base}/admin/users`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        if (backendData.ok && backendData.users) {
+          // Sync each backend user to Prisma
+          for (const backendUser of backendData.users) {
+            const email = backendUser.email || backendUser.username;
+            const existingPrismaUser = await prisma.user.findFirst({
+              where: { username: email }
+            });
+            
+            if (!existingPrismaUser) {
+              // Create Prisma user from backend user
+              const bcrypt = await import('bcryptjs');
+              const { generateUserId } = await import('$lib/userId');
+              const { randomBytes } = await import('crypto');
+              
+              const userId = await generateUserId();
+              const defaultPassword = await bcrypt.hash('temp', 10);
+              
+              // Generate unique invitation code
+              let invitationCode: string;
+              let attempts = 0;
+              do {
+                invitationCode = randomBytes(8).toString('hex').toUpperCase();
+                attempts++;
+                if (attempts > 10) break;
+              } while (await prisma.user.findUnique({ where: { invitationCode } }));
+              
+              // Hardcode admin role for jonakfir@gmail.com
+              const isAdmin = email === 'jonakfir@gmail.com';
+              const role = isAdmin ? 'admin' : 'personal';
+              
+              await prisma.user.create({
+                data: {
+                  id: userId,
+                  username: email,
+                  password: defaultPassword,
+                  role,
+                  invitationCode: invitationCode || undefined
+                }
+              });
+            }
+          }
+        }
+      }
+    } catch (syncError) {
+      console.warn('[GET /api/admin/users] Failed to sync from backend, using Prisma only:', syncError);
+    }
+
     const url = new URL(event.request.url);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1000);
     const search = (url.searchParams.get('search') || '').trim();
 
-    // SQLite doesn't support mode: 'insensitive', so we'll fetch and filter in JS
+    // Fetch users from Prisma (now synced with backend)
     const users = await prisma.user.findMany({
       select: { id: true, username: true, role: true, createdAt: true },
       orderBy: { createdAt: 'desc' },

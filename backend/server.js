@@ -285,6 +285,45 @@ app.get('/admin/stats', requireAuth, async (req, res) => {
   }
 });
 
+// ---------------- Admin Users ----------------
+app.get('/admin/users', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin (hardcoded for jonakfir@gmail.com)
+    const user = await findUserById(req.currentUserId);
+    const email = user?.email?.toLowerCase() || '';
+    const isAdmin = email === 'jonakfir@gmail.com';
+    
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    // Get all users from backend PostgreSQL
+    let users = [];
+    if (usePostgres) {
+      const result = await pool.query('SELECT id, email, created_at FROM users ORDER BY created_at DESC');
+      users = result.rows.map(row => ({
+        id: row.id,
+        email: row.email,
+        username: row.email,
+        createdAt: row.created_at
+      }));
+    } else {
+      const allUsers = db.prepare('SELECT id, email, created_at FROM users ORDER BY created_at DESC').all();
+      users = allUsers.map(u => ({
+        id: u.id,
+        email: u.email,
+        username: u.email,
+        createdAt: u.created_at
+      }));
+    }
+    
+    return res.json({ ok: true, users });
+  } catch (e) {
+    console.error('[/admin/users] error:', e);
+    return res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 // ---------------- 404 & errors ----------------
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 app.use((err, _req, res, _next) => {
