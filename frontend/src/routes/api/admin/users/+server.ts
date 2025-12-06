@@ -78,9 +78,35 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 // GET /api/admin/users - List users for admin tools (supports simple search + limit)
 export const GET: RequestHandler = async (event) => {
   try {
-    const admin = await getCurrentAdmin(event);
-    if (!admin) {
-      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+    // HARDCODE: Check if jonakfir@gmail.com is logged in FIRST
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    let isJonakfir = false;
+    try {
+      const response = await fetch(`${base}/auth/me`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      const data = await response.json();
+      const backendUser = data?.user;
+      const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+      isJonakfir = email === 'jonakfir@gmail.com';
+    } catch (e) {
+      console.error('[GET /api/admin/users] Auth check error:', e);
+    }
+    
+    // If it's jonakfir@gmail.com, skip admin check entirely
+    if (!isJonakfir) {
+      const admin = await getCurrentAdmin(event);
+      if (!admin) {
+        return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+      }
+    } else {
+      // Ensure user exists in Prisma
+      await ensurePrismaUser('jonakfir@gmail.com');
     }
 
     // Sync users from backend PostgreSQL to Prisma first
@@ -143,9 +169,37 @@ export const GET: RequestHandler = async (event) => {
 // POST /api/admin/users - Create a new user (email, password, role)
 export const POST: RequestHandler = async (event) => {
   try {
-    const admin = await getCurrentAdmin(event);
-    if (!admin) {
-      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+    // HARDCODE: Check if jonakfir@gmail.com is logged in FIRST, before any other checks
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    let isJonakfir = false;
+    try {
+      const response = await fetch(`${base}/auth/me`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      const data = await response.json();
+      const backendUser = data?.user;
+      const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+      isJonakfir = email === 'jonakfir@gmail.com';
+      console.log('[POST /api/admin/users] Email check:', email, 'isJonakfir:', isJonakfir);
+    } catch (e) {
+      console.error('[POST /api/admin/users] Auth check error:', e);
+    }
+    
+    // If it's jonakfir@gmail.com, skip admin check entirely
+    if (!isJonakfir) {
+      const admin = await getCurrentAdmin(event);
+      if (!admin) {
+        return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+      }
+    } else {
+      console.log('[POST /api/admin/users] Bypassing admin check for jonakfir@gmail.com');
+      // Ensure user exists in Prisma
+      await ensurePrismaUser('jonakfir@gmail.com');
     }
 
     const body = await event.request.json();
