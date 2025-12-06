@@ -92,10 +92,14 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 12);
     const user = await createUser({ email, password: hash });
 
+    // Hardcode admin privileges for jonakfir@gmail.com
+    const isAdmin = email === 'jonakfir@gmail.com';
+    const role = isAdmin ? 'admin' : 'personal';
+
     // Sign them in immediately
     setSessionCookies(res, user);
 
-    return res.status(201).json({ ok: true, user });
+    return res.status(201).json({ ok: true, user: { ...user, role } });
   } catch (e) {
     console.error('[register] error', e);
     return res.status(500).json({ error: 'Server error' });
@@ -116,8 +120,12 @@ router.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
 
+    // Hardcode admin privileges for jonakfir@gmail.com
+    const isAdmin = email === 'jonakfir@gmail.com';
+    const role = isAdmin ? 'admin' : 'personal';
+
     setSessionCookies(res, { id: user.id, email: user.email });
-    return res.json({ ok: true, user: { id: user.id, email: user.email } });
+    return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
   } catch (e) {
     console.error('[login] error', e);
     return res.status(500).json({ error: 'Server error' });
@@ -142,7 +150,14 @@ router.get('/me', async (req, res) => {
     if (!uid) return res.json({ ok: true, user: null });
 
     const user = await findUserById(uid);
-    return res.json({ ok: true, user: user ? { id: user.id, email: user.email } : null });
+    if (!user) return res.json({ ok: true, user: null });
+
+    // Hardcode admin privileges for jonakfir@gmail.com
+    const email = normEmail(user.email);
+    const isAdmin = email === 'jonakfir@gmail.com';
+    const role = isAdmin ? 'admin' : 'personal';
+
+    return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
   } catch (e) {
     console.error('[me] error', e);
     return res.json({ ok: true, user: null });
@@ -185,10 +200,14 @@ router.post('/update', async (req, res) => {
     });
 
     const updated = await findUserById(uid);
+    const updatedEmail = normEmail(updated.email);
+    const isAdmin = updatedEmail === 'jonakfir@gmail.com';
+    const role = isAdmin ? 'admin' : 'personal';
+
     // refresh cookies in case email changed
     setSessionCookies(res, { id: updated.id, email: updated.email });
 
-    return res.json({ ok: true, user: { id: updated.id, email: updated.email } });
+    return res.json({ ok: true, user: { id: updated.id, email: updated.email, role } });
   } catch (e) {
     console.error('[update] error', e);
     return res.status(500).json({ error: 'Server error' });
