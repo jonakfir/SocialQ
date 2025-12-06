@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
  * Get current user and check if admin
@@ -37,46 +38,9 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
       return null;
     }
     
-    // Find or create Prisma user by email and check role
+    // Ensure user exists in Prisma with correct role
     const email = backendUser.email || backendUser.username;
-    let prismaUser = await prisma.user.findFirst({
-      where: { username: email },
-      select: { id: true, role: true }
-    });
-    
-    // If user doesn't exist in Prisma, create them (sync from backend)
-    if (!prismaUser) {
-      const bcrypt = await import('bcryptjs');
-      const { generateUserId } = await import('$lib/userId');
-      const { randomBytes } = await import('crypto');
-      
-      const userId = await generateUserId();
-      const defaultPassword = await bcrypt.hash('temp', 10);
-      
-      // Generate unique invitation code
-      let invitationCode: string;
-      let attempts = 0;
-      do {
-        invitationCode = randomBytes(8).toString('hex').toUpperCase();
-        attempts++;
-        if (attempts > 10) break;
-      } while (await prisma.user.findUnique({ where: { invitationCode } }));
-      
-      // Hardcode admin role for jonakfir@gmail.com
-      const isAdmin = email === 'jonakfir@gmail.com';
-      const role = isAdmin ? 'admin' : 'personal';
-      
-      prismaUser = await prisma.user.create({
-        data: {
-          id: userId,
-          username: email,
-          password: defaultPassword,
-          role,
-          invitationCode: invitationCode || undefined
-        },
-        select: { id: true, role: true }
-      });
-    }
+    const prismaUser = await ensurePrismaUser(email);
     
     if (prismaUser && prismaUser.role === 'admin') return { id: prismaUser.id };
     return null;
@@ -113,45 +77,10 @@ export const GET: RequestHandler = async (event) => {
       if (backendUsersResponse.ok) {
         const backendUsersData = await backendUsersResponse.json();
         if (backendUsersData.ok && backendUsersData.users) {
-          // Sync each backend user to Prisma
+          // Sync each backend user to Prisma using helper function
           for (const backendUser of backendUsersData.users) {
             const email = backendUser.email || backendUser.username;
-            const existingPrismaUser = await prisma.user.findFirst({
-              where: { username: email }
-            });
-            
-            if (!existingPrismaUser) {
-              // Create Prisma user from backend user
-              const bcrypt = await import('bcryptjs');
-              const { generateUserId } = await import('$lib/userId');
-              const { randomBytes } = await import('crypto');
-              
-              const userId = await generateUserId();
-              const defaultPassword = await bcrypt.hash('temp', 10);
-              
-              // Generate unique invitation code
-              let invitationCode: string;
-              let attempts = 0;
-              do {
-                invitationCode = randomBytes(8).toString('hex').toUpperCase();
-                attempts++;
-                if (attempts > 10) break;
-              } while (await prisma.user.findUnique({ where: { invitationCode } }));
-              
-              // Hardcode admin role for jonakfir@gmail.com
-              const isAdmin = email === 'jonakfir@gmail.com';
-              const role = isAdmin ? 'admin' : 'personal';
-              
-              await prisma.user.create({
-                data: {
-                  id: userId,
-                  username: email,
-                  password: defaultPassword,
-                  role,
-                  invitationCode: invitationCode || undefined
-                }
-              });
-            }
+            await ensurePrismaUser(email);
           }
         }
       }
