@@ -66,22 +66,13 @@
         localStorage.setItem('email', u);
         if (id != null) localStorage.setItem('userId', String(id));
         
-        // Fetch user role from database (more reliable than login response)
-        let userRole = 'personal';
-        try {
-          const roleRes = await apiFetch('/api/user/role');
-          const roleData = await roleRes.json();
-          if (roleData?.ok && roleData?.role) {
-            userRole = roleData.role;
-          }
-        } catch (e) {
-          console.warn('Failed to fetch user role, using default:', e);
-          // Fallback to role from login response if available
-          userRole = data.user?.role || 'personal';
-        }
+        // Get role from login response (backend returns it)
+        const userRole = data.user?.role || 'personal';
+        console.log('[Login] User role:', userRole, 'Email:', u);
         
         // First check if user is a master admin (highest priority)
         if (userRole === 'admin') {
+          console.log('[Login] Redirecting to admin page');
           goto('/admin');
           return;
         }
