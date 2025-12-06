@@ -13,11 +13,9 @@ let deleteUserById = () => {};
 let countUsers = () => Promise.resolve(0);
 let db = null;
 let pool = null;
-let usePostgres = false;
 try {
   const dbModule = require('./db/db');
   ({ findUserById, deleteUserById, countUsers, db, pool } = dbModule);
-  usePostgres = !!pool;
 } catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
@@ -304,7 +302,8 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     
     // Get all users from backend PostgreSQL
     let users = [];
-    if (usePostgres) {
+    if (pool) {
+      // PostgreSQL
       const result = await pool.query('SELECT id, email, created_at FROM users ORDER BY created_at DESC');
       users = result.rows.map(row => ({
         id: row.id,
@@ -312,7 +311,8 @@ app.get('/admin/users', requireAuth, async (req, res) => {
         username: row.email,
         createdAt: row.created_at
       }));
-    } else {
+    } else if (db) {
+      // SQLite
       const allUsers = db.prepare('SELECT id, email, created_at FROM users ORDER BY created_at DESC').all();
       users = allUsers.map(u => ({
         id: u.id,
