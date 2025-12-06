@@ -1,5 +1,5 @@
 // frontend/src/lib/whatsapp.ts
-import { WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 type TextParam = { type: 'text'; text: string };
 type BodyComponent = { type: 'body'; parameters: TextParam[] };
@@ -12,7 +12,7 @@ const GRAPH_VERSION = 'v22.0';
 
 /**
  * Normalize E.164 destination. Meta examples typically omit "+".
- * We’ll strip a leading '+' so either format works when you call us.
+ * We'll strip a leading '+' so either format works when you call us.
  */
 function normalizeTo(to: string): string {
   return String(to || '').trim().replace(/^\+/, '');
@@ -24,8 +24,9 @@ export async function sendWhatsAppTemplate(opts: {
   lang?: string;                // default 'en_US'
   components?: BodyComponent[]; // optional
 }) {
-  const token = WHATSAPP_TOKEN?.trim();
-  const phoneId = WHATSAPP_PHONE_NUMBER_ID?.trim();
+  // Use dynamic environment variables (available at runtime, not build time)
+  const token = env.WHATSAPP_TOKEN?.trim();
+  const phoneId = env.WHATSAPP_PHONE_NUMBER_ID?.trim();
   if (!token || !phoneId) {
     throw new Error(
       'WhatsApp env not set (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)'
