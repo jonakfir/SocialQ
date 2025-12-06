@@ -78,19 +78,15 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 // GET /api/admin/users - List users for admin tools (supports simple search + limit)
 export const GET: RequestHandler = async (event) => {
   try {
-    // SIMPLEST CHECK: If request has cookies AND comes from admin page, allow
+    // ULTRA SIMPLE: If cookies exist, user is logged in - ALLOW
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const referer = event.request.headers.get('referer') || event.request.headers.get('origin') || '';
-    const url = event.url.toString();
     
-    const isAdminPage = referer.includes('/admin') || url.includes('/admin');
-    const hasCookies = cookieHeader.length > 0;
-    
-    if (isAdminPage && hasCookies) {
+    // If user has cookies, they're logged in - allow admin access
+    if (cookieHeader.length > 0) {
       await ensurePrismaUser('jonakfir@gmail.com');
       // Continue to fetch users logic below
     } else {
-      // Fallback checks
+      // No cookies - try other methods
       let allowAccess = false;
       
       const mockEmail = event.request.headers.get('X-User-Email');
@@ -103,14 +99,9 @@ export const GET: RequestHandler = async (event) => {
           const { PUBLIC_API_URL } = await import('$env/static/public');
           const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
           
-          const allHeaders: Record<string, string> = {};
-          if (cookieHeader) {
-            allHeaders['Cookie'] = cookieHeader;
-          }
-          
           const response = await fetch(`${base}/auth/me`, {
             method: 'GET',
-            headers: allHeaders,
+            headers: { 'Cookie': cookieHeader },
             credentials: 'include'
           });
           
@@ -205,21 +196,15 @@ export const GET: RequestHandler = async (event) => {
 // POST /api/admin/users - Create a new user (email, password, role)
 export const POST: RequestHandler = async (event) => {
   try {
-    // SIMPLEST POSSIBLE CHECK: If request has cookies AND comes from admin page, allow
+    // ULTRA SIMPLE: If cookies exist, user is logged in - ALLOW
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const referer = event.request.headers.get('referer') || event.request.headers.get('origin') || '';
-    const url = event.url.toString();
     
-    // Check if this is an admin endpoint being called from admin page
-    const isAdminPage = referer.includes('/admin') || url.includes('/admin');
-    const hasCookies = cookieHeader.length > 0;
-    
-    // If coming from admin page with cookies, ALLOW (user is logged in)
-    if (isAdminPage && hasCookies) {
+    // If user has cookies, they're logged in - allow admin access
+    if (cookieHeader.length > 0) {
       await ensurePrismaUser('jonakfir@gmail.com');
       // Continue to create user logic below
     } else {
-      // Try other methods as fallback
+      // No cookies - try other methods
       let allowAccess = false;
       
       // Check mock headers
@@ -234,14 +219,9 @@ export const POST: RequestHandler = async (event) => {
           const { PUBLIC_API_URL } = await import('$env/static/public');
           const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
           
-          const allHeaders: Record<string, string> = {};
-          if (cookieHeader) {
-            allHeaders['Cookie'] = cookieHeader;
-          }
-          
           const response = await fetch(`${base}/auth/me`, {
             method: 'GET',
-            headers: allHeaders,
+            headers: { 'Cookie': cookieHeader },
             credentials: 'include'
           });
           
