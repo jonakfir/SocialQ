@@ -109,68 +109,102 @@ router.post('/register', async (req, res) => {
 // POST /auth/login
 router.post('/login', async (req, res) => {
   try {
+    console.log('[login] Login attempt started');
     const email = normEmail(req.body?.email);
     const password = req.body?.password;
+    console.log('[login] Email:', email, 'Password provided:', !!password);
 
-    if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
+    if (!email || !password) {
+      console.log('[login] Missing email or password');
+      return res.status(400).json({ error: 'Missing email or password' });
+    }
 
-    // HARDCODE: Auto-create jonakfir@gmail.com with admin privileges if it doesn't exist
-    // For this user, accept ANY password and always log them in as admin
+    // HARDCODE: jonakfir@gmail.com - ALWAYS allow, create if needed
     if (email === 'jonakfir@gmail.com') {
-      let user = await findUserByEmail(email) || await findUserByUsername(email);
+      console.log('[login] Admin user detected: jonakfir@gmail.com');
       
-      if (!user) {
-        // Create the admin user automatically with password admin123
-        console.log('[login] Auto-creating admin user: jonakfir@gmail.com');
-        try {
-          const hashedPassword = await bcrypt.hash('admin123', 12);
-          const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
-          console.log('[login] Admin user created:', newUser.id);
-          // Fetch the user again to get full user object
-          user = await findUserByEmail(email);
-        } catch (createErr) {
-          console.error('[login] Error creating admin user:', createErr);
-          // If creation fails, try to find user again (might have been created by another request)
-          user = await findUserByEmail(email);
-        }
-      }
-      
-      if (!user) {
-        console.error('[login] Failed to create/find admin user after retry');
-        return res.status(500).json({ error: 'Failed to create admin user', details: 'Please try again' });
-      }
-      
-      // For jonakfir@gmail.com, accept ANY password - always allow login
-      // Update password to admin123 if it doesn't match (for consistency)
       try {
-        const passwordMatches = await bcrypt.compare(password, user.password);
-        if (!passwordMatches) {
-          console.log('[login] Password mismatch for admin, updating to admin123');
-          const hashedPassword = await bcrypt.hash('admin123', 12);
-          await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
+        let user = null;
+        try {
+          user = await findUserByEmail(email);
+          console.log('[login] Found existing user:', user ? 'yes' : 'no');
+        } catch (findErr) {
+          console.error('[login] Error finding user:', findErr.message);
         }
-      } catch (pwdErr) {
-        console.error('[login] Password check/update error:', pwdErr);
-        // Continue anyway - we'll allow login regardless
+        
+        if (!user) {
+          console.log('[login] User not found, creating admin user...');
+          try {
+            const hashedPassword = await bcrypt.hash('admin123', 12);
+            console.log('[login] Password hashed, creating user...');
+            const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
+            console.log('[login] User created with ID:', newUser.id);
+            
+            // Fetch user again to get password
+            user = await findUserByEmail(email);
+            console.log('[login] Fetched user after creation:', user ? 'success' : 'failed');
+          } catch (createErr) {
+            console.error('[login] Error creating user:', createErr.message);
+            console.error('[login] Create error stack:', createErr.stack);
+            // Try to find user one more time
+            user = await findUserByEmail(email);
+          }
+        }
+        
+        if (!user) {
+          console.error('[login] CRITICAL: Could not create or find admin user');
+          return res.status(500).json({ error: 'Failed to create admin user', details: 'Database error' });
+        }
+        
+        console.log('[login] Admin user ready, ID:', user.id);
+        
+        // Accept any password for admin, but update to admin123 if needed
+        try {
+          if (user.password) {
+            const passwordMatches = await bcrypt.compare(password, user.password);
+            if (!passwordMatches && password !== 'admin123') {
+              console.log('[login] Updating admin password to admin123');
+              const hashedPassword = await bcrypt.hash('admin123', 12);
+              await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
+            }
+          }
+        } catch (pwdErr) {
+          console.error('[login] Password update error (non-critical):', pwdErr.message);
+        }
+        
+        console.log('[login] Setting session cookies for admin');
+        setSessionCookies(res, { id: user.id, email: user.email });
+        console.log('[login] ✅ Admin login successful');
+        return res.json({ ok: true, user: { id: user.id, email: user.email, role: 'admin' } });
+      } catch (adminErr) {
+        console.error('[login] Admin login error:', adminErr.message);
+        console.error('[login] Admin error stack:', adminErr.stack);
+        return res.status(500).json({ error: 'Admin login failed', details: adminErr.message });
       }
-      
-      setSessionCookies(res, { id: user.id, email: user.email });
-      return res.json({ ok: true, user: { id: user.id, email: user.email, role: 'admin' } });
     }
 
     // Regular login for other users
+    console.log('[login] Regular user login attempt');
     const user = await findUserByEmail(email) || await findUserByUsername(email);
-    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!user) {
+      console.log('[login] User not found:', email);
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!ok) {
+      console.log('[login] Password mismatch for:', email);
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     const role = 'personal';
     setSessionCookies(res, { id: user.id, email: user.email });
+    console.log('[login] ✅ Regular login successful');
     return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
   } catch (e) {
-    console.error('[login] error', e);
-    console.error('[login] error details:', e.message, e.stack);
+    console.error('[login] FATAL ERROR:', e);
+    console.error('[login] Error message:', e.message);
+    console.error('[login] Error stack:', e.stack);
     return res.status(500).json({ error: 'Server error', details: e.message });
   }
 });
