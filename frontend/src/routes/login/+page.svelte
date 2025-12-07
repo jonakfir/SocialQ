@@ -111,10 +111,11 @@
         
         console.log('[Login] FORCE REDIRECTING to:', redirectUrl);
         
+        // Wait a moment for cookies to be set, then redirect
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
         // IMMEDIATELY force redirect using window.location - most reliable
         window.location.href = redirectUrl;
-        // Also try replace as backup
-        window.location.replace(redirectUrl);
         return;
       } else {
         console.error('[Login] Login failed - res.ok:', res.ok, 'data.ok:', data.ok, 'data.user:', !!data.user);
