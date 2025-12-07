@@ -97,13 +97,23 @@
       </div>
 
       <div class="input-group">
-        <input
-          type={showPassword ? 'text' : 'password'}
-          placeholder="Password"
-          bind:value={password}
-          required
-          disabled={loading}
-        />
+        {#if showPassword}
+          <input
+            type="text"
+            placeholder="Password"
+            bind:value={password}
+            required
+            disabled={loading}
+          />
+        {:else}
+          <input
+            type="password"
+            placeholder="Password"
+            bind:value={password}
+            required
+            disabled={loading}
+          />
+        {/if}
         <button
           type="button"
           class="password-toggle"
