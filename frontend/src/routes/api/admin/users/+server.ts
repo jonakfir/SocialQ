@@ -153,12 +153,43 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Email and password are required' }, { status: 400 });
     }
 
-    // Reject duplicates
+    // Reject duplicates in Prisma
     const existing = await prisma.user.findUnique({ where: { username: email } });
     if (existing) {
       return json({ ok: false, error: 'User already exists' }, { status: 400 });
     }
 
+    // FIRST: Create user in backend PostgreSQL database (required for login)
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      // Use the backend register endpoint to create user in PostgreSQL
+      const backendResponse = await fetch(`${base}/auth/register`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cookie': cookieHeader
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+      
+      const backendData = await backendResponse.json();
+      
+      if (!backendResponse.ok && !backendData.error?.includes('already used')) {
+        console.warn('[POST /api/admin/users] Backend user creation failed:', backendData.error);
+        // Continue anyway - we'll create in Prisma
+      } else if (backendResponse.ok) {
+        console.log('[POST /api/admin/users] User created in backend database');
+      }
+    } catch (backendError) {
+      console.warn('[POST /api/admin/users] Failed to create user in backend, continuing with Prisma only:', backendError);
+      // Continue with Prisma creation anyway
+    }
+
+    // SECOND: Create user in Prisma (for frontend features)
     const bcrypt = await import('bcryptjs');
     const hashed = await bcrypt.hash(password, 10);
 
