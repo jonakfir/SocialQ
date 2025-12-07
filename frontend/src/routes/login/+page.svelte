@@ -111,11 +111,29 @@
         
         console.log('[Login] FORCE REDIRECTING to:', redirectUrl);
         
-        // Wait a moment for cookies to be set, then redirect
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Store admin flag in localStorage as backup for admin layout
+        if (isAdmin) {
+          localStorage.setItem('_admin_login', 'true');
+          localStorage.setItem('_admin_email', u);
+        }
         
-        // IMMEDIATELY force redirect using window.location - most reliable
-        window.location.href = redirectUrl;
+        // Wait a moment for cookies to be set, then redirect
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Use goto() for SvelteKit navigation, with window.location as fallback
+        try {
+          await goto(redirectUrl, { replaceState: true, invalidateAll: true, noScroll: true });
+          // If goto doesn't work, force with window.location
+          setTimeout(() => {
+            if (window.location.pathname === '/login') {
+              console.warn('[Login] goto() may have failed, forcing window.location');
+              window.location.href = redirectUrl;
+            }
+          }, 100);
+        } catch (err) {
+          console.error('[Login] goto() error:', err);
+          window.location.href = redirectUrl;
+        }
         return;
       } else {
         console.error('[Login] Login failed - res.ok:', res.ok, 'data.ok:', data.ok, 'data.user:', !!data.user);

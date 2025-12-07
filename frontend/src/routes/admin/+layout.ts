@@ -15,6 +15,8 @@ export const load: LayoutLoad = async ({ fetch, request }) => {
     // Get cookies from the request
     const cookieHeader = request.headers.get('cookie') || '';
     
+    console.log('[Admin Layout] Checking auth, cookies present:', !!cookieHeader);
+    
     const r = await fetch(authUrl, {
       method: 'GET',
       credentials: 'include',
