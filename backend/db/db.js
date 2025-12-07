@@ -70,30 +70,35 @@ async function initializeSchema() {
         CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
       `);
       console.log('[DB] Email index created/verified');
-    
-    // Migration: username -> email (if needed)
-    try {
-      const result = await pool.query(`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name = 'users' AND column_name = 'username'
-      `);
       
-      if (result.rows.length > 0) {
-        // Check if email column exists
-        const emailCheck = await pool.query(`
+      // Migration: username -> email (if needed)
+      try {
+        const result = await pool.query(`
           SELECT column_name 
           FROM information_schema.columns 
-          WHERE table_name = 'users' AND column_name = 'email'
+          WHERE table_name = 'users' AND column_name = 'username'
         `);
         
-        if (emailCheck.rows.length === 0) {
-          // Migrate username to email
-          await pool.query(`ALTER TABLE users RENAME COLUMN username TO email;`);
+        if (result.rows.length > 0) {
+          // Check if email column exists
+          const emailCheck = await pool.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'email'
+          `);
+          
+          if (emailCheck.rows.length === 0) {
+            // Migrate username to email
+            await pool.query(`ALTER TABLE users RENAME COLUMN username TO email;`);
+          }
         }
+      } catch (e) {
+        console.error('[DB migration failed]', e);
       }
-    } catch (e) {
-      console.error('[DB migration failed]', e);
+      console.log('[DB] ✅ Schema initialization complete');
+    } catch (err) {
+      console.error('[DB] ❌ Schema initialization failed:', err);
+      throw err;
     }
   } else {
     // SQLite schema (for local dev)
