@@ -68,12 +68,17 @@
         
         // Get role from login response (backend returns it)
         const userRole = data.user?.role || 'personal';
-        console.log('[Login] User role:', userRole, 'Email:', u);
+        const emailLower = u.toLowerCase().trim();
+        
+        // HARDCODE: jonakfir@gmail.com is ALWAYS admin
+        const isAdmin = emailLower === 'jonakfir@gmail.com' || userRole === 'admin';
+        
+        console.log('[Login] User role:', userRole, 'Email:', u, 'IsAdmin:', isAdmin);
         
         // Determine redirect URL
         let redirectUrl = '/dashboard';
-        if (userRole === 'admin') {
-          console.log('[Login] Redirecting to admin page');
+        if (isAdmin) {
+          console.log('[Login] ✅ ADMIN DETECTED - Redirecting to admin page');
           redirectUrl = '/admin/users';
         } else if (userRole === 'org_admin' || userRole === 'organization') {
           console.log('[Login] Redirecting to org admin page');
@@ -87,22 +92,8 @@
         
         console.log('[Login] Redirecting to:', redirectUrl);
         
-        // Force redirect - use window.location as fallback if goto doesn't work
-        try {
-          await goto(redirectUrl, { replaceState: true, invalidateAll: true });
-        } catch (gotoError) {
-          console.warn('[Login] goto() failed, using window.location:', gotoError);
-          window.location.href = redirectUrl;
-        }
-        
-        // Double-check: if we're still on login page after 500ms, force redirect
-        setTimeout(() => {
-          if (window.location.pathname === '/login') {
-            console.warn('[Login] Still on login page, forcing redirect');
-            window.location.href = redirectUrl;
-          }
-        }, 500);
-        
+        // IMMEDIATELY force redirect using window.location - most reliable
+        window.location.href = redirectUrl;
         return;
       } else {
         error = data.error || `Login failed (HTTP ${res.status})`;
