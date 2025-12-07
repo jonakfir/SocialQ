@@ -53,19 +53,23 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
 // -------------------------
 async function initializeSchema() {
   if (usePostgres) {
-    // PostgreSQL schema
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id         SERIAL PRIMARY KEY,
-        email      TEXT UNIQUE NOT NULL,
-        password   TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-    `);
+    try {
+      console.log('[DB] Starting schema initialization...');
+      // PostgreSQL schema
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id         SERIAL PRIMARY KEY,
+          email      TEXT UNIQUE NOT NULL,
+          password   TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log('[DB] Users table created/verified');
+      
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      `);
+      console.log('[DB] Email index created/verified');
     
     // Migration: username -> email (if needed)
     try {
