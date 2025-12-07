@@ -51,17 +51,36 @@
     error = '';
 
     try {
+      const emailTrimmed = email.trim().toLowerCase();
+      console.log('[Login] Attempting login for:', emailTrimmed);
+      
       const res = await apiFetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email: email.trim(), password })
+        body: JSON.stringify({ email: emailTrimmed, password })
       });
 
-      const data = await res.json().catch(() => ({}));
+      console.log('[Login] Response status:', res.status, 'ok:', res.ok);
+      
+      let data = {};
+      try {
+        const text = await res.text();
+        console.log('[Login] Response text:', text.substring(0, 200));
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        console.error('[Login] Failed to parse response:', parseErr);
+        error = 'Invalid response from server';
+        return;
+      }
 
-      if (res.ok && (data.ok || data.user)) {
-        const u = data.user?.email ?? email;
+      console.log('[Login] Parsed data:', JSON.stringify(data).substring(0, 200));
+
+      // Check if login was successful - be more lenient with the check
+      const loginSuccess = res.ok && (data.ok === true || data.user);
+      
+      if (loginSuccess) {
+        const u = data.user?.email || emailTrimmed;
         const id = data.user?.id ?? null;
         localStorage.setItem('email', u);
         if (id != null) localStorage.setItem('userId', String(id));
@@ -90,17 +109,20 @@
           redirectUrl = '/dashboard';
         }
         
-        console.log('[Login] Redirecting to:', redirectUrl);
+        console.log('[Login] FORCE REDIRECTING to:', redirectUrl);
         
         // IMMEDIATELY force redirect using window.location - most reliable
         window.location.href = redirectUrl;
+        // Also try replace as backup
+        window.location.replace(redirectUrl);
         return;
       } else {
+        console.error('[Login] Login failed - res.ok:', res.ok, 'data.ok:', data.ok, 'data.user:', !!data.user);
         error = data.error || `Login failed (HTTP ${res.status})`;
       }
     } catch (err) {
       console.error('[Login] Error:', err);
-      error = 'Network error';
+      error = 'Network error: ' + (err.message || 'Unknown error');
     }
   }
 </script>
