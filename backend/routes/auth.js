@@ -122,18 +122,28 @@ router.post('/login', async (req, res) => {
         // Create the admin user automatically
         console.log('[login] Auto-creating admin user: jonakfir@gmail.com');
         const hashedPassword = await bcrypt.hash('admin123', 12);
-        user = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
-        console.log('[login] Admin user created:', user.id);
+        const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
+        console.log('[login] Admin user created:', newUser.id);
+        // Fetch the user again to get the password
+        user = await findUserByEmail(email);
       }
       
-      // Verify password
+      if (!user) {
+        console.error('[login] Failed to create/find admin user');
+        return res.status(500).json({ error: 'Failed to create admin user' });
+      }
+      
+      // For jonakfir@gmail.com, accept any password or update to admin123
+      const correctPassword = 'admin123';
       const ok = await bcrypt.compare(password, user.password);
+      
       if (!ok) {
         // If password doesn't match, update it to admin123
         console.log('[login] Password mismatch, updating to admin123');
-        const hashedPassword = await bcrypt.hash('admin123', 12);
+        const hashedPassword = await bcrypt.hash(correctPassword, 12);
         await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
-        user.password = hashedPassword;
+        // Re-fetch user to get updated password
+        user = await findUserByEmail(email);
       }
       
       setSessionCookies(res, { id: user.id, email: user.email });
