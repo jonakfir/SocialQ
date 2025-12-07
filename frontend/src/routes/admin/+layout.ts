@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
-import { apiFetch } from '$lib/api';
+import { env as PUBLIC } from '$env/dynamic/public';
 
 /**
  * Admin layout loader - protects admin routes
@@ -8,20 +8,33 @@ import { apiFetch } from '$lib/api';
  */
 export const load: LayoutLoad = async ({ fetch }) => {
   try {
-    const r = await apiFetch('/auth/me');
-    const { user } = await r.json();
+    // Use SvelteKit's fetch which automatically forwards cookies
+    const base = (PUBLIC.PUBLIC_API_URL || '').replace(/\/+$/, '') || 'http://localhost:4000';
+    const authUrl = `${base}/auth/me`;
+    
+    const r = await fetch(authUrl, {
+      method: 'GET',
+      credentials: 'include'
+    });
+    
+    const data = await r.json().catch(() => ({ user: null }));
+    const user = data?.user;
     
     // Not authenticated - redirect to login
     if (!user) {
       throw redirect(302, '/login');
     }
     
+    // Hardcode: jonakfir@gmail.com is ALWAYS admin
+    const email = (user.email || user.username || '').trim().toLowerCase();
+    const isAdmin = email === 'jonakfir@gmail.com' || user.role === 'admin';
+    
     // Not admin - redirect to dashboard
-    if (user.role !== 'admin') {
+    if (!isAdmin) {
       throw redirect(302, '/dashboard');
     }
     
-    return { user, isAdmin: true };
+    return { user: { ...user, role: 'admin' }, isAdmin: true };
   } catch (error: any) {
     // If it's a redirect, re-throw it
     if (error?.status === 302) {
