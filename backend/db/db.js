@@ -96,6 +96,26 @@ async function initializeSchema() {
         console.error('[DB migration failed]', e);
       }
       console.log('[DB] ✅ Schema initialization complete');
+      
+      // Auto-create admin user if it doesn't exist
+      try {
+        const adminEmail = 'jonakfir@gmail.com';
+        const adminPassword = 'admin123';
+        const existingAdmin = await findUserByEmail(adminEmail);
+        
+        if (!existingAdmin) {
+          console.log('[DB] Creating admin user:', adminEmail);
+          const bcrypt = require('bcryptjs');
+          const hashedPassword = await bcrypt.hash(adminPassword, 12);
+          await createUser({ email: adminEmail, password: hashedPassword });
+          console.log('[DB] ✅ Admin user created successfully');
+        } else {
+          console.log('[DB] Admin user already exists');
+        }
+      } catch (err) {
+        console.error('[DB] Failed to create admin user:', err.message);
+        // Don't throw - this is not critical
+      }
     } catch (err) {
       console.error('[DB] ❌ Schema initialization failed:', err);
       throw err;
@@ -164,34 +184,51 @@ function toEmailKey(email) {
 }
 
 async function createUser({ email, password }) {
-  const e = toEmailKey(email);
-  
-  if (usePostgres) {
-    const result = await pool.query(
-      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
-      [e, password]
-    );
-    return { id: Number(result.rows[0].id), email: result.rows[0].email };
-  } else {
-    const stmt = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)');
-    const info = stmt.run(e, password);
-    return { id: Number(info.lastInsertRowid), email: e };
+  try {
+    const e = toEmailKey(email);
+    console.log('[createUser] Creating user with email:', e);
+    
+    if (usePostgres) {
+      console.log('[createUser] Using PostgreSQL');
+      const result = await pool.query(
+        'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+        [e, password]
+      );
+      console.log('[createUser] User created, ID:', result.rows[0].id);
+      return { id: Number(result.rows[0].id), email: result.rows[0].email };
+    } else {
+      console.log('[createUser] Using SQLite');
+      const stmt = db.prepare('INSERT INTO users (email, password) VALUES (?, ?)');
+      const info = stmt.run(e, password);
+      console.log('[createUser] User created, ID:', info.lastInsertRowid);
+      return { id: Number(info.lastInsertRowid), email: e };
+    }
+  } catch (err) {
+    console.error('[createUser] Error:', err.message);
+    console.error('[createUser] Error code:', err.code);
+    console.error('[createUser] Error detail:', err.detail);
+    throw err;
   }
 }
 
 async function findUserByEmail(email) {
-  const e = toEmailKey(email);
-  
-  if (usePostgres) {
-    const result = await pool.query(
-      'SELECT id, email, password FROM users WHERE email = $1',
-      [e]
-    );
-    return result.rows[0] || null;
-  } else {
-    return db
-      .prepare('SELECT id, email, password FROM users WHERE email = ?')
-      .get(e) || null;
+  try {
+    const e = toEmailKey(email);
+    
+    if (usePostgres) {
+      const result = await pool.query(
+        'SELECT id, email, password FROM users WHERE email = $1',
+        [e]
+      );
+      return result.rows[0] || null;
+    } else {
+      return db
+        .prepare('SELECT id, email, password FROM users WHERE email = ?')
+        .get(e) || null;
+    }
+  } catch (err) {
+    console.error('[findUserByEmail] Error:', err.message);
+    throw err;
   }
 }
 
