@@ -338,28 +338,26 @@ app.use((err, _req, res, _next) => {
 });
 
 // ---------------- Boot ----------------
-// Wait for schema initialization before starting server
-schemaInitPromise
-  .then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('========================================');
-      console.log(`API listening on :${PORT}`);
-      console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
-      if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
-      console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
-      console.log('GRAPH_VERSION:', GRAPH_VERSION);
-      console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
-      console.log('========================================');
-    });
-  })
-  .catch((err) => {
-    console.error('========================================');
-    console.error('❌ Failed to initialize database schema');
-    console.error('Error:', err.message);
-    console.error('Server will not start');
-    console.error('========================================');
-    process.exit(1);
-  });
+// Start server immediately, initialize schema in background
+// This ensures healthcheck works even if schema init takes time
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('========================================');
+  console.log(`API listening on :${PORT}`);
+  console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
+  if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
+  console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+  console.log('GRAPH_VERSION:', GRAPH_VERSION);
+  console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
   console.log('WA_TEMPLATE:', WA_TEMPLATE);
   console.log('========================================');
+  
+  // Initialize schema in background (non-blocking)
+  schemaInitPromise
+    .then(() => {
+      console.log('[DB] ✅ Schema initialization completed successfully');
+    })
+    .catch((err) => {
+      console.error('[DB] ❌ Schema initialization error:', err.message);
+      console.error('[DB] Server will continue but database operations may fail');
+    });
 });
