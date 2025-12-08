@@ -15,9 +15,11 @@ async function forward(request: Request, path: string) {
   // Log Authorization header for debugging
   const authHeader = headers.get('authorization') || headers.get('Authorization');
   if (authHeader) {
-    console.log('[API Proxy] Forwarding Authorization header to backend:', authHeader.substring(0, 50) + '...');
+    console.log('[API Proxy] ✅ Forwarding Authorization header to backend:', authHeader.substring(0, 50) + '...');
+    console.log('[API Proxy] Full header value length:', authHeader.length);
   } else {
-    console.log('[API Proxy] No Authorization header in request');
+    console.log('[API Proxy] ❌ No Authorization header in request');
+    console.log('[API Proxy] Available headers:', Array.from(headers.keys()).join(', '));
   }
 
   const body =
