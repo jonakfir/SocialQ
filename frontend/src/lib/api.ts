@@ -78,8 +78,15 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
       try {
         const token = localStorage.getItem('auth_token');
         if (token) {
-          headers.set('Authorization', `Bearer ${token}`);
-          console.log('[apiFetch] Added JWT token to Authorization header for', path);
+          const trimmedToken = token.trim();
+          if (trimmedToken) {
+            headers.set('Authorization', `Bearer ${trimmedToken}`);
+            console.log('[apiFetch] Added JWT token to Authorization header for', path, 'Token length:', trimmedToken.length);
+          } else {
+            console.warn('[apiFetch] Token found but is empty after trimming');
+          }
+        } else {
+          console.warn('[apiFetch] No auth_token found in localStorage for', path);
         }
       } catch (error) {
         console.error('[apiFetch] Error reading auth token:', error);

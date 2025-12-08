@@ -87,8 +87,12 @@
         
         // Store JWT token for Authorization header (works cross-origin)
         if (data.token) {
-          localStorage.setItem('auth_token', data.token);
-          console.log('[Login] Stored JWT token in localStorage');
+          const token = String(data.token).trim();
+          localStorage.setItem('auth_token', token);
+          console.log('[Login] Stored JWT token in localStorage, length:', token.length);
+          console.log('[Login] Token preview (first 50 chars):', token.substring(0, 50));
+        } else {
+          console.error('[Login] ❌ NO TOKEN IN LOGIN RESPONSE!');
         }
         
         // Get role from login response (backend returns it)
