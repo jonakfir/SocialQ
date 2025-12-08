@@ -59,27 +59,46 @@ function clearSessionCookies(res) {
 function uidFromCookiesOrJWT(req) {
   // First, try JWT from Authorization header (for cross-origin requests)
   const authHeader = req.headers.authorization || req.headers.Authorization;
-  console.log('[uidFromCookiesOrJWT] Authorization header present:', !!authHeader, 'Value:', authHeader ? authHeader.substring(0, 50) + '...' : 'none');
+  console.log('[uidFromCookiesOrJWT] Authorization header present:', !!authHeader);
+  if (authHeader) {
+    console.log('[uidFromCookiesOrJWT] Header value (first 50 chars):', authHeader.substring(0, 50));
+  }
   
   if (authHeader && authHeader.startsWith('Bearer ')) {
     try {
       const token = authHeader.substring(7); // Remove 'Bearer ' prefix
       console.log('[uidFromCookiesOrJWT] Extracted token, length:', token.length);
+      
+      // Try to decode without verification first to see the payload
+      try {
+        const decoded = jwt.decode(token);
+        console.log('[uidFromCookiesOrJWT] Decoded JWT (without verification):', JSON.stringify(decoded));
+      } catch (decodeErr) {
+        console.log('[uidFromCookiesOrJWT] Could not decode JWT:', decodeErr.message);
+      }
+      
       const payload = jwt.verify(token, JWT_SECRET);
-      console.log('[uidFromCookiesOrJWT] JWT payload:', JSON.stringify(payload));
+      console.log('[uidFromCookiesOrJWT] ✅ JWT verified successfully, payload:', JSON.stringify(payload));
       const uid = Number(payload?.uid);
       if (uid) {
         console.log('[uidFromCookiesOrJWT] ✅ Found UID from Authorization header:', uid);
         return uid;
       } else {
-        console.log('[uidFromCookiesOrJWT] ❌ No UID in JWT payload');
+        console.log('[uidFromCookiesOrJWT] ❌ No UID in JWT payload. Payload keys:', Object.keys(payload || {}));
       }
     } catch (err) {
-      console.log('[uidFromCookiesOrJWT] ❌ Invalid JWT in Authorization header:', err.message);
-      console.log('[uidFromCookiesOrJWT] JWT_SECRET present:', !!JWT_SECRET);
+      console.log('[uidFromCookiesOrJWT] ❌ JWT verification failed:', err.message);
+      console.log('[uidFromCookiesOrJWT] JWT_SECRET present:', !!JWT_SECRET, 'Length:', JWT_SECRET ? JWT_SECRET.length : 0);
+      if (err.name === 'JsonWebTokenError') {
+        console.log('[uidFromCookiesOrJWT] Token format error - token may be corrupted');
+      } else if (err.name === 'TokenExpiredError') {
+        console.log('[uidFromCookiesOrJWT] Token expired');
+      }
     }
   } else if (authHeader) {
-    console.log('[uidFromCookiesOrJWT] ❌ Authorization header does not start with "Bearer "');
+    console.log('[uidFromCookiesOrJWT] ❌ Authorization header does not start with "Bearer ". Header:', authHeader.substring(0, 20));
+  } else {
+    console.log('[uidFromCookiesOrJWT] No Authorization header found. Available headers:', Object.keys(req.headers).filter(h => h.toLowerCase().includes('auth')));
   }
 
   // Prefer explicit uid cookie (set on login/register)
