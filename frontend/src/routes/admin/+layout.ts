@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
+import { apiFetch } from '$lib/api';
 
 /**
  * Admin layout loader - protects admin routes
@@ -7,7 +8,7 @@ import type { LayoutLoad } from './$types';
  * 
  * Authentication flow:
  * 1. User logs in → Backend checks PostgreSQL → Returns JWT token → Stored in localStorage
- * 2. Admin layout → Sends JWT in Authorization header → Backend validates against PostgreSQL
+ * 2. Admin layout → Uses apiFetch which automatically adds JWT → Backend validates against PostgreSQL
  * 
  * Uses JWT tokens in Authorization headers instead of cookies to avoid third-party cookie blocking.
  * The backend validates the JWT and checks PostgreSQL for user data.
@@ -16,43 +17,18 @@ import type { LayoutLoad } from './$types';
  */
 export const ssr = false; // Run only on client so we can access localStorage
 
-export const load: LayoutLoad = async ({ fetch }) => {
-  // Get JWT token from localStorage (only runs on client now)
-  let authToken = null;
+export const load: LayoutLoad = async () => {
   try {
-    authToken = localStorage.getItem('auth_token');
-    if (authToken) {
-      console.log('[Admin Layout] Found JWT token in localStorage');
-    } else {
-      console.warn('[Admin Layout] No JWT token found in localStorage');
-    }
-  } catch (e) {
-    console.error('[Admin Layout] Error reading auth token:', e);
-  }
-
-  try {
-    // Use /api proxy which forwards cookies and Authorization header
+    // Use apiFetch which automatically adds JWT token from localStorage
     const authUrl = '/api/auth/me';
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
+    console.log('[Admin Layout] Using apiFetch which will automatically add JWT token');
     
-    // Build headers with JWT token if available
-    const headers: HeadersInit = {};
-    if (authToken) {
-      // Set both cases to ensure it works
-      headers['Authorization'] = `Bearer ${authToken}`;
-      headers['authorization'] = `Bearer ${authToken}`;
-      console.log('[Admin Layout] Sending JWT token in Authorization header, token length:', authToken.length);
-    } else {
-      console.error('[Admin Layout] ❌ NO AUTH TOKEN FOUND IN LOCALSTORAGE');
-    }
-    
-    // SvelteKit's fetch in load functions automatically forwards cookies from the browser request
-    // We also add JWT token in Authorization header for cross-origin support
-    const r = await fetch(authUrl, {
+    // apiFetch automatically adds JWT token from localStorage to Authorization header
+    const r = await apiFetch(authUrl, {
       method: 'GET',
-      credentials: 'include',
-      headers
+      credentials: 'include'
     });
     
     console.log('[Admin Layout] Response status:', r.status, 'ok:', r.ok);
