@@ -8,9 +8,9 @@ import { env as PUBLIC } from '$env/dynamic/public';
  */
 export const load: LayoutLoad = async ({ fetch }) => {
   try {
-    // Use SvelteKit's fetch which automatically forwards cookies
-    const base = (PUBLIC.PUBLIC_API_URL || '').replace(/\/+$/, '') || 'http://localhost:4000';
-    const authUrl = `${base}/auth/me`;
+    // Use /api proxy route which properly forwards cookies via hooks.server.ts
+    // This ensures cookies are forwarded correctly even for cross-origin requests
+    const authUrl = '/api/auth/me';
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
     
@@ -19,6 +19,8 @@ export const load: LayoutLoad = async ({ fetch }) => {
       method: 'GET',
       credentials: 'include'
     });
+    
+    console.log('[Admin Layout] Response status:', r.status, 'ok:', r.ok);
     
     const data = await r.json().catch(() => ({ user: null }));
     const user = data?.user;
