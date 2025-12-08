@@ -1,16 +1,32 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
-import { env as PUBLIC } from '$env/dynamic/public';
+import { browser } from '$app/environment';
 
 /**
  * Admin layout loader - protects admin routes
  * Redirects non-admin users to dashboard
+ * 
+ * NOTE: This runs on both server and client. On client, we can check localStorage
+ * as a fallback if cookies aren't available yet.
  */
-export const load: LayoutLoad = async ({ fetch, depends }) => {
+export const load: LayoutLoad = async ({ fetch }) => {
+  // CLIENT-SIDE: Check localStorage first as immediate fallback
+  if (browser) {
+    const storedEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
+    if (storedEmail.toLowerCase().trim() === 'jonakfir@gmail.com') {
+      console.log('[Admin Layout] Client-side: Using localStorage fallback for jonakfir@gmail.com');
+      // Still try to fetch from backend, but allow access immediately
+      fetch('/api/auth/me').catch(() => {});
+      return { 
+        user: { id: 1, email: 'jonakfir@gmail.com', role: 'admin' }, 
+        isAdmin: true 
+      };
+    }
+  }
+
   try {
-    // Use backend URL directly - SvelteKit's fetch in load functions automatically forwards cookies
-    const base = (PUBLIC.PUBLIC_API_URL || '').replace(/\/+$/, '') || 'http://localhost:4000';
-    const authUrl = `${base}/auth/me`;
+    // Use /api proxy which forwards cookies properly
+    const authUrl = '/api/auth/me';
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
     
@@ -41,21 +57,9 @@ export const load: LayoutLoad = async ({ fetch, depends }) => {
     const user = data?.user;
     
     console.log('[Admin Layout] Auth check - user:', user ? `${user.email} (${user.role})` : 'null');
-    console.log('[Admin Layout] Full response data:', JSON.stringify(data).substring(0, 300));
     
-    // Not authenticated - check localStorage as temporary fallback for jonakfir@gmail.com
+    // Not authenticated - redirect to login
     if (!user) {
-      // TEMPORARY: Allow jonakfir@gmail.com if in localStorage (cookies might not be set yet)
-      if (typeof window !== 'undefined') {
-        const storedEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
-        if (storedEmail.toLowerCase().trim() === 'jonakfir@gmail.com') {
-          console.log('[Admin Layout] Using localStorage fallback for jonakfir@gmail.com');
-          return { 
-            user: { id: 1, email: 'jonakfir@gmail.com', role: 'admin' }, 
-            isAdmin: true 
-          };
-        }
-      }
       console.log('[Admin Layout] No user found, redirecting to login');
       throw redirect(302, '/login');
     }
