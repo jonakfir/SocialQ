@@ -6,23 +6,18 @@ import { env as PUBLIC } from '$env/dynamic/public';
  * Admin layout loader - protects admin routes
  * Redirects non-admin users to dashboard
  */
-export const load: LayoutLoad = async ({ fetch, request }) => {
+export const load: LayoutLoad = async ({ fetch }) => {
   try {
     // Use SvelteKit's fetch which automatically forwards cookies
     const base = (PUBLIC.PUBLIC_API_URL || '').replace(/\/+$/, '') || 'http://localhost:4000';
     const authUrl = `${base}/auth/me`;
     
-    // Get cookies from the request
-    const cookieHeader = request.headers.get('cookie') || '';
+    console.log('[Admin Layout] Checking auth at:', authUrl);
     
-    console.log('[Admin Layout] Checking auth, cookies present:', !!cookieHeader);
-    
+    // SvelteKit's fetch automatically forwards cookies from the browser
     const r = await fetch(authUrl, {
       method: 'GET',
-      credentials: 'include',
-      headers: cookieHeader ? {
-        'Cookie': cookieHeader
-      } : {}
+      credentials: 'include'
     });
     
     const data = await r.json().catch(() => ({ user: null }));
