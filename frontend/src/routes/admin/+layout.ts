@@ -1,6 +1,5 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
-import { browser } from '$app/environment';
 
 /**
  * Admin layout loader - protects admin routes
@@ -12,19 +11,23 @@ import { browser } from '$app/environment';
  * 
  * Uses JWT tokens in Authorization headers instead of cookies to avoid third-party cookie blocking.
  * The backend validates the JWT and checks PostgreSQL for user data.
+ * 
+ * NOTE: Runs client-only (ssr = false) so we can access localStorage for JWT token.
  */
-export const load: LayoutLoad = async ({ fetch, request }) => {
-  // CLIENT-SIDE: Get JWT token from localStorage and add to request
+export const ssr = false; // Run only on client so we can access localStorage
+
+export const load: LayoutLoad = async ({ fetch }) => {
+  // Get JWT token from localStorage (only runs on client now)
   let authToken = null;
-  if (browser) {
-    try {
-      authToken = localStorage.getItem('auth_token');
-      if (authToken) {
-        console.log('[Admin Layout] Found JWT token in localStorage');
-      }
-    } catch (e) {
-      console.error('[Admin Layout] Error reading auth token:', e);
+  try {
+    authToken = localStorage.getItem('auth_token');
+    if (authToken) {
+      console.log('[Admin Layout] Found JWT token in localStorage');
+    } else {
+      console.warn('[Admin Layout] No JWT token found in localStorage');
     }
+  } catch (e) {
+    console.error('[Admin Layout] Error reading auth token:', e);
   }
 
   try {
