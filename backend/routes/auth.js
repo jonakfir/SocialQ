@@ -119,6 +119,19 @@ function uidFromCookiesOrJWT(req) {
 // tiny health
 router.get('/_health', (_req, res) => res.json({ ok: true }));
 
+// DEBUG endpoint to check headers
+router.get('/_debug-headers', (req, res) => {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  const allHeaders = Object.keys(req.headers);
+  res.json({ 
+    ok: true, 
+    hasAuthHeader: !!authHeader,
+    authHeaderPreview: authHeader ? authHeader.substring(0, 50) : null,
+    allHeaders: allHeaders,
+    authHeaders: allHeaders.filter(h => h.toLowerCase().includes('auth'))
+  });
+});
+
 // ----------------- Routes -----------------
 
 // POST /auth/register
