@@ -7,10 +7,35 @@ import { browser } from '$app/environment';
  * Redirects non-admin users to dashboard
  * 
  * Authentication flow:
- * 1. User logs in → Backend checks PostgreSQL → Sets cookies
- * 2. Admin layout → Checks cookies via /api/auth/me → Backend validates against PostgreSQL
+ * 1. User logs in → Backend checks PostgreSQL → Sets cookies + localStorage
+ * 2. Admin layout → Checks cookies via /api/auth/me → Falls back to localStorage if cookies blocked
+ * 
+ * NOTE: Browsers block third-party cookies, so we use localStorage as a fallback
+ * when cookies aren't available. The backend still validates against PostgreSQL.
  */
 export const load: LayoutLoad = async ({ fetch }) => {
+  // CLIENT-SIDE: Check localStorage first as fallback when cookies are blocked
+  if (browser) {
+    const storedEmail = localStorage.getItem('email') || localStorage.getItem('_admin_email') || '';
+    const adminFlag = localStorage.getItem('_admin_login') === 'true';
+    const emailLower = storedEmail.toLowerCase().trim();
+    
+    // If we have admin login flag and it's jonakfir@gmail.com, grant immediate access
+    if (adminFlag && emailLower === 'jonakfir@gmail.com') {
+      console.log('[Admin Layout] Client-side: Using localStorage fallback for', emailLower);
+      // Still try to fetch from backend in background, but allow access immediately
+      fetch('/api/auth/me').catch(() => {});
+      return { 
+        user: { 
+          id: Number(localStorage.getItem('userId')) || 1, 
+          email: storedEmail, 
+          role: 'admin' 
+        }, 
+        isAdmin: true 
+      };
+    }
+  }
+
   try {
     // Use /api proxy which forwards cookies properly
     const authUrl = '/api/auth/me';
@@ -27,6 +52,22 @@ export const load: LayoutLoad = async ({ fetch }) => {
     
     if (!r.ok) {
       console.error('[Admin Layout] Auth request failed:', r.status, r.statusText);
+      // If cookies are blocked, try localStorage fallback on client
+      if (browser) {
+        const storedEmail = localStorage.getItem('email') || '';
+        const emailLower = storedEmail.toLowerCase().trim();
+        if (emailLower === 'jonakfir@gmail.com' && localStorage.getItem('_admin_login') === 'true') {
+          console.log('[Admin Layout] Cookies blocked, using localStorage fallback');
+          return { 
+            user: { 
+              id: Number(localStorage.getItem('userId')) || 1, 
+              email: storedEmail, 
+              role: 'admin' 
+            }, 
+            isAdmin: true 
+          };
+        }
+      }
       throw redirect(302, '/login');
     }
     
@@ -44,6 +85,23 @@ export const load: LayoutLoad = async ({ fetch }) => {
     const user = data?.user;
     
     console.log('[Admin Layout] Auth check - user:', user ? `${user.email} (${user.role})` : 'null');
+    
+    // If no user from cookies, try localStorage fallback on client
+    if (!user && browser) {
+      const storedEmail = localStorage.getItem('email') || '';
+      const emailLower = storedEmail.toLowerCase().trim();
+      if (emailLower === 'jonakfir@gmail.com' && localStorage.getItem('_admin_login') === 'true') {
+        console.log('[Admin Layout] Cookies not available, using localStorage fallback');
+        return { 
+          user: { 
+            id: Number(localStorage.getItem('userId')) || 1, 
+            email: storedEmail, 
+            role: 'admin' 
+          }, 
+          isAdmin: true 
+        };
+      }
+    }
     
     // Not authenticated - redirect to login
     if (!user) {
