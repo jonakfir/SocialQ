@@ -42,6 +42,12 @@ export const load: LayoutLoad = async ({ fetch }) => {
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
     
+    // Log cookies if available (for debugging)
+    if (browser) {
+      const cookies = document.cookie;
+      console.log('[Admin Layout] Browser cookies:', cookies ? cookies.substring(0, 200) : 'NONE');
+    }
+    
     // SvelteKit's fetch in load functions automatically forwards cookies from the browser request
     const r = await fetch(authUrl, {
       method: 'GET',

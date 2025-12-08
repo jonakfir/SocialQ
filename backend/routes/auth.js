@@ -196,17 +196,34 @@ router.post('/logout', (req, res) => {
 // GET /auth/me
 router.get('/me', async (req, res) => {
   try {
+    // Log cookies for debugging
+    const cookieHeader = req.headers.cookie || '';
+    const uidCookie = req.cookies?.[UID_COOKIE];
+    const sessionCookie = req.cookies?.[SESSION_COOKIE];
+    console.log('[me] Cookie header present:', !!cookieHeader, 'Length:', cookieHeader.length);
+    console.log('[me] UID cookie:', uidCookie ? `present (${uidCookie})` : 'missing');
+    console.log('[me] Session cookie:', sessionCookie ? 'present' : 'missing');
+    
     const uid = uidFromCookiesOrJWT(req);
-    if (!uid) return res.json({ ok: true, user: null });
+    console.log('[me] Extracted UID:', uid);
+    
+    if (!uid) {
+      console.log('[me] No UID found, returning null user');
+      return res.json({ ok: true, user: null });
+    }
 
     const user = await findUserById(uid);
-    if (!user) return res.json({ ok: true, user: null });
+    if (!user) {
+      console.log('[me] User not found for UID:', uid);
+      return res.json({ ok: true, user: null });
+    }
 
     // Hardcode admin privileges for jonakfir@gmail.com
     const email = normEmail(user.email);
     const isAdmin = email === 'jonakfir@gmail.com';
     const role = isAdmin ? 'admin' : 'personal';
 
+    console.log('[me] ✅ User found:', email, 'Role:', role);
     return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
   } catch (e) {
     console.error('[me] error', e);
