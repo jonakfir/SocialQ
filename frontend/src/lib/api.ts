@@ -73,6 +73,20 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     const url = (path.startsWith('/api/') || path.startsWith('/ekman')) ? path : buildURL(path);
     const headers = new Headers(init.headers ?? {});
     
+    // Add JWT token from localStorage to Authorization header (works cross-origin)
+    if (typeof window !== 'undefined') {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+          console.log('[apiFetch] Added JWT token to Authorization header for', path);
+        }
+      } catch (error) {
+        console.error('[apiFetch] Error reading auth token:', error);
+        // Ignore localStorage errors
+      }
+    }
+    
     // Add mock auth headers for /api/*, /ekman, and /admin endpoints in dev mode if user is logged in via mock
     if (isLocalMock() && (path.startsWith('/api/') || path.startsWith('/ekman') || path.startsWith('/admin')) && typeof window !== 'undefined') {
       try {

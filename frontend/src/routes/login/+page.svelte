@@ -85,6 +85,12 @@
         localStorage.setItem('email', u);
         if (id != null) localStorage.setItem('userId', String(id));
         
+        // Store JWT token for Authorization header (works cross-origin)
+        if (data.token) {
+          localStorage.setItem('auth_token', data.token);
+          console.log('[Login] Stored JWT token in localStorage');
+        }
+        
         // Get role from login response (backend returns it)
         const userRole = data.user?.role || 'personal';
         const emailLower = u.toLowerCase().trim();

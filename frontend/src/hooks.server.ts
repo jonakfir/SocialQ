@@ -16,6 +16,12 @@ export const handle: Handle = async ({ event, resolve }) => {
       // forward incoming cookies to the API
       const cookie = event.request.headers.get('cookie');
       if (cookie) headers.set('cookie', cookie);
+      
+      // forward Authorization header if present (for JWT tokens)
+      const auth = event.request.headers.get('authorization');
+      if (auth && !headers.has('authorization')) {
+        headers.set('authorization', auth);
+      }
 
       return orig(target, { ...init, headers, credentials: 'include' });
     }

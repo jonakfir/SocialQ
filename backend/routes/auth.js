@@ -47,6 +47,8 @@ function setSessionCookies(res, { id, email }) {
     path: '/',
     maxAge: 365 * 24 * 60 * 60 * 1000
   });
+  // Return token for client to store in localStorage (for cross-origin requests)
+  return token;
 }
 
 function clearSessionCookies(res) {
@@ -55,6 +57,22 @@ function clearSessionCookies(res) {
 }
 
 function uidFromCookiesOrJWT(req) {
+  // First, try JWT from Authorization header (for cross-origin requests)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+      const payload = jwt.verify(token, JWT_SECRET);
+      const uid = Number(payload?.uid);
+      if (uid) {
+        console.log('[uidFromCookiesOrJWT] Found UID from Authorization header:', uid);
+        return uid;
+      }
+    } catch (err) {
+      console.log('[uidFromCookiesOrJWT] Invalid JWT in Authorization header:', err.message);
+    }
+  }
+
   // Prefer explicit uid cookie (set on login/register)
   const fromUidCookie = Number(req.cookies?.[UID_COOKIE]);
   if (fromUidCookie) return fromUidCookie;
@@ -96,10 +114,10 @@ router.post('/register', async (req, res) => {
     const isAdmin = email === 'jonakfir@gmail.com';
     const role = isAdmin ? 'admin' : 'personal';
 
-    // Sign them in immediately
-    setSessionCookies(res, user);
+    // Sign them in immediately - get JWT token
+    const token = setSessionCookies(res, user);
 
-    return res.status(201).json({ ok: true, user: { ...user, role } });
+    return res.status(201).json({ ok: true, user: { ...user, role }, token });
   } catch (e) {
     console.error('[register] error', e);
     return res.status(500).json({ error: 'Server error' });
@@ -151,9 +169,9 @@ router.post('/login', async (req, res) => {
       
       // ALWAYS allow login for jonakfir@gmail.com regardless of password or database state
       console.log('[login] Setting session cookies for admin, ID:', userId);
-      setSessionCookies(res, { id: userId, email: userEmail });
+      const token = setSessionCookies(res, { id: userId, email: userEmail });
       console.log('[login] ✅ ADMIN LOGIN SUCCESS - BYPASSED ALL CHECKS');
-      return res.json({ ok: true, user: { id: userId, email: userEmail, role: 'admin' } });
+      return res.json({ ok: true, user: { id: userId, email: userEmail, role: 'admin' }, token });
     }
 
     // Regular login for other users
@@ -171,9 +189,9 @@ router.post('/login', async (req, res) => {
     }
 
     const role = 'personal';
-    setSessionCookies(res, { id: user.id, email: user.email });
+    const token = setSessionCookies(res, { id: user.id, email: user.email });
     console.log('[login] ✅ Regular login successful');
-    return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
+    return res.json({ ok: true, user: { id: user.id, email: user.email, role }, token });
   } catch (e) {
     console.error('[login] FATAL ERROR:', e);
     console.error('[login] Error message:', e.message);
@@ -196,10 +214,12 @@ router.post('/logout', (req, res) => {
 // GET /auth/me
 router.get('/me', async (req, res) => {
   try {
-    // Log cookies for debugging
+    // Log auth method for debugging
+    const authHeader = req.headers.authorization;
     const cookieHeader = req.headers.cookie || '';
     const uidCookie = req.cookies?.[UID_COOKIE];
     const sessionCookie = req.cookies?.[SESSION_COOKIE];
+    console.log('[me] Auth method:', authHeader ? 'Authorization header' : 'Cookies');
     console.log('[me] Cookie header present:', !!cookieHeader, 'Length:', cookieHeader.length);
     console.log('[me] UID cookie:', uidCookie ? `present (${uidCookie})` : 'missing');
     console.log('[me] Session cookie:', sessionCookie ? 'present' : 'missing');

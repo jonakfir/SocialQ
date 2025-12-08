@@ -7,10 +7,11 @@ const ORIGIN = (PUBLIC.PUBLIC_API_URL || '').replace(/\/$/, '');
 async function forward(request: Request, path: string) {
   const url = ORIGIN + (path.startsWith('/') ? path : `/${path}`);
 
-  // forward ALL headers (esp. Cookie) to Railway
+  // forward ALL headers (esp. Cookie and Authorization) to Railway
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('connection');
+  // Authorization header is already included in request.headers, so it will be forwarded
 
   const body =
     request.method === 'GET' || request.method === 'HEAD'
