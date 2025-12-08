@@ -6,15 +6,15 @@ import { env as PUBLIC } from '$env/dynamic/public';
  * Admin layout loader - protects admin routes
  * Redirects non-admin users to dashboard
  */
-export const load: LayoutLoad = async ({ fetch }) => {
+export const load: LayoutLoad = async ({ fetch, depends }) => {
   try {
-    // Use /api proxy route which properly forwards cookies via hooks.server.ts
-    // This ensures cookies are forwarded correctly even for cross-origin requests
-    const authUrl = '/api/auth/me';
+    // Use backend URL directly - SvelteKit's fetch in load functions automatically forwards cookies
+    const base = (PUBLIC.PUBLIC_API_URL || '').replace(/\/+$/, '') || 'http://localhost:4000';
+    const authUrl = `${base}/auth/me`;
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
     
-    // SvelteKit's fetch automatically forwards cookies from the browser
+    // SvelteKit's fetch in load functions automatically forwards cookies from the browser request
     const r = await fetch(authUrl, {
       method: 'GET',
       credentials: 'include'
@@ -22,10 +22,22 @@ export const load: LayoutLoad = async ({ fetch }) => {
     
     console.log('[Admin Layout] Response status:', r.status, 'ok:', r.ok);
     
+    if (!r.ok) {
+      console.error('[Admin Layout] Auth request failed:', r.status, r.statusText);
+      throw redirect(302, '/login');
+    }
+    
     const responseText = await r.text();
     console.log('[Admin Layout] Response text:', responseText.substring(0, 200));
     
-    const data = JSON.parse(responseText);
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseErr) {
+      console.error('[Admin Layout] Failed to parse response:', parseErr);
+      throw redirect(302, '/login');
+    }
+    
     const user = data?.user;
     
     console.log('[Admin Layout] Auth check - user:', user ? `${user.email} (${user.role})` : 'null');
