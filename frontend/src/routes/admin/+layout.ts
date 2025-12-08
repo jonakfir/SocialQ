@@ -6,24 +6,11 @@ import { browser } from '$app/environment';
  * Admin layout loader - protects admin routes
  * Redirects non-admin users to dashboard
  * 
- * NOTE: This runs on both server and client. On client, we can check localStorage
- * as a fallback if cookies aren't available yet.
+ * Authentication flow:
+ * 1. User logs in → Backend checks PostgreSQL → Sets cookies
+ * 2. Admin layout → Checks cookies via /api/auth/me → Backend validates against PostgreSQL
  */
 export const load: LayoutLoad = async ({ fetch }) => {
-  // CLIENT-SIDE: Check localStorage first as immediate fallback
-  if (browser) {
-    const storedEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
-    if (storedEmail.toLowerCase().trim() === 'jonakfir@gmail.com') {
-      console.log('[Admin Layout] Client-side: Using localStorage fallback for jonakfir@gmail.com');
-      // Still try to fetch from backend, but allow access immediately
-      fetch('/api/auth/me').catch(() => {});
-      return { 
-        user: { id: 1, email: 'jonakfir@gmail.com', role: 'admin' }, 
-        isAdmin: true 
-      };
-    }
-  }
-
   try {
     // Use /api proxy which forwards cookies properly
     const authUrl = '/api/auth/me';
