@@ -22,10 +22,14 @@ export const load: LayoutLoad = async ({ fetch }) => {
     
     console.log('[Admin Layout] Response status:', r.status, 'ok:', r.ok);
     
-    const data = await r.json().catch(() => ({ user: null }));
+    const responseText = await r.text();
+    console.log('[Admin Layout] Response text:', responseText.substring(0, 200));
+    
+    const data = JSON.parse(responseText);
     const user = data?.user;
     
     console.log('[Admin Layout] Auth check - user:', user ? `${user.email} (${user.role})` : 'null');
+    console.log('[Admin Layout] Full response data:', JSON.stringify(data).substring(0, 300));
     
     // Not authenticated - redirect to login
     if (!user) {
