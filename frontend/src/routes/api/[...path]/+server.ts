@@ -12,20 +12,36 @@ async function forward(request: Request, path: string) {
   headers.delete('host');
   headers.delete('connection');
   
-  // Log Authorization header for debugging
-  const authHeader = headers.get('authorization') || headers.get('Authorization');
+  // CRITICAL: Explicitly check and forward Authorization header (case-insensitive)
+  // Check all possible case variations
+  const authHeader = 
+    headers.get('authorization') || 
+    headers.get('Authorization') || 
+    headers.get('AUTHORIZATION') ||
+    request.headers.get('authorization') ||
+    request.headers.get('Authorization') ||
+    request.headers.get('AUTHORIZATION');
+  
   if (authHeader) {
-    console.log('[API Proxy] ✅ Forwarding Authorization header to backend:', authHeader.substring(0, 50) + '...');
-    console.log('[API Proxy] Full header value length:', authHeader.length);
+    // Ensure it's set in the headers we're forwarding
+    headers.set('Authorization', authHeader);
+    console.log('[API Proxy] ✅ Forwarding Authorization header to backend, length:', authHeader.length);
   } else {
-    console.log('[API Proxy] ❌ No Authorization header in request');
-    console.log('[API Proxy] Available headers:', Array.from(headers.keys()).join(', '));
+    console.log('[API Proxy] ❌ No Authorization header found');
+    console.log('[API Proxy] Request headers:', Array.from(request.headers.keys()).join(', '));
+    console.log('[API Proxy] Headers object keys:', Array.from(headers.keys()).join(', '));
   }
 
   const body =
     request.method === 'GET' || request.method === 'HEAD'
       ? undefined
       : await request.arrayBuffer();
+
+  // Log what we're sending
+  const finalAuth = headers.get('Authorization');
+  if (finalAuth) {
+    console.log('[API Proxy] Sending request with Authorization header to:', url);
+  }
 
   const resp = await fetch(url, {
     method: request.method,
