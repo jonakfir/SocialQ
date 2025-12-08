@@ -242,12 +242,21 @@ router.post('/logout', (req, res) => {
 // GET /auth/me
 router.get('/me', async (req, res) => {
   try {
+    // Log ALL headers for debugging (in production, only log auth-related)
+    const allHeaders = Object.keys(req.headers);
+    const authHeaders = allHeaders.filter(h => h.toLowerCase().includes('auth'));
+    console.log('[me] Request received - Auth-related headers:', authHeaders.join(', '));
+    
     // Log auth method for debugging
-    const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
     const cookieHeader = req.headers.cookie || '';
     const uidCookie = req.cookies?.[UID_COOKIE];
     const sessionCookie = req.cookies?.[SESSION_COOKIE];
     console.log('[me] Auth method:', authHeader ? 'Authorization header' : 'Cookies');
+    console.log('[me] Authorization header present:', !!authHeader);
+    if (authHeader) {
+      console.log('[me] Authorization header value (first 50 chars):', authHeader.substring(0, 50));
+    }
     console.log('[me] Cookie header present:', !!cookieHeader, 'Length:', cookieHeader.length);
     console.log('[me] UID cookie:', uidCookie ? `present (${uidCookie})` : 'missing');
     console.log('[me] Session cookie:', sessionCookie ? 'present' : 'missing');
