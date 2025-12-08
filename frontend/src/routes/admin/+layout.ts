@@ -19,13 +19,16 @@ export const ssr = false; // Run only on client so we can access localStorage
 
 export const load: LayoutLoad = async () => {
   try {
-    // Use apiFetch which automatically adds JWT token from localStorage
-    const authUrl = '/api/auth/me';
+    // Call backend DIRECTLY (bypass proxy) - apiFetch will add JWT token automatically
+    // Using /auth/me instead of /api/auth/me makes apiFetch call backend directly
+    const authUrl = '/auth/me';
     
     console.log('[Admin Layout] Checking auth at:', authUrl);
+    console.log('[Admin Layout] Calling backend DIRECTLY (bypassing proxy)');
     console.log('[Admin Layout] Using apiFetch which will automatically add JWT token');
     
     // apiFetch automatically adds JWT token from localStorage to Authorization header
+    // When path doesn't start with /api/, apiFetch calls backend directly via PUBLIC_API_URL
     const r = await apiFetch(authUrl, {
       method: 'GET',
       credentials: 'include'
