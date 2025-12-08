@@ -18,9 +18,13 @@ export const handle: Handle = async ({ event, resolve }) => {
       if (cookie) headers.set('cookie', cookie);
       
       // forward Authorization header if present (for JWT tokens)
-      const auth = event.request.headers.get('authorization');
+      // Check both the incoming request AND the fetch call's headers
+      const authFromRequest = event.request.headers.get('authorization');
+      const authFromInit = headers.get('authorization');
+      const auth = authFromInit || authFromRequest;
       if (auth && !headers.has('authorization')) {
         headers.set('authorization', auth);
+        console.log('[hooks.server] Forwarding Authorization header to backend');
       }
 
       return orig(target, { ...init, headers, credentials: 'include' });

@@ -11,7 +11,14 @@ async function forward(request: Request, path: string) {
   const headers = new Headers(request.headers);
   headers.delete('host');
   headers.delete('connection');
-  // Authorization header is already included in request.headers, so it will be forwarded
+  
+  // Log Authorization header for debugging
+  const authHeader = headers.get('authorization') || headers.get('Authorization');
+  if (authHeader) {
+    console.log('[API Proxy] Forwarding Authorization header to backend:', authHeader.substring(0, 50) + '...');
+  } else {
+    console.log('[API Proxy] No Authorization header in request');
+  }
 
   const body =
     request.method === 'GET' || request.method === 'HEAD'

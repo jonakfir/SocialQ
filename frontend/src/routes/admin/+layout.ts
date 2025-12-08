@@ -39,8 +39,12 @@ export const load: LayoutLoad = async ({ fetch }) => {
     // Build headers with JWT token if available
     const headers: HeadersInit = {};
     if (authToken) {
+      // Set both cases to ensure it works
       headers['Authorization'] = `Bearer ${authToken}`;
-      console.log('[Admin Layout] Sending JWT token in Authorization header');
+      headers['authorization'] = `Bearer ${authToken}`;
+      console.log('[Admin Layout] Sending JWT token in Authorization header, token length:', authToken.length);
+    } else {
+      console.error('[Admin Layout] ❌ NO AUTH TOKEN FOUND IN LOCALSTORAGE');
     }
     
     // SvelteKit's fetch in load functions automatically forwards cookies from the browser request
