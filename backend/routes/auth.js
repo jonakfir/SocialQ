@@ -42,8 +42,8 @@ function setSessionCookies(res, { id, email }) {
   // Simple uid (used by /auth/delete server route)
   res.cookie(UID_COOKIE, String(id), {
     httpOnly: true,
-    sameSite: 'lax',
-    secure:   isProd,
+    sameSite: isProd ? 'none' : 'lax',   // 'none' for cross-origin in production
+    secure:   isProd,                    // Required when sameSite is 'none'
     path: '/',
     maxAge: 365 * 24 * 60 * 60 * 1000
   });
@@ -51,7 +51,7 @@ function setSessionCookies(res, { id, email }) {
 
 function clearSessionCookies(res) {
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: isProd ? 'none' : 'lax', secure: isProd, path: '/' });
-  res.clearCookie(UID_COOKIE,     { httpOnly: true, sameSite: 'lax',                 secure: isProd, path: '/' });
+  res.clearCookie(UID_COOKIE,     { httpOnly: true, sameSite: isProd ? 'none' : 'lax', secure: isProd, path: '/' });
 }
 
 function uidFromCookiesOrJWT(req) {
