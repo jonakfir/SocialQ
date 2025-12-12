@@ -435,7 +435,7 @@ async function findUserByEmail(email) {
         .get(e) || null;
       // Ensure jonakfir@gmail.com always has admin role
       if (user && e === 'jonakfir@gmail.com' && user.role !== 'admin') {
-        updateUserRole(user.id, 'admin');
+        await updateUserRole(user.id, 'admin');
         user.role = 'admin';
       }
       return user;
@@ -468,7 +468,7 @@ async function findUserById(id) {
       .get(id) || null;
     // Ensure jonakfir@gmail.com always has admin role
     if (user && user.email && toEmailKey(user.email) === 'jonakfir@gmail.com' && user.role !== 'admin') {
-      updateUserRole(user.id, 'admin');
+      await updateUserRole(user.id, 'admin');
       user.role = 'admin';
     }
     return user;

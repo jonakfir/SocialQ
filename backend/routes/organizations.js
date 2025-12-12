@@ -44,8 +44,9 @@ async function isOrgAdmin(userId, organizationId) {
   if (org.created_by_user_id === userId) return true;
   
   // Check if user is org_admin in memberships
+  // getOrganizationMembers returns objects with u.id as 'id' field
   const members = await getOrganizationMembers(organizationId);
-  const membership = members.find(m => m.id === userId && m.membership_role === 'org_admin');
+  const membership = members.find(m => Number(m.id) === Number(userId) && m.membership_role === 'org_admin');
   return !!membership;
 }
 
