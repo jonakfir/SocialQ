@@ -11,12 +11,13 @@ const upload = multer(); // for form-data bodies (no files required here)
 let findUserById = () => null;
 let deleteUserById = () => {};
 let countUsers = () => Promise.resolve(0);
+let getUserRole = () => Promise.resolve(null);
 let db = null;
 let pool = null;
 let schemaInitPromise = Promise.resolve();
 try {
   const dbModule = require('./db/db');
-  ({ findUserById, deleteUserById, countUsers, db, pool, schemaInitPromise } = dbModule);
+  ({ findUserById, deleteUserById, countUsers, getUserRole, db, pool, schemaInitPromise } = dbModule);
 } catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
@@ -139,7 +140,20 @@ app.post('/auth/delete', requireAuth, async (req, res) => {
 try {
   app.use('/auth', require('./routes/auth'));
 } catch {
-  // ok if you don’t have it locally
+  // ok if you don't have it locally
+}
+
+// Mount organization and relationship routes
+try {
+  app.use('/organizations', require('./routes/organizations'));
+} catch {
+  console.warn('[Server] Organizations routes not available');
+}
+
+try {
+  app.use('/relationships', require('./routes/relationships'));
+} catch {
+  console.warn('[Server] Relationships routes not available');
 }
 
 // ---------------- WhatsApp helpers ----------------
@@ -258,15 +272,26 @@ app.post('/notify/emotion', upload.none(), async (req, res) => {
   }
 });
 
+// Helper to check if user is admin
+async function isAdmin(userId) {
+  if (!userId) return false;
+  try {
+    const role = await getUserRole(userId);
+    return role === 'admin';
+  } catch {
+    // Fallback: check email for jonakfir@gmail.com
+    const user = await findUserById(userId);
+    return user?.email?.toLowerCase() === 'jonakfir@gmail.com';
+  }
+}
+
 // ---------------- Admin Stats ----------------
 app.get('/admin/stats', requireAuth, async (req, res) => {
   try {
-    // Check if user is admin (hardcoded for jonakfir@gmail.com)
-    const user = await findUserById(req.currentUserId);
-    const email = user?.email?.toLowerCase() || '';
-    const isAdmin = email === 'jonakfir@gmail.com';
+    // Check if user is admin using database role
+    const userIsAdmin = await isAdmin(req.currentUserId);
     
-    if (!isAdmin) {
+    if (!userIsAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     
@@ -280,7 +305,7 @@ app.get('/admin/stats', requireAuth, async (req, res) => {
         totalSessions: 0, // TODO: implement if needed
         todaySessions: 0,
         todayActiveUsers: 0,
-        adminCount: 1 // Hardcoded admin
+        adminCount: 1 // At least one admin (jonakfir@gmail.com)
       }
     });
   } catch (e) {
@@ -292,12 +317,10 @@ app.get('/admin/stats', requireAuth, async (req, res) => {
 // ---------------- Admin Users ----------------
 app.get('/admin/users', requireAuth, async (req, res) => {
   try {
-    // Check if user is admin (hardcoded for jonakfir@gmail.com)
-    const user = await findUserById(req.currentUserId);
-    const email = user?.email?.toLowerCase() || '';
-    const isAdmin = email === 'jonakfir@gmail.com';
+    // Check if user is admin using database role
+    const userIsAdmin = await isAdmin(req.currentUserId);
     
-    if (!isAdmin) {
+    if (!userIsAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
     
@@ -305,20 +328,22 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     let users = [];
     if (pool) {
       // PostgreSQL
-      const result = await pool.query('SELECT id, email, created_at FROM users ORDER BY created_at DESC');
+      const result = await pool.query('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC');
       users = result.rows.map(row => ({
         id: row.id,
         email: row.email,
         username: row.email,
+        role: row.role || 'personal',
         createdAt: row.created_at
       }));
     } else if (db) {
       // SQLite
-      const allUsers = db.prepare('SELECT id, email, created_at FROM users ORDER BY created_at DESC').all();
+      const allUsers = db.prepare('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC').all();
       users = allUsers.map(u => ({
         id: u.id,
         email: u.email,
         username: u.email,
+        role: u.role || 'personal',
         createdAt: u.created_at
       }));
     }

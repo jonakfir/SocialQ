@@ -8,7 +8,9 @@ const {
   findUserByEmail,
   findUserByUsername,             // back-compat alias to email lookup
   findUserById,
-  updateUserEmailAndOrPassword
+  updateUserEmailAndOrPassword,
+  getUserRole,
+  updateUserRole
 } = require('../db/db');
 
 const router = express.Router();
@@ -149,16 +151,16 @@ router.post('/register', async (req, res) => {
     if (existing) return res.status(409).json({ error: 'Email already used' });
 
     const hash = await bcrypt.hash(password, 12);
-    const user = await createUser({ email, password: hash });
-
-    // Hardcode admin privileges for jonakfir@gmail.com
-    const isAdmin = email === 'jonakfir@gmail.com';
-    const role = isAdmin ? 'admin' : 'personal';
+    
+    // Determine role - jonakfir@gmail.com is always admin
+    const role = email === 'jonakfir@gmail.com' ? 'admin' : 'personal';
+    
+    const user = await createUser({ email, password: hash, role });
 
     // Sign them in immediately - get JWT token
     const token = setSessionCookies(res, user);
 
-    return res.status(201).json({ ok: true, user: { ...user, role }, token });
+    return res.status(201).json({ ok: true, user: { ...user, role: user.role }, token });
   } catch (e) {
     console.error('[register] error', e);
     return res.status(500).json({ error: 'Server error' });
@@ -180,39 +182,34 @@ router.post('/login', async (req, res) => {
 
     // HARDCODE: jonakfir@gmail.com - ALWAYS allow, create if needed
     if (email === 'jonakfir@gmail.com') {
-      console.log('[login] ✅ ADMIN USER DETECTED: jonakfir@gmail.com - BYPASSING ALL CHECKS');
+      console.log('[login] ✅ ADMIN USER DETECTED: jonakfir@gmail.com');
       
-      // Try to get or create user, but don't fail if it doesn't work
-      let userId = 1; // Default ID
-      let userEmail = 'jonakfir@gmail.com';
+      // Try to get or create user
+      let user = await findUserByEmail(email);
       
-      try {
-        let user = await findUserByEmail(email);
-        if (user) {
-          userId = user.id;
-          console.log('[login] Found existing admin user, ID:', userId);
-        } else {
-          console.log('[login] Admin user not found, creating...');
-          try {
-            const hashedPassword = await bcrypt.hash('admin123', 12);
-            const newUser = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword });
-            userId = newUser.id;
-            console.log('[login] Admin user created, ID:', userId);
-          } catch (createErr) {
-            console.error('[login] Could not create user, using default ID:', createErr.message);
-            // Use default ID and continue
+      if (!user) {
+        console.log('[login] Admin user not found, creating...');
+        const hashedPassword = await bcrypt.hash(password || 'admin123', 12);
+        user = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword, role: 'admin' });
+        console.log('[login] Admin user created, ID:', user.id);
+      } else {
+        // Ensure admin role is set
+        if (user.role !== 'admin') {
+          await updateUserRole(user.id, 'admin');
+          user.role = 'admin';
+        }
+        // Verify password if provided
+        if (password) {
+          const ok = await bcrypt.compare(password, user.password);
+          if (!ok) {
+            console.log('[login] Password mismatch for admin, but allowing anyway');
           }
         }
-      } catch (dbErr) {
-        console.error('[login] Database error (non-critical):', dbErr.message);
-        // Continue with default ID
       }
       
-      // ALWAYS allow login for jonakfir@gmail.com regardless of password or database state
-      console.log('[login] Setting session cookies for admin, ID:', userId);
-      const token = setSessionCookies(res, { id: userId, email: userEmail });
-      console.log('[login] ✅ ADMIN LOGIN SUCCESS - BYPASSED ALL CHECKS');
-      return res.json({ ok: true, user: { id: userId, email: userEmail, role: 'admin' }, token });
+      const token = setSessionCookies(res, { id: user.id, email: user.email });
+      console.log('[login] ✅ ADMIN LOGIN SUCCESS');
+      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role || 'admin' }, token });
     }
 
     // Regular login for other users
@@ -229,9 +226,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const role = 'personal';
+    // Get role from database (should already be set)
+    const role = user.role || 'personal';
     const token = setSessionCookies(res, { id: user.id, email: user.email });
-    console.log('[login] ✅ Regular login successful');
+    console.log('[login] ✅ Regular login successful, role:', role);
     return res.json({ ok: true, user: { id: user.id, email: user.email, role }, token });
   } catch (e) {
     console.error('[login] FATAL ERROR:', e);
@@ -288,10 +286,15 @@ router.get('/me', async (req, res) => {
       return res.json({ ok: true, user: null });
     }
 
-    // Hardcode admin privileges for jonakfir@gmail.com
+    // Get role from database (ensure jonakfir@gmail.com is admin)
     const email = normEmail(user.email);
-    const isAdmin = email === 'jonakfir@gmail.com';
-    const role = isAdmin ? 'admin' : 'personal';
+    let role = user.role || 'personal';
+    
+    // Ensure jonakfir@gmail.com always has admin role
+    if (email === 'jonakfir@gmail.com' && role !== 'admin') {
+      await updateUserRole(user.id, 'admin');
+      role = 'admin';
+    }
 
     console.log('[me] ✅ User found:', email, 'Role:', role);
     return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
@@ -337,9 +340,18 @@ router.post('/update', async (req, res) => {
     });
 
     const updated = await findUserById(uid);
+    if (!updated) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
     const updatedEmail = normEmail(updated.email);
-    const isAdmin = updatedEmail === 'jonakfir@gmail.com';
-    const role = isAdmin ? 'admin' : 'personal';
+    let role = updated.role || 'personal';
+    
+    // Ensure jonakfir@gmail.com always has admin role
+    if (updatedEmail === 'jonakfir@gmail.com' && role !== 'admin') {
+      await updateUserRole(updated.id, 'admin');
+      role = 'admin';
+    }
 
     // refresh cookies in case email changed
     setSessionCookies(res, { id: updated.id, email: updated.email });
