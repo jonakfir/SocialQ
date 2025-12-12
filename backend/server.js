@@ -6,6 +6,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const upload = multer(); // for form-data bodies (no files required here)
+const jwt = require('jsonwebtoken');
 
 // Optional DB helpers (keep if you use them)
 let findUserById = () => null;
@@ -54,6 +55,7 @@ const exactAllowed = String(RAW_ORIGINS)
   .filter(Boolean);
 
 const PREVIEW_SUFFIX = process.env.VERCEL_PREVIEW_SUFFIX || ''; // e.g. ".vercel.app"
+const JWT_SECRET = process.env.AUTH_SECRET || 'dev-change-this';
 
 function isAllowedOrigin(origin) {
   if (!origin) return true; // curl/health
@@ -92,8 +94,23 @@ app.get('/health', (_req, res) => {
 
 // ---------------- Auth helpers ----------------
 function getCurrentUserId(req) {
+  // 1) Authorization Bearer token (same JWT as auth.js)
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    try {
+      const payload = jwt.verify(token, JWT_SECRET);
+      if (payload?.uid) return Number(payload.uid);
+    } catch {
+      // ignore and fall through to cookies
+    }
+  }
+
+  // 2) req.user / session (if any middleware set it)
   const idFromUser = req.user?.id || req.session?.user?.id;
   if (idFromUser) return Number(idFromUser);
+
+  // 3) cookies set by auth.js
   const idFromCookie = Number(req.cookies?.uid) || Number(req.cookies?.userId) || null;
   return idFromCookie || null;
 }
