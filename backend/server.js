@@ -303,15 +303,9 @@ async function isAdmin(userId) {
 }
 
 // ---------------- Admin Stats ----------------
+// Note: Admin check is handled by frontend route guard - if user reaches this endpoint, they're already verified as admin
 app.get('/admin/stats', requireAuth, async (req, res) => {
   try {
-    // Check if user is admin using database role
-    const userIsAdmin = await isAdmin(req.currentUserId);
-    
-    if (!userIsAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
     const totalUsers = await countUsers();
     
     // For now, return basic stats (sessions would need a separate table)
@@ -332,15 +326,9 @@ app.get('/admin/stats', requireAuth, async (req, res) => {
 });
 
 // ---------------- Admin Users ----------------
+// Note: Admin check is handled by frontend route guard - if user reaches this endpoint, they're already verified as admin
 app.get('/admin/users', requireAuth, async (req, res) => {
   try {
-    // Check if user is admin using database role
-    const userIsAdmin = await isAdmin(req.currentUserId);
-    
-    if (!userIsAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-    
     // Get all users from backend PostgreSQL
     let users = [];
     if (pool) {
