@@ -86,7 +86,62 @@ export const PATCH: RequestHandler = async (event) => {
       }
     }
     
-    // Update user role
+    // FIRST: Update backend PostgreSQL database (this is what login uses)
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      // Get user email from Prisma to find in backend
+      const prismaUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { username: true }
+      });
+      
+      if (prismaUser) {
+        // Get all backend users to find the matching one by email
+        const backendUsersResponse = await fetch(`${base}/admin/users`, {
+          method: 'GET',
+          headers: { 'Cookie': cookieHeader },
+          credentials: 'include'
+        });
+        
+        if (backendUsersResponse.ok) {
+          const backendData = await backendUsersResponse.json();
+          if (backendData.ok && backendData.users) {
+            // Find backend user by email
+            const backendUser = backendData.users.find((u: any) => 
+              (u.email || u.username || '').toLowerCase() === prismaUser.username.toLowerCase()
+            );
+            
+            if (backendUser) {
+              // Update backend PostgreSQL via backend API
+              const backendResponse = await fetch(`${base}/admin/users/${backendUser.id}/role`, {
+                method: 'PATCH',
+                headers: { 
+                  'Content-Type': 'application/json',
+                  'Cookie': cookieHeader
+                },
+                credentials: 'include',
+                body: JSON.stringify({ role, email: prismaUser.username })
+              });
+              
+              if (!backendResponse.ok) {
+                console.warn('[PATCH /api/admin/users/[userId]/role] Backend role update failed:', await backendResponse.text());
+              } else {
+                console.log('[PATCH /api/admin/users/[userId]/role] Backend role updated successfully');
+              }
+            } else {
+              console.warn('[PATCH /api/admin/users/[userId]/role] Backend user not found for email:', prismaUser.username);
+            }
+          }
+        }
+      }
+    } catch (backendError) {
+      console.warn('[PATCH /api/admin/users/[userId]/role] Failed to update backend, continuing with Prisma only:', backendError);
+    }
+    
+    // SECOND: Update Prisma database (for frontend features)
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: { role },

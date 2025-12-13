@@ -360,6 +360,41 @@ app.get('/admin/users', requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /admin/users/:userId/role - Update user role
+app.patch('/admin/users/:userId/role', requireAuth, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    const { role, email } = req.body;
+    
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    
+    if (role !== 'admin' && role !== 'personal' && role !== 'org_admin') {
+      return res.status(400).json({ error: 'Invalid role. Must be "admin", "personal", or "org_admin"' });
+    }
+    
+    // Ensure jonakfir@gmail.com always stays admin
+    const userEmail = email || (await findUserById(userId))?.email;
+    if (userEmail && userEmail.toLowerCase() === 'jonakfir@gmail.com' && role !== 'admin') {
+      return res.status(400).json({ error: 'Cannot change role for jonakfir@gmail.com' });
+    }
+    
+    // Update role in database
+    if (pool) {
+      await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, userId]);
+    } else if (db) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+    }
+    
+    const updatedUser = await findUserById(userId);
+    return res.json({ ok: true, user: updatedUser });
+  } catch (e) {
+    console.error('[/admin/users/:userId/role] error:', e);
+    return res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
 // ---------------- 404 & errors ----------------
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 app.use((err, _req, res, _next) => {
