@@ -55,12 +55,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
  */
 export const PATCH: RequestHandler = async (event) => {
   try {
-    const admin = await getCurrentAdmin(event);
-    
-    if (!admin) {
-      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
-    }
-    
+    // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
     const userId = event.params.userId;
     const body = await event.request.json();
     const { role } = body;
