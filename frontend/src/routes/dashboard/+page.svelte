@@ -13,10 +13,24 @@
   // Check if user is admin
   async function checkUserRole() {
     try {
-      const res = await apiFetch('/api/user/role');
+      // Try to get role from /auth/me first (backend PostgreSQL)
+      const res = await apiFetch('/auth/me');
       const data = await res.json();
-      if (data?.ok && data?.role) {
-        userRole = data.role;
+      if (data?.ok && data?.user) {
+        const email = (data.user.email || data.user.username || '').toLowerCase();
+        // Hardcode: jonakfir@gmail.com is always admin
+        if (email === 'jonakfir@gmail.com') {
+          userRole = 'admin';
+          return;
+        }
+        userRole = data.user.role || 'personal';
+      } else {
+        // Fallback to /api/user/role
+        const res2 = await apiFetch('/api/user/role');
+        const data2 = await res2.json();
+        if (data2?.ok && data2?.role) {
+          userRole = data2.role;
+        }
       }
     } catch (error) {
       console.error('Error checking user role:', error);

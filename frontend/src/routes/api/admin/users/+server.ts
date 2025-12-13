@@ -113,10 +113,49 @@ export const GET: RequestHandler = async (event) => {
     const search = (url.searchParams.get('search') || '').trim();
 
     // Fetch users from Prisma (now synced with backend)
-    const users = await prisma.user.findMany({
+    const prismaUsers = await prisma.user.findMany({
       select: { id: true, username: true, role: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: limit * 2 // Fetch more to account for filtering
+    });
+
+    // Get backend users to match IDs by email
+    let backendUsersMap = new Map<string, { id: number; email: string; role: string }>();
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      const backendResponse = await fetch(`${base}/admin/users`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      
+      if (backendResponse.ok) {
+        const backendData = await backendResponse.json();
+        if (backendData.ok && backendData.users) {
+          // Create map of email -> backend user
+          backendData.users.forEach((bu: any) => {
+            const email = (bu.email || bu.username || '').toLowerCase();
+            backendUsersMap.set(email, { id: bu.id, email: bu.email || bu.username, role: bu.role });
+          });
+        }
+      }
+    } catch (backendError) {
+      console.warn('[GET /api/admin/users] Failed to fetch backend users for ID mapping:', backendError);
+    }
+
+    // Merge Prisma users with backend IDs
+    const users = prismaUsers.map(prismaUser => {
+      const email = prismaUser.username.toLowerCase();
+      const backendUser = backendUsersMap.get(email);
+      return {
+        ...prismaUser,
+        backendId: backendUser?.id || null, // Add backend ID
+        // Use backend role if available, otherwise Prisma role
+        role: backendUser?.role || prismaUser.role
+      };
     });
 
     // Filter by search (case-insensitive) if provided
@@ -125,7 +164,8 @@ export const GET: RequestHandler = async (event) => {
       const searchLower = search.toLowerCase();
       filteredUsers = users.filter(user => 
         user.username.toLowerCase().includes(searchLower) || 
-        user.id.toLowerCase().includes(searchLower)
+        user.id.toLowerCase().includes(searchLower) ||
+        (user.backendId && String(user.backendId).includes(search))
       ).slice(0, limit); // Apply limit after filtering
     } else {
       filteredUsers = users.slice(0, limit);

@@ -529,7 +529,7 @@
                   </div>
                 {/if}
               </td>
-              <td class="id-cell">{user.id}</td>
+              <td class="id-cell">{user.backendId || user.id}</td>
               <td class="role-cell">
                 <select
                   value={user.role}
