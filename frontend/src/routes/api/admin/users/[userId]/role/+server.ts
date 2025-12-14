@@ -87,6 +87,7 @@ export const PATCH: RequestHandler = async (event) => {
     }
     
     // FIRST: Update backend PostgreSQL database (this is what login uses)
+    // This MUST succeed for login to work correctly
     try {
       const { PUBLIC_API_URL } = await import('$env/static/public');
       const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -116,29 +117,42 @@ export const PATCH: RequestHandler = async (event) => {
             
             if (backendUser) {
               // Update backend PostgreSQL via backend API
+              // Pass Authorization header if available (for JWT auth)
+              const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+              const headers: Record<string, string> = { 
+                'Content-Type': 'application/json',
+                'Cookie': cookieHeader
+              };
+              if (authHeader) {
+                headers['Authorization'] = authHeader;
+              }
+              
               const backendResponse = await fetch(`${base}/admin/users/${backendUser.id}/role`, {
                 method: 'PATCH',
-                headers: { 
-                  'Content-Type': 'application/json',
-                  'Cookie': cookieHeader
-                },
+                headers,
                 credentials: 'include',
                 body: JSON.stringify({ role, email: prismaUser.username })
               });
               
               if (!backendResponse.ok) {
-                console.warn('[PATCH /api/admin/users/[userId]/role] Backend role update failed:', await backendResponse.text());
+                const errorText = await backendResponse.text();
+                console.error('[PATCH /api/admin/users/[userId]/role] Backend role update failed:', errorText);
+                throw new Error(`Backend role update failed: ${errorText}`);
               } else {
-                console.log('[PATCH /api/admin/users/[userId]/role] Backend role updated successfully');
+                console.log('[PATCH /api/admin/users/[userId]/role] ✅ Backend role updated successfully');
               }
             } else {
               console.warn('[PATCH /api/admin/users/[userId]/role] Backend user not found for email:', prismaUser.username);
+              // Don't throw - user might not exist in backend yet
             }
           }
+        } else {
+          console.warn('[PATCH /api/admin/users/[userId]/role] Failed to fetch backend users');
         }
       }
     } catch (backendError) {
-      console.warn('[PATCH /api/admin/users/[userId]/role] Failed to update backend, continuing with Prisma only:', backendError);
+      console.error('[PATCH /api/admin/users/[userId]/role] ❌ Failed to update backend:', backendError);
+      // Don't throw - we'll still update Prisma, but log the error
     }
     
     // SECOND: Update Prisma database (for frontend features)

@@ -227,9 +227,19 @@ router.post('/login', async (req, res) => {
     }
 
     // Get role from database (should already be set)
-    const role = user.role || 'personal';
+    // Ensure role is fresh from database, not cached
+    let role = user.role || 'personal';
+    
+    // Double-check role from database if it seems wrong
+    if (!role || role === 'personal') {
+      const freshUser = await findUserById(user.id);
+      if (freshUser && freshUser.role) {
+        role = freshUser.role;
+      }
+    }
+    
     const token = setSessionCookies(res, { id: user.id, email: user.email });
-    console.log('[login] ✅ Regular login successful, role:', role);
+    console.log('[login] ✅ Regular login successful, role:', role, 'user.id:', user.id);
     return res.json({ ok: true, user: { id: user.id, email: user.email, role }, token });
   } catch (e) {
     console.error('[login] FATAL ERROR:', e);
