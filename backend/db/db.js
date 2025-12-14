@@ -16,18 +16,29 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   usePostgres = true;
   pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Add connection retry settings
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
   });
   
   console.log('[DB] Using PostgreSQL');
+  console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
   
-  // Test connection
+  // Test connection and log errors
   pool.query('SELECT NOW()', (err) => {
     if (err) {
-      console.error('[DB] PostgreSQL connection error:', err);
+      console.error('[DB] PostgreSQL connection error:', err.message);
+      console.error('[DB] Connection error details:', err);
     } else {
       console.log('[DB] PostgreSQL connected successfully');
     }
+  });
+  
+  // Handle pool errors
+  pool.on('error', (err) => {
+    console.error('[DB] Unexpected PostgreSQL pool error:', err);
   });
 } else {
   // Fall back to SQLite for local development
@@ -55,6 +66,15 @@ async function initializeSchema() {
   if (usePostgres) {
     try {
       console.log('[DB] Starting schema initialization...');
+      
+      // Ensure pool is ready - test connection first
+      try {
+        await pool.query('SELECT NOW()');
+        console.log('[DB] ✅ Database connection verified');
+      } catch (connErr) {
+        console.error('[DB] ❌ Database connection failed:', connErr.message);
+        throw new Error(`Database connection failed: ${connErr.message}`);
+      }
       
       // PostgreSQL schema - Users table
       await pool.query(`
@@ -213,25 +233,34 @@ async function initializeSchema() {
       
       console.log('[DB] ✅ Schema initialization complete');
       
-      // Auto-create admin user if it doesn't exist
+      // Auto-create admin users if they don't exist
       try {
-        const adminEmail = 'jonakfir@gmail.com';
-        const adminPassword = 'admin123';
-        const existingAdmin = await findUserByEmail(adminEmail);
+        const bcrypt = require('bcryptjs');
+        const adminUsers = [
+          { email: 'jonakfir@gmail.com', password: 'admin123' },
+          { email: 'joseph.weatherbee@gmail.com', password: 'admin123' }
+        ];
         
-        if (!existingAdmin) {
-          console.log('[DB] Creating admin user:', adminEmail);
-          const bcrypt = require('bcryptjs');
-          const hashedPassword = await bcrypt.hash(adminPassword, 12);
-          await createUser({ email: adminEmail, password: hashedPassword, role: 'admin' });
-          console.log('[DB] ✅ Admin user created successfully');
-        } else {
-          // Ensure existing admin user has admin role
-          await updateUserRole(existingAdmin.id, 'admin');
-          console.log('[DB] Admin user already exists, role verified');
+        for (const { email, password } of adminUsers) {
+          const existingAdmin = await findUserByEmail(email);
+          
+          if (!existingAdmin) {
+            console.log('[DB] Creating admin user:', email);
+            const hashedPassword = await bcrypt.hash(password, 12);
+            await createUser({ email, password: hashedPassword, role: 'admin' });
+            console.log('[DB] ✅ Admin user created successfully:', email);
+          } else {
+            // Ensure existing admin user has admin role
+            if (existingAdmin.role !== 'admin') {
+              await updateUserRole(existingAdmin.id, 'admin');
+              console.log('[DB] Updated user to admin:', email);
+            } else {
+              console.log('[DB] Admin user already exists with correct role:', email);
+            }
+          }
         }
       } catch (err) {
-        console.error('[DB] Failed to create admin user:', err.message);
+        console.error('[DB] Failed to create/update admin users:', err.message);
         // Don't throw - this is not critical
       }
     } catch (err) {
