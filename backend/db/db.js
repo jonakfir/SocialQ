@@ -62,22 +62,36 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
 // -------------------------
 // Schema Setup
 // -------------------------
-async function initializeSchema() {
+async function initializeSchema(retries = 3) {
   if (usePostgres) {
-    try {
-      console.log('[DB] Starting schema initialization...');
-      
-      // Ensure pool is ready - test connection first
+    for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await pool.query('SELECT NOW()');
-        console.log('[DB] ✅ Database connection verified');
-      } catch (connErr) {
-        console.error('[DB] ❌ Database connection failed:', connErr.message);
-        throw new Error(`Database connection failed: ${connErr.message}`);
-      }
-      
-      // PostgreSQL schema - Users table
-      await pool.query(`
+        console.log(`[DB] Starting schema initialization (attempt ${attempt}/${retries})...`);
+        
+        // Ensure pool is ready - test connection first with retry
+        let connected = false;
+        for (let connAttempt = 1; connAttempt <= 3; connAttempt++) {
+          try {
+            await pool.query('SELECT NOW()');
+            console.log('[DB] ✅ Database connection verified');
+            connected = true;
+            break;
+          } catch (connErr) {
+            console.error(`[DB] ❌ Database connection failed (attempt ${connAttempt}/3):`, connErr.message);
+            if (connAttempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 2000 * connAttempt)); // Exponential backoff
+            } else {
+              throw new Error(`Database connection failed after 3 attempts: ${connErr.message}`);
+            }
+          }
+        }
+        
+        if (!connected) {
+          throw new Error('Failed to establish database connection');
+        }
+        
+        // PostgreSQL schema - Users table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
           id         SERIAL PRIMARY KEY,
           email      TEXT UNIQUE NOT NULL,
@@ -85,86 +99,86 @@ async function initializeSchema() {
           role       TEXT DEFAULT 'personal' CHECK (role IN ('admin', 'personal', 'org_admin')),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-      `);
-      console.log('[DB] Users table created/verified');
-      
-      // Add role column if it doesn't exist (migration)
-      try {
-        const roleCheck = await pool.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'users' AND column_name = 'role'
         `);
+        console.log('[DB] Users table created/verified');
         
-        if (roleCheck.rows.length === 0) {
-          console.log('[DB] Adding role column to users table...');
-          await pool.query(`
-            ALTER TABLE users 
-            ADD COLUMN role TEXT DEFAULT 'personal' CHECK (role IN ('admin', 'personal', 'org_admin'));
-          `);
-          // Set default role for existing users
-          await pool.query(`UPDATE users SET role = 'personal' WHERE role IS NULL;`);
-          console.log('[DB] Role column added successfully');
-        }
-      } catch (e) {
-        console.error('[DB] Role column migration failed:', e);
-      }
-      
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-      `);
-      console.log('[DB] User indexes created/verified');
-      
-      // Migration: username -> email (if needed)
-      try {
-        const result = await pool.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_name = 'users' AND column_name = 'username'
-        `);
-        
-        if (result.rows.length > 0) {
-          // Check if email column exists
-          const emailCheck = await pool.query(`
+        // Add role column if it doesn't exist (migration)
+        try {
+          const roleCheck = await pool.query(`
             SELECT column_name 
             FROM information_schema.columns 
-            WHERE table_name = 'users' AND column_name = 'email'
+            WHERE table_name = 'users' AND column_name = 'role'
           `);
           
-          if (emailCheck.rows.length === 0) {
-            // Migrate username to email
-            await pool.query(`ALTER TABLE users RENAME COLUMN username TO email;`);
+          if (roleCheck.rows.length === 0) {
+            console.log('[DB] Adding role column to users table...');
+            await pool.query(`
+              ALTER TABLE users 
+              ADD COLUMN role TEXT DEFAULT 'personal' CHECK (role IN ('admin', 'personal', 'org_admin'));
+            `);
+            // Set default role for existing users
+            await pool.query(`UPDATE users SET role = 'personal' WHERE role IS NULL;`);
+            console.log('[DB] Role column added successfully');
           }
+        } catch (e) {
+          console.error('[DB] Role column migration failed:', e);
         }
-      } catch (e) {
-        console.error('[DB migration failed]', e);
-      }
       
-      // Organizations table
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS organizations (
-          id              SERIAL PRIMARY KEY,
-          name            TEXT UNIQUE NOT NULL,
-          description     TEXT,
-          status          TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-          created_by_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-          created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-      console.log('[DB] Organizations table created/verified');
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+        `);
+        console.log('[DB] User indexes created/verified');
+        
+        // Migration: username -> email (if needed)
+        try {
+          const result = await pool.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'username'
+          `);
+          
+          if (result.rows.length > 0) {
+            // Check if email column exists
+            const emailCheck = await pool.query(`
+              SELECT column_name 
+              FROM information_schema.columns 
+              WHERE table_name = 'users' AND column_name = 'email'
+            `);
+            
+            if (emailCheck.rows.length === 0) {
+              // Migrate username to email
+              await pool.query(`ALTER TABLE users RENAME COLUMN username TO email;`);
+            }
+          }
+        } catch (e) {
+          console.error('[DB migration failed]', e);
+        }
       
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations(status);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_organizations_created_by ON organizations(created_by_user_id);
-      `);
-      
-      // Organization memberships table
-      await pool.query(`
+        // Organizations table
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS organizations (
+            id              SERIAL PRIMARY KEY,
+            name            TEXT UNIQUE NOT NULL,
+            description     TEXT,
+            status          TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+            created_by_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        console.log('[DB] Organizations table created/verified');
+        
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_organizations_status ON organizations(status);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_organizations_created_by ON organizations(created_by_user_id);
+        `);
+        
+        // Organization memberships table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS organization_memberships (
           id             SERIAL PRIMARY KEY,
           organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -173,25 +187,25 @@ async function initializeSchema() {
           status         TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'removed')),
           joined_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(organization_id, user_id)
-        );
-      `);
-      console.log('[DB] Organization memberships table created/verified');
-      
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_org_memberships_org_id ON organization_memberships(organization_id);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_org_memberships_user_id ON organization_memberships(user_id);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_org_memberships_status ON organization_memberships(status);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_org_memberships_role ON organization_memberships(role);
-      `);
-      
-      // Friend requests table
-      await pool.query(`
+          );
+        `);
+        console.log('[DB] Organization memberships table created/verified');
+        
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_org_memberships_org_id ON organization_memberships(organization_id);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_org_memberships_user_id ON organization_memberships(user_id);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_org_memberships_status ON organization_memberships(status);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_org_memberships_role ON organization_memberships(role);
+        `);
+        
+        // Friend requests table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS friend_requests (
           id         SERIAL PRIMARY KEY,
           from_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -200,19 +214,19 @@ async function initializeSchema() {
           created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(from_user_id, to_user_id)
-        );
-      `);
-      console.log('[DB] Friend requests table created/verified');
-      
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_friend_requests_from ON friend_requests(from_user_id);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_user_id);
-      `);
-      
-      // Friendships table
-      await pool.query(`
+          );
+        `);
+        console.log('[DB] Friend requests table created/verified');
+        
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_friend_requests_from ON friend_requests(from_user_id);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_user_id);
+        `);
+        
+        // Friendships table
+        await pool.query(`
         CREATE TABLE IF NOT EXISTS friendships (
           id         SERIAL PRIMARY KEY,
           user1_id   INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -220,52 +234,64 @@ async function initializeSchema() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(user1_id, user2_id),
           CHECK (user1_id < user2_id)
-        );
-      `);
-      console.log('[DB] Friendships table created/verified');
-      
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_friendships_user1 ON friendships(user1_id);
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id);
-      `);
-      
-      console.log('[DB] ✅ Schema initialization complete');
-      
-      // Auto-create admin users if they don't exist
-      try {
-        const bcrypt = require('bcryptjs');
-        const adminUsers = [
-          { email: 'jonakfir@gmail.com', password: 'admin123' },
-          { email: 'joseph.weatherbee@gmail.com', password: 'admin123' }
-        ];
+          );
+        `);
+        console.log('[DB] Friendships table created/verified');
         
-        for (const { email, password } of adminUsers) {
-          const existingAdmin = await findUserByEmail(email);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_friendships_user1 ON friendships(user1_id);
+        `);
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id);
+        `);
+        
+        console.log('[DB] ✅ Schema initialization complete');
+        
+        // Auto-create admin users if they don't exist
+        try {
+          const bcrypt = require('bcryptjs');
+          const adminUsers = [
+            { email: 'jonakfir@gmail.com', password: 'admin123' },
+            { email: 'joseph.weatherbee@gmail.com', password: 'admin123' }
+          ];
           
-          if (!existingAdmin) {
-            console.log('[DB] Creating admin user:', email);
-            const hashedPassword = await bcrypt.hash(password, 12);
-            await createUser({ email, password: hashedPassword, role: 'admin' });
-            console.log('[DB] ✅ Admin user created successfully:', email);
-          } else {
-            // Ensure existing admin user has admin role
-            if (existingAdmin.role !== 'admin') {
-              await updateUserRole(existingAdmin.id, 'admin');
-              console.log('[DB] Updated user to admin:', email);
+          for (const { email, password } of adminUsers) {
+            const existingAdmin = await findUserByEmail(email);
+            
+            if (!existingAdmin) {
+              console.log('[DB] Creating admin user:', email);
+              const hashedPassword = await bcrypt.hash(password, 12);
+              await createUser({ email, password: hashedPassword, role: 'admin' });
+              console.log('[DB] ✅ Admin user created successfully:', email);
             } else {
-              console.log('[DB] Admin user already exists with correct role:', email);
+              // Ensure existing admin user has admin role
+              if (existingAdmin.role !== 'admin') {
+                await updateUserRole(existingAdmin.id, 'admin');
+                console.log('[DB] Updated user to admin:', email);
+              } else {
+                console.log('[DB] Admin user already exists with correct role:', email);
+              }
             }
           }
+        } catch (err) {
+          console.error('[DB] Failed to create/update admin users:', err.message);
+          // Don't throw - this is not critical
         }
+        
+        // If we get here, schema initialization succeeded
+        console.log('[DB] ✅ Schema initialization completed successfully');
+        return;
       } catch (err) {
-        console.error('[DB] Failed to create/update admin users:', err.message);
-        // Don't throw - this is not critical
+        console.error(`[DB] ❌ Schema initialization failed (attempt ${attempt}/${retries}):`, err.message);
+        if (attempt < retries) {
+          const waitTime = 3000 * attempt; // 3s, 6s, 9s
+          console.log(`[DB] Retrying in ${waitTime/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        } else {
+          console.error('[DB] ❌ Schema initialization failed after all retries');
+          throw err;
+        }
       }
-    } catch (err) {
-      console.error('[DB] ❌ Schema initialization failed:', err);
-      throw err;
     }
   } else {
     // SQLite schema (for local dev)

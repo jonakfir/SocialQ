@@ -84,11 +84,27 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // preflight
 
 // ---------------- Health ----------------
-app.get('/health', (_req, res) => {
+app.get('/health', async (_req, res) => {
+  let dbStatus = 'unknown';
+  try {
+    if (pool) {
+      const result = await pool.query('SELECT COUNT(*) as count FROM users');
+      dbStatus = 'connected';
+    } else if (db) {
+      const result = db.prepare('SELECT COUNT(*) as count FROM users').get();
+      dbStatus = 'connected';
+    } else {
+      dbStatus = 'no_db';
+    }
+  } catch (err) {
+    dbStatus = `error: ${err.message}`;
+  }
+  
   res.status(200).json({
     ok: true,
     env: process.env.NODE_ENV || 'development',
-    time: new Date().toISOString()
+    time: new Date().toISOString(),
+    database: dbStatus
   });
 });
 
