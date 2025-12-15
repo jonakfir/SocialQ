@@ -421,10 +421,48 @@ app.use((err, _req, res, _next) => {
 // ---------------- Boot ----------------
 // Wait for schema initialization before accepting requests
 schemaInitPromise
-  .then(() => {
+  .then(async () => {
     console.log('[DB] ✅ Schema initialization completed successfully');
     
-    // Start server only after schema is ready
+    // Verify database tables exist before starting server
+    if (pool) {
+      let verified = false;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          const result = await pool.query(`
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_name = 'users'
+            );
+          `);
+          
+          if (result.rows[0].exists) {
+            console.log('[DB] ✅ Database tables verified');
+            verified = true;
+            break;
+          } else {
+            console.log(`[DB] ⚠️  Users table not found (attempt ${attempt}/5), retrying schema init...`);
+            const { initializeSchema } = require('./db/db');
+            await initializeSchema();
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        } catch (err) {
+          console.error(`[DB] ⚠️  Verification failed (attempt ${attempt}/5):`, err.message);
+          if (attempt < 5) {
+            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+          }
+        }
+      }
+      
+      if (!verified) {
+        console.error('[DB] ❌ Failed to verify database tables after 5 attempts');
+        console.error('[DB] ❌ Server will NOT start without verified database schema');
+        process.exit(1);
+      }
+    }
+    
+    // Start server only after schema is ready and verified
     app.listen(PORT, '0.0.0.0', () => {
       console.log('========================================');
       console.log(`API listening on :${PORT}`);
