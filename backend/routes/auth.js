@@ -147,6 +147,31 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email ≥ 3 chars, password ≥ 6 chars' });
     }
 
+    // Check if database is ready (users table exists)
+    const { pool } = require('../db/db');
+    if (pool) {
+      try {
+        await pool.query('SELECT 1 FROM users LIMIT 1');
+      } catch (dbErr) {
+        if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
+          console.error('[register] Database table missing, attempting emergency initialization...');
+          const { initializeSchema } = require('../db/db');
+          try {
+            await initializeSchema();
+            console.log('[register] ✅ Emergency schema initialization successful');
+          } catch (initErr) {
+            console.error('[register] ❌ Emergency schema initialization failed:', initErr.message);
+            return res.status(503).json({ 
+              error: 'Database not ready', 
+              details: 'Please try again in a moment' 
+            });
+          }
+        } else {
+          throw dbErr;
+        }
+      }
+    }
+
     const existing = await findUserByEmail(email) || await findUserByUsername(email);
     if (existing) return res.status(409).json({ error: 'Email already used' });
 
@@ -164,10 +189,21 @@ router.post('/register', async (req, res) => {
   } catch (e) {
     console.error('[register] error', e);
     console.error('[register] error details:', e.message);
+    console.error('[register] error code:', e.code);
     console.error('[register] error stack:', e.stack);
+    
+    // Handle specific database errors
     if (e.code === '23505' || e.message?.includes('UNIQUE') || e.message?.includes('duplicate')) {
       return res.status(409).json({ error: 'Email already used' });
     }
+    
+    if (e.message?.includes('does not exist') || e.message?.includes('relation')) {
+      return res.status(503).json({ 
+        error: 'Database not ready', 
+        details: 'Please try again in a moment' 
+      });
+    }
+    
     return res.status(500).json({ error: 'Server error', details: e.message });
   }
 });
