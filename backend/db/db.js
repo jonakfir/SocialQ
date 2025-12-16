@@ -62,26 +62,33 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
 // -------------------------
 // Schema Setup
 // -------------------------
-async function initializeSchema(retries = 3) {
+async function initializeSchema(retries = 5) {
   if (usePostgres) {
+    if (!pool) {
+      throw new Error('[DB] ❌ PostgreSQL pool not initialized - DATABASE_URL may be missing');
+    }
+    
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         console.log(`[DB] Starting schema initialization (attempt ${attempt}/${retries})...`);
+        console.log(`[DB] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
         
         // Ensure pool is ready - test connection first with retry
         let connected = false;
-        for (let connAttempt = 1; connAttempt <= 3; connAttempt++) {
+        for (let connAttempt = 1; connAttempt <= 5; connAttempt++) {
           try {
-            await pool.query('SELECT NOW()');
-            console.log('[DB] ✅ Database connection verified');
+            const result = await pool.query('SELECT NOW()');
+            console.log('[DB] ✅ Database connection verified at', result.rows[0].now);
             connected = true;
             break;
           } catch (connErr) {
-            console.error(`[DB] ❌ Database connection failed (attempt ${connAttempt}/3):`, connErr.message);
-            if (connAttempt < 3) {
-              await new Promise(resolve => setTimeout(resolve, 2000 * connAttempt)); // Exponential backoff
+            console.error(`[DB] ❌ Database connection failed (attempt ${connAttempt}/5):`, connErr.message);
+            if (connAttempt < 5) {
+              const waitTime = 2000 * connAttempt;
+              console.log(`[DB] Waiting ${waitTime}ms before retry...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
             } else {
-              throw new Error(`Database connection failed after 3 attempts: ${connErr.message}`);
+              throw new Error(`Database connection failed after 5 attempts: ${connErr.message}`);
             }
           }
         }
@@ -278,21 +285,43 @@ async function initializeSchema(retries = 3) {
           // Don't throw - this is not critical
         }
         
+        // Verify tables were actually created
+        const verifyResult = await pool.query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name IN ('users', 'organizations', 'organization_memberships', 'friend_requests', 'friendships')
+          ORDER BY table_name;
+        `);
+        const createdTables = verifyResult.rows.map(r => r.table_name);
+        console.log('[DB] Verified tables:', createdTables.join(', '));
+        
+        if (createdTables.length < 5) {
+          const missing = ['users', 'organizations', 'organization_memberships', 'friend_requests', 'friendships']
+            .filter(t => !createdTables.includes(t));
+          throw new Error(`Missing tables: ${missing.join(', ')}`);
+        }
+        
         // If we get here, schema initialization succeeded
-        console.log('[DB] ✅ Schema initialization completed successfully');
+        console.log('[DB] ✅ Schema initialization completed and verified successfully');
         return;
       } catch (err) {
         console.error(`[DB] ❌ Schema initialization failed (attempt ${attempt}/${retries}):`, err.message);
+        console.error('[DB] Error stack:', err.stack);
         if (attempt < retries) {
-          const waitTime = 3000 * attempt; // 3s, 6s, 9s
+          const waitTime = 3000 * attempt; // 3s, 6s, 9s, 12s, 15s
           console.log(`[DB] Retrying in ${waitTime/1000} seconds...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         } else {
           console.error('[DB] ❌ Schema initialization failed after all retries');
+          console.error('[DB] This is a CRITICAL error - server cannot start without database schema');
           throw err;
         }
       }
     }
+    
+    // Should never reach here, but just in case
+    throw new Error('Schema initialization failed after all retries');
   } else {
     // SQLite schema (for local dev)
     db.exec(`
