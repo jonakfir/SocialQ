@@ -72,13 +72,16 @@ async function initializeSchema(retries = 5) {
       try {
         console.log(`[DB] Starting schema initialization (attempt ${attempt}/${retries})...`);
         console.log(`[DB] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
+        console.log(`[DB] DATABASE_URL host: ${process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'N/A'}`);
         
         // Ensure pool is ready - test connection first with retry
         let connected = false;
         for (let connAttempt = 1; connAttempt <= 5; connAttempt++) {
           try {
-            const result = await pool.query('SELECT NOW()');
+            const result = await pool.query('SELECT NOW(), current_database(), current_schema()');
             console.log('[DB] ✅ Database connection verified at', result.rows[0].now);
+            console.log('[DB] Connected to database:', result.rows[0].current_database);
+            console.log('[DB] Current schema:', result.rows[0].current_schema);
             connected = true;
             break;
           } catch (connErr) {
