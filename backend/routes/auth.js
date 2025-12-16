@@ -10,7 +10,8 @@ const {
   findUserById,
   updateUserEmailAndOrPassword,
   getUserRole,
-  updateUserRole
+  updateUserRole,
+  initializeSchema
 } = require('../db/db');
 
 const router = express.Router();
@@ -148,19 +149,34 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if database is ready (users table exists)
-    const { pool } = require('../db/db');
+    const dbModule = require('../db/db');
+    const { pool } = dbModule;
     if (pool) {
       try {
         await pool.query('SELECT 1 FROM users LIMIT 1');
       } catch (dbErr) {
         if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
           console.error('[register] Database table missing, attempting emergency initialization...');
-          const { initializeSchema } = require('../db/db');
+          console.error('[register] Error was:', dbErr.message);
+          
+          // Get initializeSchema function
+          const initSchema = dbModule.initializeSchema;
+          if (!initSchema || typeof initSchema !== 'function') {
+            console.error('[register] ❌ initializeSchema not available');
+            return res.status(503).json({ 
+              error: 'Database not ready', 
+              details: 'Database initialization failed. Please contact support.' 
+            });
+          }
+          
           try {
-            await initializeSchema();
+            await initSchema();
             console.log('[register] ✅ Emergency schema initialization successful');
+            // Verify it worked
+            await pool.query('SELECT 1 FROM users LIMIT 1');
           } catch (initErr) {
             console.error('[register] ❌ Emergency schema initialization failed:', initErr.message);
+            console.error('[register] Init error stack:', initErr.stack);
             return res.status(503).json({ 
               error: 'Database not ready', 
               details: 'Please try again in a moment' 

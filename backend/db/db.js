@@ -24,8 +24,7 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   });
   
   console.log('[DB] Using PostgreSQL');
-  console.log('[DB] DATABASE_URL:', DATABASE_URL ? DATABASE_URL.replace(/:[^:@]+@/, ':****@') : 'NOT SET');
-  console.log('[DB] DATABASE_URL host:', DATABASE_URL ? new URL(DATABASE_URL).hostname : 'N/A');
+  console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
   
   // Test connection and log errors
   pool.query('SELECT NOW()', (err) => {
@@ -944,5 +943,6 @@ module.exports = {
   getFriendRequests,
   findFriendRequestById,
   findFriendshipByUsers,
+  initializeSchema, // Export for emergency initialization
   schemaInitPromise // Export so server can wait for it
 };
