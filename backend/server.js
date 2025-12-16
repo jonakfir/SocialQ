@@ -98,6 +98,17 @@ app.get('/health', async (_req, res) => {
     }
   } catch (err) {
     dbStatus = `error: ${err.message}`;
+    // If users table doesn't exist, try to initialize schema
+    if (err.message.includes('does not exist') && pool) {
+      console.log('[Health] Users table missing, attempting emergency schema init...');
+      try {
+        const { initializeSchema } = require('./db/db');
+        await initializeSchema();
+        dbStatus = 'initialized';
+      } catch (initErr) {
+        console.error('[Health] Emergency schema init failed:', initErr.message);
+      }
+    }
   }
   
   res.status(200).json({
@@ -106,6 +117,61 @@ app.get('/health', async (_req, res) => {
     time: new Date().toISOString(),
     database: dbStatus
   });
+});
+
+// ---------------- Database readiness middleware ----------------
+// Ensure database tables exist before processing any requests
+let dbReady = false;
+let dbInitPromise = null;
+
+async function ensureDatabaseReady() {
+  if (dbReady) return true;
+  
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      if (pool) {
+        try {
+          // Check if users table exists
+          const result = await pool.query(`
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_name = 'users'
+            );
+          `);
+          
+          if (!result.rows[0].exists) {
+            console.log('[DB] Users table missing - initializing schema...');
+            const { initializeSchema } = require('./db/db');
+            await initializeSchema();
+            console.log('[DB] ✅ Emergency schema initialization complete');
+          }
+          dbReady = true;
+          return true;
+        } catch (err) {
+          console.error('[DB] ❌ Failed to ensure database ready:', err.message);
+          return false;
+        }
+      }
+      return true;
+    })();
+  }
+  
+  return await dbInitPromise;
+}
+
+// Apply middleware to all routes except health check
+app.use(async (req, res, next) => {
+  if (req.path === '/health') return next();
+  
+  const ready = await ensureDatabaseReady();
+  if (!ready && pool) {
+    return res.status(503).json({ 
+      error: 'Database not ready', 
+      details: 'Please wait a moment and try again' 
+    });
+  }
+  next();
 });
 
 // ---------------- Auth helpers ----------------
