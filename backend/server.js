@@ -135,27 +135,39 @@ async function ensureDatabaseReady() {
           try {
             await pool.query('SELECT 1 FROM users LIMIT 1');
             // Table exists
+            console.log('[DB] ✅ Users table verified');
             dbReady = true;
             return true;
           } catch (queryErr) {
             // If error is about table not existing, initialize schema
-            if (queryErr.message && queryErr.message.includes('does not exist')) {
+            const errMsg = queryErr.message || String(queryErr);
+            if (errMsg.includes('does not exist') || errMsg.includes('relation') || errMsg.includes('table')) {
               console.log('[DB] ⚠️  Users table missing - initializing schema NOW...');
-              const { initializeSchema } = require('./db/db');
-              await initializeSchema();
-              console.log('[DB] ✅ Emergency schema initialization complete');
-              dbReady = true;
-              return true;
+              console.log('[DB] Error was:', errMsg);
+              try {
+                const { initializeSchema } = require('./db/db');
+                await initializeSchema();
+                // Verify it worked
+                await pool.query('SELECT 1 FROM users LIMIT 1');
+                console.log('[DB] ✅ Emergency schema initialization complete and verified');
+                dbReady = true;
+                return true;
+              } catch (initErr) {
+                console.error('[DB] ❌ Schema initialization failed:', initErr.message);
+                console.error('[DB] Init error stack:', initErr.stack);
+                throw initErr;
+              }
             } else {
               // Some other error
+              console.error('[DB] ❌ Unexpected database error:', errMsg);
               throw queryErr;
             }
           }
         } catch (err) {
           console.error('[DB] ❌ Failed to ensure database ready:', err.message);
           console.error('[DB] Error stack:', err.stack);
-          // Don't return false - let it retry on next request
-          dbInitPromise = null; // Reset so it can retry
+          // Reset so it can retry on next request
+          dbInitPromise = null;
           throw err;
         }
       }
@@ -167,6 +179,7 @@ async function ensureDatabaseReady() {
     return await dbInitPromise;
   } catch (err) {
     // If initialization failed, reset and return false
+    console.error('[DB] ❌ ensureDatabaseReady promise failed:', err.message);
     dbInitPromise = null;
     return false;
   }
