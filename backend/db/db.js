@@ -24,7 +24,8 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   });
   
   console.log('[DB] Using PostgreSQL');
-  console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
+  console.log('[DB] DATABASE_URL:', DATABASE_URL ? DATABASE_URL.replace(/:[^:@]+@/, ':****@') : 'NOT SET');
+  console.log('[DB] DATABASE_URL host:', DATABASE_URL ? new URL(DATABASE_URL).hostname : 'N/A');
   
   // Test connection and log errors
   pool.query('SELECT NOW()', (err) => {
