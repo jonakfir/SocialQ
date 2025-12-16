@@ -16,21 +16,41 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    
+    // Get JWT token from Authorization header
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
     const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    // Build headers for backend request
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
     const response = await fetch(`${base}/auth/me`, {
       method: 'GET',
-      headers: { Cookie: cookieHeader },
+      headers,
       credentials: 'include'
     });
+    
+    if (!response.ok) {
+      console.error('[getCurrentUser] Backend /auth/me failed:', response.status, response.statusText);
+      return null;
+    }
+    
     const data = await response.json();
     const backendUser = data?.user;
-    if (!backendUser?.email) return null;
+    if (!backendUser?.email) {
+      console.error('[getCurrentUser] No user in backend response:', data);
+      return null;
+    }
     
     // Ensure user exists in Prisma with correct role
     const prismaUser = await ensurePrismaUser(backendUser.email);
     
     return prismaUser;
-  } catch {
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
     return null;
   }
 }

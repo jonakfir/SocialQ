@@ -114,6 +114,12 @@
       const data = await res.json().catch(() => ({}));
       
       if (res.ok && (data.ok || data.success)) {
+        // Store JWT token for API authentication
+        if (data.token && typeof window !== 'undefined') {
+          localStorage.setItem('auth_token', data.token);
+          console.log('[create-account] Stored JWT token');
+        }
+        
         // Step 2: Immediately create Prisma user so they have a 9-digit ID and are searchable
         let syncData: any = null;
         try {
