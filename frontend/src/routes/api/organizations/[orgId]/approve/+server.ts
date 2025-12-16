@@ -16,12 +16,12 @@ export const POST: RequestHandler = async (event) => {
         memberships: {
           include: {
             user: {
-              select: { username: true, backendId: true }
+              select: { id: true, username: true }
             }
           }
         },
         createdBy: {
-          select: { username: true, backendId: true }
+          select: { id: true, username: true }
         }
       }
     });
@@ -55,49 +55,60 @@ export const POST: RequestHandler = async (event) => {
           headers['Authorization'] = authHeader;
         }
 
-        // Create organization in backend if it doesn't exist
-        // First, get the creator's backend user ID
-        const creatorBackendId = org.createdBy?.backendId;
-        if (creatorBackendId) {
-          const backendOrgRes = await fetch(`${base}/organizations`, {
-            method: 'POST',
-            headers: {
-              ...headers,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              name: org.name,
-              description: org.description,
-              createdByUserId: creatorBackendId
-            })
+        // Get the creator's backend user ID by looking up their email
+        if (org.createdBy?.username) {
+          // Look up backend user by email
+          const backendUserRes = await fetch(`${base}/auth/me`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
           });
 
-          if (backendOrgRes.ok) {
-            const backendOrg = await backendOrgRes.json();
-            console.log('[approve] Organization synced to backend:', backendOrg.organization?.id);
+          if (backendUserRes.ok) {
+            const backendUserData = await backendUserRes.json();
+            const creatorBackendId = backendUserData?.user?.id;
             
-            // Update all memberships in backend
-            for (const membership of org.memberships) {
-              if (membership.user?.backendId && backendOrg.organization?.id) {
-                try {
-                  await fetch(`${base}/organizations/${backendOrg.organization.id}/members`, {
-                    method: 'POST',
-                    headers: {
-                      ...headers,
-                      'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                      userEmail: membership.user.username,
-                      role: membership.role === 'org_admin' ? 'org_admin' : 'member'
-                    })
-                  });
-                } catch (e) {
-                  console.error('[approve] Failed to sync membership for', membership.user.username, e);
+            if (creatorBackendId) {
+              const backendOrgRes = await fetch(`${base}/organizations`, {
+                method: 'POST',
+                headers: {
+                  ...headers,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  name: org.name,
+                  description: org.description
+                })
+              });
+
+              if (backendOrgRes.ok) {
+                const backendOrg = await backendOrgRes.json();
+                console.log('[approve] Organization synced to backend:', backendOrg.organization?.id);
+                
+                // Update all memberships in backend
+                for (const membership of org.memberships) {
+                  if (membership.user?.username && backendOrg.organization?.id) {
+                    try {
+                      await fetch(`${base}/organizations/${backendOrg.organization.id}/members`, {
+                        method: 'POST',
+                        headers: {
+                          ...headers,
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          userEmail: membership.user.username,
+                          role: membership.role === 'org_admin' ? 'org_admin' : 'member'
+                        })
+                      });
+                    } catch (e) {
+                      console.error('[approve] Failed to sync membership for', membership.user.username, e);
+                    }
+                  }
                 }
+              } else {
+                console.warn('[approve] Failed to sync organization to backend:', await backendOrgRes.text());
               }
             }
-          } else {
-            console.warn('[approve] Failed to sync organization to backend:', await backendOrgRes.text());
           }
         }
       } catch (syncErr) {
