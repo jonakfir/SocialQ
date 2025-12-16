@@ -1,5 +1,6 @@
 // backend/routes/organizations.js
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const {
   createOrganization,
   findOrganizationById,
@@ -13,12 +14,36 @@ const {
 
 const router = express.Router();
 
-// Helper to get current user ID from request
+const JWT_SECRET = process.env.AUTH_SECRET || 'dev-change-this';
+
+// Helper to get current user ID from request (same as auth.js)
 function getCurrentUserId(req) {
-  const idFromUser = req.user?.id || req.session?.user?.id;
-  if (idFromUser) return Number(idFromUser);
-  const idFromCookie = Number(req.cookies?.uid) || Number(req.cookies?.userId) || null;
-  return idFromCookie || null;
+  // First, try JWT from Authorization header (for cross-origin requests)
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.substring(7);
+      const payload = jwt.verify(token, JWT_SECRET);
+      const uid = Number(payload?.uid);
+      if (uid) return uid;
+    } catch (err) {
+      // JWT verification failed, continue to other methods
+    }
+  }
+  
+  // Prefer explicit uid cookie (set on login/register)
+  const fromUidCookie = Number(req.cookies?.['uid']);
+  if (fromUidCookie) return fromUidCookie;
+
+  // Fallback: parse JWT session cookie
+  try {
+    const token = req.cookies?.['session'];
+    if (!token) return null;
+    const payload = jwt.verify(token, JWT_SECRET);
+    return Number(payload?.uid) || null;
+  } catch {
+    return null;
+  }
 }
 
 // Helper to require authentication

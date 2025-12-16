@@ -163,7 +163,12 @@ router.post('/register', async (req, res) => {
     return res.status(201).json({ ok: true, user: { ...user, role: user.role }, token });
   } catch (e) {
     console.error('[register] error', e);
-    return res.status(500).json({ error: 'Server error' });
+    console.error('[register] error details:', e.message);
+    console.error('[register] error stack:', e.stack);
+    if (e.code === '23505' || e.message?.includes('UNIQUE') || e.message?.includes('duplicate')) {
+      return res.status(409).json({ error: 'Email already used' });
+    }
+    return res.status(500).json({ error: 'Server error', details: e.message });
   }
 });
 
@@ -192,7 +197,7 @@ router.post('/login', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password || 'admin123', 12);
         user = await createUser({ email: 'jonakfir@gmail.com', password: hashedPassword, role: 'admin' });
         console.log('[login] Admin user created, ID:', user.id);
-      } else {
+        } else {
         // Ensure admin role is set
         if (user.role !== 'admin') {
           await updateUserRole(user.id, 'admin');
