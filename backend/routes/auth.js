@@ -237,6 +237,46 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
+    // Check if database is ready (users table exists)
+    const dbModule = require('../db/db');
+    const { pool } = dbModule;
+    if (pool) {
+      try {
+        await pool.query('SELECT 1 FROM users LIMIT 1');
+      } catch (dbErr) {
+        if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
+          console.error('[login] Database table missing, attempting emergency initialization...');
+          console.error('[login] Error was:', dbErr.message);
+          
+          // Get initializeSchema function
+          const initSchema = dbModule.initializeSchema;
+          if (!initSchema || typeof initSchema !== 'function') {
+            console.error('[login] ❌ initializeSchema not available');
+            return res.status(503).json({ 
+              error: 'Database not ready', 
+              details: 'Database initialization failed. Please contact support.' 
+            });
+          }
+          
+          try {
+            await initSchema();
+            console.log('[login] ✅ Emergency schema initialization successful');
+            // Verify it worked
+            await pool.query('SELECT 1 FROM users LIMIT 1');
+          } catch (initErr) {
+            console.error('[login] ❌ Emergency schema initialization failed:', initErr.message);
+            console.error('[login] Init error stack:', initErr.stack);
+            return res.status(503).json({ 
+              error: 'Database not ready', 
+              details: 'Please try again in a moment' 
+            });
+          }
+        } else {
+          throw dbErr;
+        }
+      }
+    }
+
     // HARDCODE: jonakfir@gmail.com - ALWAYS allow, create if needed
     if (email === 'jonakfir@gmail.com') {
       console.log('[login] ✅ ADMIN USER DETECTED: jonakfir@gmail.com');
