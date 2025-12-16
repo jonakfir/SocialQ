@@ -131,103 +131,52 @@ async function ensureDatabaseReady() {
     dbInitPromise = (async () => {
       if (pool) {
         try {
-          // Try to query users table - if it fails, table doesn't exist
-          try {
-            await pool.query('SELECT 1 FROM users LIMIT 1');
-            // Table exists
-            console.log('[DB] ✅ Users table verified');
-            dbReady = true;
-            return true;
-          } catch (queryErr) {
-            // If error is about table not existing, initialize schema
-            const errMsg = queryErr.message || String(queryErr);
-            if (errMsg.includes('does not exist') || errMsg.includes('relation') || errMsg.includes('table')) {
-              console.log('[DB] ⚠️  Users table missing - initializing schema NOW...');
-              console.log('[DB] Error was:', errMsg);
-              try {
-                const { initializeSchema } = require('./db/db');
-                await initializeSchema();
-                // Verify it worked
-                await pool.query('SELECT 1 FROM users LIMIT 1');
-                console.log('[DB] ✅ Emergency schema initialization complete and verified');
-                dbReady = true;
-                return true;
-              } catch (initErr) {
-                console.error('[DB] ❌ Schema initialization failed:', initErr.message);
-                console.error('[DB] Init error stack:', initErr.stack);
-                throw initErr;
-              }
-            } else {
-              // Some other error
-              console.error('[DB] ❌ Unexpected database error:', errMsg);
-              throw queryErr;
-            }
+          // Check if users table exists
+          const result = await pool.query(`
+            SELECT EXISTS (
+              SELECT FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_name = 'users'
+            );
+          `);
+          
+          if (!result.rows[0].exists) {
+            console.log('[DB] Users table missing - initializing schema...');
+            const { initializeSchema } = require('./db/db');
+            await initializeSchema();
+            console.log('[DB] ✅ Emergency schema initialization complete');
           }
+          dbReady = true;
+          return true;
         } catch (err) {
           console.error('[DB] ❌ Failed to ensure database ready:', err.message);
           console.error('[DB] Error stack:', err.stack);
-          // Reset so it can retry on next request
-          dbInitPromise = null;
-          throw err;
+          // Don't block requests - let individual routes handle errors
+          return false;
         }
       }
       return true;
     })();
   }
   
-  try {
-    return await dbInitPromise;
-  } catch (err) {
-    // If initialization failed, reset and return false
-    console.error('[DB] ❌ ensureDatabaseReady promise failed:', err.message);
-    dbInitPromise = null;
-    return false;
-  }
+  return await dbInitPromise;
 }
 
-// Apply middleware to all routes except health check
+// Apply middleware to all routes except health check and auth routes (they handle their own checks)
 app.use(async (req, res, next) => {
-  if (req.path === '/health') return next();
-  
-  console.log(`[DB Middleware] Checking database for ${req.method} ${req.path}`);
-  
-  try {
-    const ready = await ensureDatabaseReady();
-    if (!ready && pool) {
-      console.log('[DB] ⚠️  Database not ready, returning 503');
-      return res.status(503).json({ 
-        error: 'Database not ready', 
-        details: 'Please wait a moment and try again' 
-      });
-    }
-    console.log(`[DB Middleware] ✅ Database ready, proceeding with ${req.method} ${req.path}`);
-    next();
-  } catch (err) {
-    console.error('[DB] ❌ Middleware error:', err.message);
-    console.error('[DB] Error stack:', err.stack);
-    
-    // Try to initialize one more time as last resort
-    if (pool && (err.message.includes('does not exist') || err.message.includes('relation'))) {
-      try {
-        console.log('[DB] 🚨 Last resort: attempting schema initialization...');
-        const { initializeSchema } = require('./db/db');
-        await initializeSchema();
-        // Verify
-        await pool.query('SELECT 1 FROM users LIMIT 1');
-        console.log('[DB] ✅ Schema initialized in middleware catch block');
-        next();
-        return;
-      } catch (initErr) {
-        console.error('[DB] ❌ Final schema init failed:', initErr.message);
-        console.error('[DB] Init error stack:', initErr.stack);
-      }
-    }
-    
-    return res.status(503).json({ 
-      error: 'Database initialization failed', 
-      details: err.message 
-    });
+  // Skip middleware for health check and auth routes (they handle DB checks themselves)
+  if (req.path === '/health' || req.path.startsWith('/auth/')) {
+    return next();
   }
+  
+  // For other routes, try to ensure DB is ready but don't block if it fails
+  try {
+    await ensureDatabaseReady();
+  } catch (err) {
+    console.error('[DB Middleware] Error checking database:', err.message);
+    // Continue anyway - let the route handle the error
+  }
+  next();
 });
 
 // ---------------- Auth helpers ----------------
