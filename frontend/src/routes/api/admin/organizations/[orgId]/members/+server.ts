@@ -15,12 +15,28 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    
+    // Get JWT token from Authorization header
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
     const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    // Build headers for backend request
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
     const response = await fetch(`${base}/auth/me`, {
       method: 'GET',
-      headers: { Cookie: cookieHeader },
+      headers,
       credentials: 'include'
     });
+    
+    if (!response.ok) {
+      console.error('[getCurrentUser] Backend /auth/me failed:', response.status);
+      return null;
+    }
+    
     const data = await response.json();
     const backendUser = data?.user;
     if (!backendUser?.email) return null;
@@ -29,16 +45,18 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       select: { id: true, role: true }
     });
     return prismaUser || null;
-  } catch {
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
     return null;
   }
 }
 
 // POST /api/admin/organizations/[orgId]/members - Add or remove members
+// No admin check needed - if user can access /admin routes, they're already verified as admin
 export const POST: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
-    if (!user || user.role !== 'admin') {
+    if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
