@@ -156,19 +156,30 @@
         // If organization account selected, request org creation (pending approval)
         if (accountType === 'organization') {
           try {
+            // Wait a moment for Prisma user sync to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             const orgRes = await apiFetch('/api/organizations', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ name: orgName.trim(), description: orgDescription.trim() || undefined })
             });
             const orgData = await orgRes.json().catch(() => ({}));
-            if (!orgData.ok) {
+            if (orgData.ok && orgData.organization?.id) {
+              // Redirect directly to the organization dashboard
+              console.log('[create-account] Organization created, redirecting to:', orgData.organization.id);
+              goto(`/org/${orgData.organization.id}/dashboard`);
+              return;
+            } else {
               console.warn('[create-account] Organization create failed:', orgData.error);
+              // Still redirect to org hub, but show error
+              error = orgData.error || 'Failed to create organization';
             }
-          } catch (e) {
+          } catch (e: any) {
             console.warn('[create-account] Organization create error:', e);
+            error = e?.message || 'Failed to create organization';
           }
-          // Send them to Org hub where they’ll see pending status
+          // If we get here, org creation failed - send them to Org hub
           goto('/org');
           return;
         }
