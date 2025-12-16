@@ -189,6 +189,8 @@ async function ensureDatabaseReady() {
 app.use(async (req, res, next) => {
   if (req.path === '/health') return next();
   
+  console.log(`[DB Middleware] Checking database for ${req.method} ${req.path}`);
+  
   try {
     const ready = await ensureDatabaseReady();
     if (!ready && pool) {
@@ -198,22 +200,33 @@ app.use(async (req, res, next) => {
         details: 'Please wait a moment and try again' 
       });
     }
+    console.log(`[DB Middleware] ✅ Database ready, proceeding with ${req.method} ${req.path}`);
     next();
   } catch (err) {
     console.error('[DB] ❌ Middleware error:', err.message);
-    // Try to initialize one more time
-    try {
-      const { initializeSchema } = require('./db/db');
-      await initializeSchema();
-      console.log('[DB] ✅ Schema initialized in middleware catch block');
-      next();
-    } catch (initErr) {
-      console.error('[DB] ❌ Final schema init failed:', initErr.message);
-      return res.status(503).json({ 
-        error: 'Database initialization failed', 
-        details: initErr.message 
-      });
+    console.error('[DB] Error stack:', err.stack);
+    
+    // Try to initialize one more time as last resort
+    if (pool && (err.message.includes('does not exist') || err.message.includes('relation'))) {
+      try {
+        console.log('[DB] 🚨 Last resort: attempting schema initialization...');
+        const { initializeSchema } = require('./db/db');
+        await initializeSchema();
+        // Verify
+        await pool.query('SELECT 1 FROM users LIMIT 1');
+        console.log('[DB] ✅ Schema initialized in middleware catch block');
+        next();
+        return;
+      } catch (initErr) {
+        console.error('[DB] ❌ Final schema init failed:', initErr.message);
+        console.error('[DB] Init error stack:', initErr.stack);
+      }
     }
+    
+    return res.status(503).json({ 
+      error: 'Database initialization failed', 
+      details: err.message 
+    });
   }
 });
 
