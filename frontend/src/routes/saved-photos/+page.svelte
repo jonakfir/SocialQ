@@ -387,6 +387,15 @@
     font-weight: 700;
     font-size: 16px;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .folder-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
   }
 
   .emotion-tab:hover {
@@ -793,6 +802,9 @@
           class:active={selectedFolder === null}
           on:click={() => { selectedFolder = null; }}
         >
+          <svg class="folder-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+            <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
+          </svg>
           All Folders
         </button>
         {#each folders as f}
@@ -807,6 +819,9 @@
               on:drop={(e) => handleDrop(f, e)}
               title={"Folder: " + f + (draggedCollageId ? " (Drop photo here)" : "")}
             >
+              <svg class="folder-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z"/>
+              </svg>
               {f}
             </button>
             {#if !isDefaultFolder(f)}
