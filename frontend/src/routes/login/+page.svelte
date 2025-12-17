@@ -104,16 +104,35 @@
         
         console.log('[Login] User role:', userRole, 'Email:', u, 'IsAdmin:', isAdmin);
         
+        // Check if user is an org admin by checking their memberships
+        let isOrgAdmin = false;
+        let primaryOrgId = null;
+        
+        if (!isAdmin) {
+          try {
+            const orgStatusRes = await apiFetch('/api/user/org-status');
+            const orgStatusData = await orgStatusRes.json();
+            if (orgStatusData.ok && orgStatusData.isOrgAdmin) {
+              isOrgAdmin = true;
+              primaryOrgId = orgStatusData.primaryOrgId;
+              console.log('[Login] ✅ ORG ADMIN DETECTED - Primary org:', primaryOrgId);
+            }
+          } catch (orgErr) {
+            console.warn('[Login] Failed to check org status:', orgErr);
+          }
+        }
+        
         // Determine redirect URL
         let redirectUrl = '/dashboard';
         if (isAdmin) {
           console.log('[Login] ✅ ADMIN DETECTED - Redirecting to admin page');
           redirectUrl = '/admin/users';
-        } else if (userRole === 'org_admin' || userRole === 'organization') {
-          console.log('[Login] Redirecting to org admin page');
-          redirectUrl = data.user.organizationId 
-            ? `/org/${data.user.organizationId}/dashboard`
-            : '/org';
+        } else if (isOrgAdmin && primaryOrgId) {
+          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org dashboard:', primaryOrgId);
+          redirectUrl = `/org/${primaryOrgId}/dashboard`;
+        } else if (isOrgAdmin) {
+          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org hub');
+          redirectUrl = '/org';
         } else {
           console.log('[Login] Redirecting to dashboard');
           redirectUrl = '/dashboard';
