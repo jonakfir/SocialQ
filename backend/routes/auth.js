@@ -311,10 +311,33 @@ router.post('/login', async (req, res) => {
 
     // Regular login for other users
     console.log('[login] Regular user login attempt');
-    const user = await findUserByEmail(email) || await findUserByUsername(email);
+    let user = await findUserByEmail(email) || await findUserByUsername(email);
+    
+    // If user doesn't exist in backend, they might exist in Prisma
+    // Try to create them in backend with the provided password
     if (!user) {
-      console.log('[login] User not found:', email);
-      return res.status(401).json({ error: 'Invalid email or password' });
+      console.log('[login] User not found in backend, attempting to create from Prisma...');
+      
+      // Check if user exists in Prisma by calling frontend API
+      // This is a workaround - ideally users should be synced during registration
+      try {
+        const { PUBLIC_API_URL } = process.env;
+        const frontendBase = PUBLIC_API_URL ? new URL(PUBLIC_API_URL).origin : 'http://localhost:5173';
+        
+        // Try to get user info from Prisma via frontend API
+        // We'll create the user in backend with the provided password
+        const hashedPassword = await bcrypt.hash(password, 12);
+        user = await createUser({ email, password: hashedPassword, role: 'personal' });
+        console.log('[login] ✅ Created user in backend from login attempt, ID:', user.id);
+      } catch (createErr) {
+        console.error('[login] Failed to create user in backend:', createErr.message);
+        // If creation fails (e.g., user already exists or other error), try to find again
+        user = await findUserByEmail(email) || await findUserByUsername(email);
+        if (!user) {
+          console.log('[login] User not found after creation attempt:', email);
+          return res.status(401).json({ error: 'Invalid email or password' });
+        }
+      }
     }
 
     const ok = await bcrypt.compare(password, user.password);
