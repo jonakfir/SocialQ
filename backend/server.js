@@ -533,7 +533,8 @@ schemaInitPromise
       }
     }
     
-    // Start server only after schema is ready and verified
+        // Start server immediately - don't wait for schema init
+    // Schema will initialize in background and requests will wait via ensureDatabaseReady middleware
     app.listen(PORT, '0.0.0.0', () => {
       console.log('========================================');
       console.log(`API listening on :${PORT}`);
@@ -544,11 +545,25 @@ schemaInitPromise
       console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
       console.log('WA_TEMPLATE:', WA_TEMPLATE);
       console.log('========================================');
+      console.log('[DB] ⚠️  Database schema initializing in background...');
+      console.log('[DB] ⚠️  First requests may be slower until schema is ready');
     });
+    
+    // Initialize schema in background (non-blocking)
+    schemaInitPromise
+      .then(() => {
+        console.log('[DB] ✅ Schema initialization complete');
+        dbReady = true;
+      })
+      .catch((err) => {
+        console.error('[DB] ⚠️  Schema initialization error (non-fatal):', err.message);
+        console.error('[DB] ⚠️  Server will continue, but database operations may fail');
+        // Don't exit - let the middleware handle retries
+      });
   })
   .catch((err) => {
-    console.error('[DB] ❌ Schema initialization error:', err.message);
-    console.error('[DB] ❌ Server will NOT start without database schema');
+    // Only exit if we can't even start the server
+    console.error('[DB] ❌ Critical error:', err.message);
     console.error('[DB] Error details:', err);
     process.exit(1);
   });

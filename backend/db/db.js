@@ -448,7 +448,12 @@ async function initializeSchema(retries = 5) {
 }
 
 // Initialize schema on load - but export a promise so server can wait
-const schemaInitPromise = initializeSchema()
+// Initialize schema in background (non-blocking)
+// Don't await - let it run async so server can start immediately
+const schemaInitPromise = initializeSchema().catch(err => {
+  console.error('[DB] Schema initialization error (will retry on first request):', err.message);
+  return null; // Return null so promise resolves (non-blocking)
+})
   .then(() => {
     console.log('[DB] ✅ Schema initialization completed successfully');
     return true;

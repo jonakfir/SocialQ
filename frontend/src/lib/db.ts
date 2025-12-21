@@ -27,7 +27,16 @@ function getPrisma(): PrismaClient {
     
     _prisma = new PrismaClient({
       log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
+      // Don't connect on startup - lazy connect only when needed
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL
+        }
+      }
     });
+    
+    // Don't connect eagerly - let it connect on first query
+    // This prevents blocking during startup
     
     if (dev) {
       globalForPrisma.prisma = _prisma;

@@ -22,9 +22,11 @@ echo "   Logs: tail -f /tmp/backend.log"
 # Start frontend in background
 echo "🚀 Starting frontend..."
 cd "$FRONTEND_DIR"
+# Skip Prisma generate for faster startup
+export SKIP_PRISMA_GENERATE=true
 # Generate .svelte-kit files first to prevent blocking
 echo "   Syncing SvelteKit..."
-npx svelte-kit sync > /dev/null 2>&1
+npx svelte-kit sync > /dev/null 2>&1 || true
 npm run dev > /tmp/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   Frontend PID: $FRONTEND_PID"
