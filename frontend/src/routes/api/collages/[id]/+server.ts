@@ -5,9 +5,6 @@ import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = join(__filename, '..', '..', '..', '..', '..', 'static');
-
 /**
  * Get current user from backend API
  * Returns backend user (with numeric id) and creates/finds corresponding Prisma user

@@ -1,7 +1,7 @@
 // src/routes/ekman/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { readdir, stat } from 'fs/promises';
-import { join, relative, sep } from 'path';
+import { join, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';

@@ -1,7 +1,7 @@
 // src/routes/transitions/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { readdir, stat } from 'fs/promises';
-import { join, relative, sep } from 'path';
+import { join, sep } from 'path';
 import { fileURLToPath } from 'url';
 
 const EMOTIONS = ['Anger','Disgust','Fear','Happy','Neutral','Sad','Surprise'] as const;
