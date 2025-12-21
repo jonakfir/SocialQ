@@ -27,6 +27,16 @@
   let availableUsers: Array<{ id: string; username: string }> = [];
   let loadingAvailableUsers = false;
   let searchUserQuery = '';
+  
+  // Create organization state
+  let showCreateOrgModal = false;
+  let creatingOrg = false;
+  let newOrgName = '';
+  let newOrgDescription = '';
+  let newOrgCreatorId = '';
+  let availableUsersForCreator: Array<{ id: string; username: string }> = [];
+  let loadingUsersForCreator = false;
+  let orgError = '';
 
   async function loadOrganizations() {
     loading = true;
@@ -205,6 +215,81 @@
     }, 300);
   }
 
+  async function loadUsersForCreator() {
+    loadingUsersForCreator = true;
+    try {
+      const res = await apiFetch('/api/admin/users?limit=1000');
+      const data = await res.json();
+      if (data.ok) {
+        availableUsersForCreator = (data.users || []).map((u: any) => ({
+          id: u.id,
+          username: u.username
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load users:', e);
+      availableUsersForCreator = [];
+    } finally {
+      loadingUsersForCreator = false;
+    }
+  }
+
+  async function createOrganization() {
+    if (!newOrgName.trim()) {
+      orgError = 'Organization name is required';
+      return;
+    }
+
+    creatingOrg = true;
+    orgError = '';
+    try {
+      const res = await apiFetch('/api/admin/organizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newOrgName.trim(),
+          description: newOrgDescription.trim() || null,
+          createdByUserId: newOrgCreatorId || undefined
+        })
+      });
+      const data = await res.json();
+      
+      if (data.ok) {
+        // Success - close modal and refresh
+        showCreateOrgModal = false;
+        newOrgName = '';
+        newOrgDescription = '';
+        newOrgCreatorId = '';
+        await loadOrganizations();
+        alert('Organization created successfully!');
+      } else {
+        orgError = data.error || 'Failed to create organization';
+      }
+    } catch (e: any) {
+      orgError = e?.message || 'Failed to create organization';
+      console.error('createOrganization error:', e);
+    } finally {
+      creatingOrg = false;
+    }
+  }
+
+  function openCreateOrgModal() {
+    showCreateOrgModal = true;
+    orgError = '';
+    newOrgName = '';
+    newOrgDescription = '';
+    newOrgCreatorId = '';
+    loadUsersForCreator();
+  }
+
+  function closeCreateOrgModal() {
+    showCreateOrgModal = false;
+    orgError = '';
+    newOrgName = '';
+    newOrgDescription = '';
+    newOrgCreatorId = '';
+  }
+
   onMount(() => {
     loadOrganizations();
   });
@@ -218,6 +303,9 @@
   <div class="page-header">
     <h1>Organizations Management</h1>
     <div class="filters-container">
+      <button class="create-org-btn" on:click={openCreateOrgModal} title="Create a new organization">
+        ➕ Create Organization
+      </button>
       <div class="search-box">
         <input 
           type="text" 
@@ -417,6 +505,89 @@
       </div>
     </div>
   {/if}
+
+  <!-- Create Organization Modal -->
+  {#if showCreateOrgModal}
+    <div 
+      class="modal-overlay" 
+      on:click={closeCreateOrgModal} 
+      on:keydown={(e) => e.key === 'Escape' && closeCreateOrgModal()}
+      role="presentation"
+      tabindex="-1"
+    >
+      <div 
+        class="modal-content" 
+        on:click|stopPropagation 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <div class="modal-header">
+          <h2 id="modal-title">Create New Organization</h2>
+          <button class="close-btn" on:click={closeCreateOrgModal} aria-label="Close modal">×</button>
+        </div>
+        
+        <div class="modal-body">
+          {#if orgError}
+            <div class="error-message">{orgError}</div>
+          {/if}
+          
+          <div class="form-group">
+            <label for="org-name">Organization Name *</label>
+            <input
+              id="org-name"
+              type="text"
+              bind:value={newOrgName}
+              placeholder="Enter organization name..."
+              disabled={creatingOrg}
+              on:keydown={(e) => e.key === 'Enter' && !creatingOrg && createOrganization()}
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="org-description">Description (Optional)</label>
+            <textarea
+              id="org-description"
+              bind:value={newOrgDescription}
+              placeholder="Enter organization description..."
+              disabled={creatingOrg}
+              rows="3"
+            ></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="org-creator">Organization Creator (Optional)</label>
+            <select
+              id="org-creator"
+              bind:value={newOrgCreatorId}
+              disabled={creatingOrg || loadingUsersForCreator}
+            >
+              <option value="">Use current admin (you)</option>
+              {#if loadingUsersForCreator}
+                <option disabled>Loading users...</option>
+              {:else if availableUsersForCreator.length === 0}
+                <option disabled>No users available</option>
+              {:else}
+                {#each availableUsersForCreator as user}
+                  <option value={user.id}>{user.username} ({user.id})</option>
+                {/each}
+              {/if}
+            </select>
+            <div class="form-hint">Leave empty to create as yourself, or select another user to create it on their behalf</div>
+          </div>
+          
+          <div class="modal-actions">
+            <button class="modal-btn cancel-btn" on:click={closeCreateOrgModal} disabled={creatingOrg}>
+              Cancel
+            </button>
+            <button class="modal-btn create-btn" on:click={createOrganization} disabled={creatingOrg || !newOrgName.trim()}>
+              {creatingOrg ? 'Creating...' : 'Create Organization'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -446,9 +617,34 @@
   
   .filters-container { 
     display: flex; 
-    flex-direction: column; 
+    flex-direction: row; 
     gap: 0.75rem; 
-    align-items: flex-end; 
+    align-items: center; 
+    flex-wrap: wrap;
+  }
+  
+  .create-org-btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 10px;
+    border: 1px solid rgba(16, 185, 129, .4);
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    font-weight: 700;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, .3);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+  }
+  
+  .create-org-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, .4);
+    filter: brightness(1.05);
+    border-color: rgba(16, 185, 129, .6);
   }
   
   .search-box { 
@@ -827,5 +1023,125 @@
   .remove-member-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* ===== Create Organization Modal Styles ===== */
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #374151;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-group input,
+  .form-group textarea,
+  .form-group select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 2px solid rgba(79, 70, 229, 0.2);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(16px);
+    color: #111;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    box-sizing: border-box;
+    font-family: inherit;
+  }
+
+  .form-group input:focus,
+  .form-group textarea:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    background: rgba(255, 255, 255, 1);
+  }
+
+  .form-group input:disabled,
+  .form-group textarea:disabled,
+  .form-group select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .form-hint {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.25rem;
+  }
+
+  .error-message {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #991b1b;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(0,0,0,.06);
+  }
+
+  .modal-btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    border: 2px solid rgba(79, 70, 229, 0.3);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(16px);
+    color: #111;
+    font-weight: 700;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .modal-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+  }
+
+  .modal-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cancel-btn {
+    background: rgba(255, 255, 255, 0.8);
+    color: #6b7280;
+  }
+
+  .cancel-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.95);
+    color: #111;
+  }
+
+  .create-btn {
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    color: white;
+    border-color: #4f46e5;
+  }
+
+  .create-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #5b52f5, #34e3fe);
+    box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
   }
 </style>
