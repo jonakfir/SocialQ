@@ -208,15 +208,23 @@ export const POST: RequestHandler = async (event) => {
     if (!user) {
       const emailFromHeader = event.request.headers.get('X-User-Email');
       if (emailFromHeader) {
-        console.log('[POST /api/admin/organizations] Trying to find user by email from header:', emailFromHeader);
-        const foundUser = await prisma.user.findFirst({
-          where: { username: emailFromHeader.trim().toLowerCase() },
+        const emailLower = emailFromHeader.trim().toLowerCase();
+        console.log('[POST /api/admin/organizations] Trying to find user by email from header:', emailLower);
+        let foundUser = await prisma.user.findFirst({
+          where: { username: emailLower },
           select: { id: true, role: true, username: true }
         });
+        
+        // If not found, try to create it via ensurePrismaUser
+        if (!foundUser) {
+          console.log('[POST /api/admin/organizations] User not found, creating via ensurePrismaUser');
+          foundUser = await ensurePrismaUser(emailLower);
+        }
+        
         if (foundUser) {
           user = foundUser;
-          userEmail = foundUser.username;
-          console.log('[POST /api/admin/organizations] Found user from header:', { id: user.id, role: user.role });
+          userEmail = foundUser.username || emailLower;
+          console.log('[POST /api/admin/organizations] Found/created user from header:', { id: user.id, role: user.role, email: userEmail });
         }
       }
     }

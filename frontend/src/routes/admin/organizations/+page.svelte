@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { apiFetch } from '$lib/api';
+  import { page } from '$app/stores';
+  
+  // Get user from page data (set by admin layout)
+  const user = $page.data?.user;
 
   let loading = true;
   let error: string | null = null;
@@ -243,11 +247,16 @@
     creatingOrg = true;
     orgError = '';
     try {
-      // Get user email from localStorage to help with auth
-      const userEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
-      const userId = localStorage.getItem('userId') || '';
+      // Get user email from page data (admin layout) or localStorage
+      const userEmail = user?.email || user?.username || localStorage.getItem('email') || localStorage.getItem('username') || '';
+      const userId = user?.id || localStorage.getItem('userId') || '';
       
-      console.log('[createOrganization] User info from localStorage:', { email: userEmail, userId });
+      console.log('[createOrganization] User info:', { 
+        fromPageData: !!user, 
+        email: userEmail, 
+        userId,
+        userObject: user 
+      });
       
       // Build headers with auth info
       const headers: HeadersInit = { 'Content-Type': 'application/json' };
