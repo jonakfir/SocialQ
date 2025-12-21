@@ -160,6 +160,7 @@ export const POST: RequestHandler = async (event) => {
     console.log('[POST /api/admin/organizations] getCurrentUser result:', user ? { id: user.id, role: user.role } : 'null');
     
     // If getCurrentUser failed, try backend directly as fallback
+    // This is important because the admin layout already verified the user is an admin
     if (!user) {
       console.log('[POST /api/admin/organizations] getCurrentUser returned null, trying backend directly...');
       
@@ -193,6 +194,8 @@ export const POST: RequestHandler = async (event) => {
               console.log('[POST /api/admin/organizations] Prisma user found/created:', { id: prismaUser.id, role: prismaUser.role });
             }
           }
+        } else {
+          console.error('[POST /api/admin/organizations] Backend /auth/me returned:', backendRes.status);
         }
       } catch (backendError) {
         console.error('[POST /api/admin/organizations] Backend auth fallback failed:', backendError);
