@@ -1,29 +1,41 @@
-import { Human } from '@vladmandic/human';
+// Dynamic import to avoid server-side bundling issues
+let humanInstance: any = null;
 
-// Initialize Human.js instance (singleton pattern)
-let humanInstance: Human | null = null;
-
-async function getHumanInstance(): Promise<Human> {
+async function getHumanInstance(): Promise<any> {
+  // Only import on server-side if available, otherwise return null
+  if (typeof window !== 'undefined') {
+    // Client-side: use window.Human from CDN
+    return null; // Client should use CDN version
+  }
+  
+  // Server-side: try dynamic import
   if (!humanInstance) {
-    humanInstance = new Human({
-      backend: 'cpu', // Use CPU backend for Node.js
-      modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
-      face: {
-        enabled: true,
-        detector: { enabled: true },
-        mesh: { enabled: false }, // Not needed for emotion detection
-        emotion: { enabled: true } // Enable emotion detection
-      },
-      // Disable other features we don't need for emotion detection
-      body: { enabled: false },
-      hand: { enabled: false },
-      object: { enabled: false },
-      segmentation: { enabled: false }
-    });
-    
-    // Load models
-    await humanInstance.load();
-    await humanInstance.warmup();
+    try {
+      const { Human } = await import('@vladmandic/human');
+      humanInstance = new Human({
+        backend: 'cpu', // Use CPU backend for Node.js
+        modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
+        face: {
+          enabled: true,
+          detector: { enabled: true },
+          mesh: { enabled: false }, // Not needed for emotion detection
+          emotion: { enabled: true } // Enable emotion detection
+        },
+        // Disable other features we don't need for emotion detection
+        body: { enabled: false },
+        hand: { enabled: false },
+        object: { enabled: false },
+        segmentation: { enabled: false }
+      });
+      
+      // Load models
+      await humanInstance.load();
+      await humanInstance.warmup();
+    } catch (error) {
+      console.warn('[scoring] Human.js not available on server:', error);
+      // Return null if not available (e.g., on Vercel)
+      return null;
+    }
   }
   
   return humanInstance;
@@ -37,6 +49,12 @@ async function getHumanInstance(): Promise<Human> {
 export async function scoreEmotion(imageBytes: Buffer | Uint8Array): Promise<{emotion: string; confidence: number}> {
   try {
     const human = await getHumanInstance();
+    
+    // If human is not available (e.g., on Vercel), return neutral
+    if (!human) {
+      console.log('[scoreEmotion] Human.js not available, returning Neutral');
+      return { emotion: 'Neutral', confidence: 0.5 };
+    }
     
     // Human.js can process image buffers directly in Node.js
     // The detect method accepts Buffer, Uint8Array, or image data

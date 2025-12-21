@@ -26,7 +26,7 @@ export default defineConfig({
 		force: false
 	},
 	ssr: {
-		external: ['@prisma/client'],
+		external: ['@prisma/client', '@vladmandic/human', '@tensorflow/tfjs-node'],
 		noExternal: []
 	},
 	esbuild: {
