@@ -43,10 +43,6 @@ export default defineConfig({
 		logOverride: { 'this-is-undefined-in-esm': 'silent' }
 	},
 	clearScreen: false,
-	// CRITICAL: Disable all slow operations
-	logLevel: 'error',
-	// Skip type checking and other slow operations
-	define: {
-		'process.env.NODE_ENV': '"development"'
-	}
+	// Show more info for debugging
+	logLevel: 'info'
 });
