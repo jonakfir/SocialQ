@@ -138,7 +138,10 @@ export const POST: RequestHandler = async (event) => {
     const body = await event.request.json();
     const name = String(body?.name || '').trim();
     const description = String(body?.description || '').trim() || null;
-    const createdByUserId = String(body?.createdByUserId || user.id).trim();
+    // Use provided createdByUserId if it's a non-empty string, otherwise use current admin
+    const createdByUserId = (body?.createdByUserId && String(body.createdByUserId).trim()) 
+      ? String(body.createdByUserId).trim() 
+      : user.id;
 
     if (!name) {
       return json({ ok: false, error: 'Organization name is required' }, { status: 400 });
