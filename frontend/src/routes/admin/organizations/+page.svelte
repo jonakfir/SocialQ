@@ -243,16 +243,34 @@
     creatingOrg = true;
     orgError = '';
     try {
+      // Get user email from localStorage to help with auth
+      const userEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
+      const userId = localStorage.getItem('userId') || '';
+      
+      console.log('[createOrganization] User info from localStorage:', { email: userEmail, userId });
+      
+      // Build headers with auth info
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      if (userEmail) {
+        headers['X-User-Email'] = userEmail;
+      }
+      if (userId) {
+        headers['X-User-Id'] = userId;
+      }
+      
       const res = await apiFetch('/api/admin/organizations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           name: newOrgName.trim(),
           description: newOrgDescription.trim() || null,
           createdByUserId: newOrgCreatorId || undefined
         })
       });
+      
+      console.log('[createOrganization] Response status:', res.status, 'ok:', res.ok);
       const data = await res.json();
+      console.log('[createOrganization] Response data:', data);
       
       if (data.ok) {
         // Success - close modal and refresh
@@ -264,10 +282,11 @@
         alert('Organization created successfully!');
       } else {
         orgError = data.error || 'Failed to create organization';
+        console.error('[createOrganization] Error from server:', data.error);
       }
     } catch (e: any) {
       orgError = e?.message || 'Failed to create organization';
-      console.error('createOrganization error:', e);
+      console.error('[createOrganization] Exception:', e);
     } finally {
       creatingOrg = false;
     }

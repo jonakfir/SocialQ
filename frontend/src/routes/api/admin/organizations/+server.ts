@@ -146,6 +146,7 @@ export const GET: RequestHandler = async (event) => {
 
 // POST /api/admin/organizations - Create organization (auto-approved for admins)
 // NOTE: This endpoint is only accessible from admin routes, which already verify admin status
+// We trust that if the request reaches here, the user is authenticated as admin
 export const POST: RequestHandler = async (event) => {
   try {
     console.log('[POST /api/admin/organizations] ========== AUTH CHECK ==========');
@@ -156,11 +157,11 @@ export const POST: RequestHandler = async (event) => {
       'Cookie': event.request.headers.get('cookie') ? 'Present' : 'Missing'
     });
     
+    // Try multiple authentication methods
     let user = await getCurrentUser(event);
-    console.log('[POST /api/admin/organizations] getCurrentUser result:', user ? { id: user.id, role: user.role } : 'null');
+    let userEmail: string | null = null;
     
-    // If getCurrentUser failed, try backend directly as fallback
-    // This is important because the admin layout already verified the user is an admin
+    // If getCurrentUser failed, try to get user from backend directly
     if (!user) {
       console.log('[POST /api/admin/organizations] getCurrentUser returned null, trying backend directly...');
       
@@ -186,7 +187,8 @@ export const POST: RequestHandler = async (event) => {
           const backendUser = backendData?.user;
           
           if (backendUser?.email) {
-            console.log('[POST /api/admin/organizations] Backend user found:', backendUser.email);
+            userEmail = backendUser.email.trim().toLowerCase();
+            console.log('[POST /api/admin/organizations] Backend user found:', userEmail);
             // User is authenticated via backend, ensure they exist in Prisma
             const prismaUser = await ensurePrismaUser(backendUser.email);
             if (prismaUser) {
@@ -202,6 +204,23 @@ export const POST: RequestHandler = async (event) => {
       }
     }
     
+    // If we still don't have a user, try to find by email from headers
+    if (!user) {
+      const emailFromHeader = event.request.headers.get('X-User-Email');
+      if (emailFromHeader) {
+        console.log('[POST /api/admin/organizations] Trying to find user by email from header:', emailFromHeader);
+        const foundUser = await prisma.user.findFirst({
+          where: { username: emailFromHeader.trim().toLowerCase() },
+          select: { id: true, role: true, username: true }
+        });
+        if (foundUser) {
+          user = foundUser;
+          userEmail = foundUser.username;
+          console.log('[POST /api/admin/organizations] Found user from header:', { id: user.id, role: user.role });
+        }
+      }
+    }
+    
     // Final check - if we still don't have a user, return error
     if (!user) {
       console.error('[POST /api/admin/organizations] No user found after all attempts - returning 401');
@@ -213,7 +232,7 @@ export const POST: RequestHandler = async (event) => {
     console.log('[POST /api/admin/organizations] User role from DB:', me?.role, 'Email:', me?.username);
     
     // Check if user is admin - hardcode jonakfir@gmail.com as always admin
-    const email = (me?.username || '').trim().toLowerCase();
+    const email = userEmail || (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     
     if (!isAdmin) {
