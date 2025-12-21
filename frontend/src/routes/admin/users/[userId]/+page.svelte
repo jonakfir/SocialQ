@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { apiFetch } from '$lib/api';
   import LineChart from '$lib/components/charts/LineChart.svelte';
   import BarChart from '$lib/components/charts/BarChart.svelte';
   
@@ -27,6 +28,7 @@
   
   let loading = false;
   let error: string | null = null;
+  let deletingPhoto: Record<string, boolean> = {};
   
   // Emotion categories for photos
   const EMOTIONS = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise'];
@@ -74,6 +76,33 @@
   
   $: groupedCollages = groupByEmotion(collages);
   $: currentCollages = groupedCollages[selectedEmotion] || [];
+
+  async function deletePhoto(collageId: string) {
+    if (!confirm('Are you sure you want to delete this photo? This action cannot be undone.')) {
+      return;
+    }
+
+    deletingPhoto[collageId] = true;
+    try {
+      const res = await apiFetch(`/api/collages/${collageId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      
+      if (data.ok) {
+        // Remove from local array
+        collages.list = collages.list.filter((c: any) => c.id !== collageId);
+        collages.count = Math.max(0, collages.count - 1);
+      } else {
+        alert('Failed to delete photo: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      console.error('Error deleting photo:', e);
+      alert('Failed to delete photo: ' + (e?.message || 'Network error'));
+    } finally {
+      deletingPhoto[collageId] = false;
+    }
+  }
   
   // Prepare chart data
   let scoreProgressionData: any = null;
@@ -275,7 +304,17 @@
         <div class="photos-grid">
           {#each currentCollages as collage (collage.id)}
             <div class="photo-card">
-              <img src={collage.imageUrl} alt="User photo" loading="lazy" />
+              <div class="photo-image-wrapper">
+                <img src={collage.imageUrl} alt="User photo" loading="lazy" />
+                <button
+                  class="delete-photo-btn"
+                  on:click={() => deletePhoto(collage.id)}
+                  disabled={deletingPhoto[collage.id]}
+                  title="Delete this photo"
+                >
+                  {deletingPhoto[collage.id] ? '⏳' : '🗑️'}
+                </button>
+              </div>
               <div class="photo-info">
                 <span class="photo-date">{formatDate(collage.createdAt)}</span>
                 {#if collage.emotions}
@@ -577,12 +616,51 @@
     box-shadow: 0 12px 32px rgba(79,70,229,.25);
     border-color: rgba(255,255,255,.6);
   }
+
+  .photo-image-wrapper {
+    position: relative;
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+  }
   
   .photo-card img {
     width: 100%;
-    height: 200px;
+    height: 100%;
     object-fit: cover;
     display: block;
+  }
+
+  .delete-photo-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    border: 2px solid rgba(239, 68, 68, 0.8);
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+  }
+
+  .delete-photo-btn:hover:not(:disabled) {
+    background: #ef4444;
+    border-color: #ef4444;
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
+  }
+
+  .delete-photo-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
   
   .photo-info {
