@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "prisma generate && vite dev",
+		"dev": "npm run prisma:generate && vite dev",
 		"dev:fast": "SKIP_PRISMA_GENERATE=true vite dev",
 		"build": "prisma generate && prisma db push --accept-data-loss --skip-generate && vite build",
 		"vercel-build": "prisma generate && prisma db push --accept-data-loss --skip-generate && vite build",
