@@ -1,25 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
 import { PUBLIC_API_URL } from '$env/static/public';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-
-// Get the static directory path
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = join(__filename, '..', '..', '..', '..', '..', 'static');
-const UPLOADS_DIR = join(__dirname, 'uploads', 'collages');
-
-// Ensure uploads directory exists
-async function ensureUploadsDir() {
-  try {
-    await mkdir(UPLOADS_DIR, { recursive: true });
-  } catch (err: any) {
-    if (err.code !== 'EEXIST') throw err;
-  }
-}
 
 /**
  * Get current user from backend API
@@ -293,27 +276,19 @@ export const POST: RequestHandler = async (event) => {
       }
     }
 
-    // Ensure uploads directory exists
-    await ensureUploadsDir();
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 15);
-    const ext = file.name.split('.').pop() || 'png';
-    const filename = `collage_${user.id}_${timestamp}_${randomStr}.${ext}`;
-    const filepath = join(UPLOADS_DIR, filename);
-
-    // Save file to disk
+    // Convert file to base64 data URL (works on Vercel serverless)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    await writeFile(filepath, buffer);
+    const base64 = buffer.toString('base64');
+    const mimeType = file.type || 'image/png';
+    const dataUrl = `data:${mimeType};base64,${base64}`;
 
-    // Save to database
-    console.log('[POST /api/collages] Saving collage with userId:', user.id, 'imageUrl:', `/uploads/collages/${filename}`);
+    // Save to database with base64 data URL
+    console.log('[POST /api/collages] Saving collage with userId:', user.id, 'imageUrl length:', dataUrl.length);
     const collage = await prisma.collage.create({
       data: {
         userId: user.id,
-        imageUrl: `/uploads/collages/${filename}`,
+        imageUrl: dataUrl, // Store as base64 data URL instead of file path
         emotions: emotions ? JSON.stringify(emotions) : null
       }
     });
