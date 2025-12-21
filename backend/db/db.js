@@ -459,9 +459,10 @@ async function initializeSchema(retries = 5) {
 
 // Initialize schema on load - but don't block (non-blocking)
 // Export a promise so server can track it, but don't wait
-// Use setImmediate to defer execution and not block module loading
+// Use setTimeout(0) to defer execution and not block module loading
 const schemaInitPromise = new Promise((resolve) => {
-  setImmediate(() => {
+  // Defer to next tick to ensure module loads completely first
+  setTimeout(() => {
     initializeSchema()
       .then(() => {
         console.log('[DB] ✅ Schema initialization completed successfully');
@@ -472,7 +473,7 @@ const schemaInitPromise = new Promise((resolve) => {
         // Don't throw - let server start anyway
         resolve(false);
       });
-  });
+  }, 0);
 });
 
 // -------------------------
