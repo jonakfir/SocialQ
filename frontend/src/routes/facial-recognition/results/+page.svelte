@@ -1,7 +1,3 @@
-<script lang="ts" context="module">
-  export const ssr = false;
-  export const csr = true;
-</script>
 
 <script lang="ts">
   import { onMount } from 'svelte';

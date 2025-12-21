@@ -1,5 +1,4 @@
 <script>
-  export const ssr = false;
 
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';

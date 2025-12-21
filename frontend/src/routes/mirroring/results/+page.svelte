@@ -1,8 +1,3 @@
-<script lang="ts" context="module">
-  // This page reads from localStorage & uses navigator.* APIs, so disable SSR.
-  export const ssr = false;
-  export const csr = true;
-</script>
 
 <script>
   import { onMount } from 'svelte';

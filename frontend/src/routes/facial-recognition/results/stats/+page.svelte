@@ -1,6 +1,4 @@
 <script lang="ts">
-  // We read localStorage → disable SSR
-  export const ssr = false;
 
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';

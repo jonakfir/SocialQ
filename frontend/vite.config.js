@@ -18,7 +18,10 @@ export default defineConfig({
 	},
 	build: {
 		target: 'esnext',
-		minify: false
+		minify: false,
+		rollupOptions: {
+			external: ['@vladmandic/human', '@tensorflow/tfjs-node']
+		}
 	},
 	optimizeDeps: {
 		exclude: ['@prisma/client'],

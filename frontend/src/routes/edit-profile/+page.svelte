@@ -3,7 +3,6 @@
 <script context="module" lang="ts">
   /* Run client-only so we read the browser cookie/localStorage
      and let apiFetch's localhost mock kick in. */
-  export const ssr = false;
 </script>
 
 <script lang="ts">
