@@ -248,9 +248,6 @@
       <button class="viewas-btn" on:click={useAsPersonal} title="Temporarily use the platform as a Personal user">
         👤 Use as Personal
       </button>
-      <button class="create-org-header-btn" on:click={openCreateOrgModal} title="Create a new organization">
-        ➕ Create Organization
-      </button>
       {#if availableOrgs.length > 0}
         <select 
           class="viewas-select" 
@@ -562,30 +559,6 @@
     box-shadow: 0 6px 16px rgba(245, 158, 11, .3);
     filter: brightness(1.05);
     border-color: rgba(251, 191, 36, .6);
-  }
-
-  .create-org-header-btn {
-    padding: 0.625rem 1.25rem;
-    border-radius: 12px;
-    border: 1px solid rgba(16, 185, 129, .4);
-    background: linear-gradient(135deg, #10b981, #059669);
-    backdrop-filter: blur(16px);
-    color: white;
-    font-weight: 700;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 12px rgba(16, 185, 129, .3);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .create-org-header-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(16, 185, 129, .4);
-    filter: brightness(1.05);
-    border-color: rgba(16, 185, 129, .6);
   }
   
   .viewas-select {
