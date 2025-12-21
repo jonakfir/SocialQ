@@ -91,12 +91,14 @@ async function isOrgAdminOf(userId: string, organizationId: string): Promise<boo
  */
 export const GET: RequestHandler = async (event) => {
   try {
-    // TEMPORARY: Always allow - ensure user exists in Prisma
+    // Ensure admin user exists in Prisma
     await ensurePrismaUser('jonakfir@gmail.com');
     const user = await getCurrentUser(event);
     
-    // If getCurrentUser fails, create a dummy user object
-    const currentUser = user || { id: 'temp-admin', role: 'admin' };
+    // Verify user is admin
+    if (!user || user.role !== 'admin') {
+      return json({ ok: false, error: 'Unauthorized - Admin access required' }, { status: 403 });
+    }
     
     const url = new URL(event.request.url);
     const timeRange = url.searchParams.get('timeRange') || '30d';
@@ -107,8 +109,8 @@ export const GET: RequestHandler = async (event) => {
     const dateFrom = url.searchParams.get('dateFrom');
     const dateTo = url.searchParams.get('dateTo');
     
-    // TEMPORARY: Always allow admin access
-    const isMasterAdmin = true; // Always true for now
+    // User is verified as admin
+    const isMasterAdmin = user.role === 'admin';
     
     // Build date filter
     let dateFilter: { gte?: Date; lte?: Date } | undefined;

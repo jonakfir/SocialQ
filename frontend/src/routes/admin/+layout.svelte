@@ -10,7 +10,8 @@
     { label: 'Dashboard', path: '/admin' },
     { label: 'Users', path: '/admin/users' },
     { label: 'Organizations', path: '/admin/organizations' },
-    { label: 'Analytics', path: '/admin/analytics' }
+    { label: 'Analytics', path: '/admin/analytics' },
+    { label: 'All Photos', path: '/admin/photos' }
   ];
 </script>
 

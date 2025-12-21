@@ -20,9 +20,19 @@
   let memberSortBy: 'name' | 'joined' | 'sessions' | 'score' = 'joined';
   let memberSortDesc = true;
   let memberFilterRole: 'all' | 'member' | 'org_admin' = 'all';
+  let memberFilterStatus: 'all' | 'approved' | 'pending' | 'removed' = 'all';
   let memberSearchQuery = '';
   let anonymizeUsernames = false;
   let selectedUserId: string = '';
+  let isOrgAdmin = false;
+  let showingAddMember = false;
+  let addingMember = false;
+  let newMemberId = '';
+  let availableUsers: Array<{ id: string; username: string }> = [];
+  let loadingAvailableUsers = false;
+  let searchUserQuery = '';
+  let managingMember: string | null = null;
+  let removingMember: Record<string, boolean> = {};
   const orgId = $page.params.orgId;
 
   function handleUserFilterChange() {
@@ -47,17 +57,29 @@
 
       const membersData = await membersRes.json();
       if (membersData.ok) {
-        const approvedMembers = (membersData.members || []).filter((m: any) => m.status === 'approved')
-          .map((m: any) => ({
-            id: m.id,
-            userId: m.user?.id || '',
-            username: m.user?.username || 'Unknown',
-            role: m.role,
-            status: m.status,
-            joinedAt: m.joinedAt
-          }));
-        memberCount = approvedMembers.length;
-        members = approvedMembers;
+        const allMembers = (membersData.members || []).map((m: any) => ({
+          id: m.id,
+          userId: m.user?.id || '',
+          username: m.user?.username || 'Unknown',
+          role: m.role,
+          status: m.status,
+          joinedAt: m.joinedAt
+        }));
+        
+        // Check if current user is org admin
+        const currentUserEmail = localStorage.getItem('email') || localStorage.getItem('username') || '';
+        const currentUserMember = allMembers.find((m: any) => m.username === currentUserEmail || m.userId === localStorage.getItem('userId'));
+        isOrgAdmin = currentUserMember?.role === 'org_admin' || false;
+        
+        // For org admins, show all members (including pending). For others, only show approved.
+        if (isOrgAdmin) {
+          members = allMembers;
+          memberCount = allMembers.filter((m: any) => m.status === 'approved').length;
+        } else {
+          const approvedMembers = allMembers.filter((m: any) => m.status === 'approved');
+          memberCount = approvedMembers.length;
+          members = approvedMembers;
+        }
       }
 
       // Load analytics
@@ -73,6 +95,108 @@
       error = e?.message || 'Failed to load analytics';
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadAvailableUsers() {
+    loadingAvailableUsers = true;
+    try {
+      const res = await apiFetch('/api/admin/users?limit=1000');
+      const data = await res.json();
+      if (data.ok) {
+        const allUsers = data.users || [];
+        const currentMemberIds = new Set(members.map(m => m.userId));
+        let filtered = allUsers
+          .filter((u: any) => !currentMemberIds.has(u.id))
+          .map((u: any) => ({ id: u.id, username: u.username }));
+        
+        if (searchUserQuery) {
+          const queryLower = searchUserQuery.toLowerCase();
+          filtered = filtered.filter(u => 
+            u.username.toLowerCase().includes(queryLower) || 
+            u.id.toLowerCase().includes(queryLower)
+          );
+        }
+        
+        availableUsers = filtered;
+      }
+    } catch (e) {
+      console.error('loadAvailableUsers error', e);
+      availableUsers = [];
+    } finally {
+      loadingAvailableUsers = false;
+    }
+  }
+
+  async function handleAddMember() {
+    if (!newMemberId) {
+      alert('Please select a user to add');
+      return;
+    }
+    addingMember = true;
+    try {
+      // Try org admin endpoint first, fallback to global admin endpoint
+      let res = await apiFetch(`/api/organizations/${orgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add', userId: newMemberId })
+      });
+      let data = await res.json();
+      
+      // If org admin endpoint doesn't support 'add', try admin endpoint
+      if (!data.ok && data.error?.includes('Invalid')) {
+        res = await apiFetch(`/api/admin/organizations/${orgId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', userId: newMemberId })
+        });
+        data = await res.json();
+      }
+      
+      if (!data.ok) {
+        alert(data.error || 'Failed to add member');
+      } else {
+        newMemberId = '';
+        searchUserQuery = '';
+        showingAddMember = false;
+        await load();
+        await loadAvailableUsers();
+      }
+    } catch (e: any) {
+      alert(e?.message || 'Failed to add member');
+    } finally {
+      addingMember = false;
+    }
+  }
+
+  async function handleMemberAction(userId: string, action: 'approve' | 'remove' | 'promote' | 'demote') {
+    if (action === 'remove' && !confirm('Are you sure you want to remove this member?')) {
+      return;
+    }
+    if (action === 'promote' && !confirm('Promote this member to admin?')) {
+      return;
+    }
+    if (action === 'demote' && !confirm('Remove admin privileges from this member?')) {
+      return;
+    }
+    
+    removingMember[userId] = true;
+    try {
+      const res = await apiFetch(`/api/organizations/${orgId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, userId })
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert(data.error || `Failed to ${action} member`);
+      } else {
+        await load();
+      }
+    } catch (e: any) {
+      alert(e?.message || `Failed to ${action} member`);
+    } finally {
+      removingMember[userId] = false;
     }
   }
 
@@ -174,6 +298,11 @@
     // Filter by role
     if (memberFilterRole !== 'all') {
       filtered = filtered.filter(m => m.member.role === memberFilterRole);
+    }
+    
+    // Filter by status
+    if (memberFilterStatus !== 'all') {
+      filtered = filtered.filter(m => m.member.status === memberFilterStatus);
     }
     
     // Filter by search query
@@ -305,6 +434,11 @@
         <div class="section-header">
           <h2>Organization Members</h2>
           <div class="header-controls">
+            {#if isViewingAsOrgAdmin() || isOrgAdmin}
+              <button class="add-member-btn" on:click={() => { showingAddMember = !showingAddMember; if (showingAddMember) loadAvailableUsers(); }}>
+                ➕ Add Member
+              </button>
+            {/if}
             <label class="anonymize-checkbox">
               <input type="checkbox" bind:checked={anonymizeUsernames} />
               <span>Anonymize Usernames</span>
@@ -314,6 +448,44 @@
             </button>
           </div>
         </div>
+        
+        {#if showingAddMember && (isViewingAsOrgAdmin() || isOrgAdmin)}
+          <div class="add-member-form">
+            <div class="add-member-header">
+              <h3>Add New Member</h3>
+              <button class="close-btn" on:click={() => { showingAddMember = false; newMemberId = ''; searchUserQuery = ''; }}>✕</button>
+            </div>
+            <div class="add-member-content">
+              <input
+                type="text"
+                class="user-search-input"
+                placeholder="Search users by name or ID..."
+                bind:value={searchUserQuery}
+                on:input={loadAvailableUsers}
+              />
+              {#if loadingAvailableUsers}
+                <div class="loading-text">Loading users...</div>
+              {:else if availableUsers.length === 0}
+                <div class="no-users-text">No available users found.</div>
+              {:else}
+                <select class="user-select" bind:value={newMemberId} size={Math.min(availableUsers.length, 8)}>
+                  <option value="">Select a user...</option>
+                  {#each availableUsers as user}
+                    <option value={user.id}>{user.username} ({user.id})</option>
+                  {/each}
+                </select>
+              {/if}
+              <div class="add-member-actions">
+                <button class="add-btn" on:click={handleAddMember} disabled={addingMember || !newMemberId}>
+                  {addingMember ? 'Adding...' : 'Add Member'}
+                </button>
+                <button class="cancel-btn" on:click={() => { showingAddMember = false; newMemberId = ''; searchUserQuery = ''; }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
         
         {#if showingMembers}
           <!-- Filters and Search -->
@@ -329,6 +501,14 @@
               <option value="member">Members</option>
               <option value="org_admin">Admins</option>
             </select>
+            {#if isOrgAdmin}
+              <select class="member-filter" bind:value={memberFilterStatus}>
+                <option value="all">All Status</option>
+                <option value="approved">Approved</option>
+                <option value="pending">Pending</option>
+                <option value="removed">Removed</option>
+              </select>
+            {/if}
             <select class="member-filter" bind:value={memberSortBy}>
               <option value="joined">Sort by: Join Date</option>
               <option value="name">Sort by: Name</option>
@@ -353,18 +533,24 @@
                     Joined {memberSortBy === 'joined' ? (memberSortDesc ? '↓' : '↑') : ''}
                   </th>
                   <th>Role</th>
+                  {#if isOrgAdmin}
+                    <th>Status</th>
+                  {/if}
                   <th class="sortable" on:click={() => setSort('sessions')}>
                     Sessions {memberSortBy === 'sessions' ? (memberSortDesc ? '↓' : '↑') : ''}
                   </th>
                   <th class="sortable" on:click={() => setSort('score')}>
                     Avg Score {memberSortBy === 'score' ? (memberSortDesc ? '↓' : '↑') : ''}
                   </th>
+                  {#if isOrgAdmin}
+                    <th>Actions</th>
+                  {/if}
                 </tr>
               </thead>
               <tbody>
                 {#if filteredAndSortedMembers.length === 0}
                   <tr>
-                    <td colspan="6" class="empty-row">No members found matching filters.</td>
+                    <td colspan={isOrgAdmin ? "8" : "6"} class="empty-row">No members found matching filters.</td>
                   </tr>
                 {:else}
                   {#each filteredAndSortedMembers as { member, sessions, avgScore, joinedAt }}
@@ -388,10 +574,68 @@
                           <span class="role-badge member">Member</span>
                         {/if}
                       </td>
+                      {#if isOrgAdmin}
+                        <td class="member-status-cell">
+                          {#if member.status === 'pending'}
+                            <span class="status-badge pending">Pending</span>
+                          {:else if member.status === 'approved'}
+                            <span class="status-badge approved">Approved</span>
+                          {:else if member.status === 'removed'}
+                            <span class="status-badge removed">Removed</span>
+                          {:else}
+                            <span class="status-badge">{member.status}</span>
+                          {/if}
+                        </td>
+                      {/if}
                       <td class="member-sessions-cell">{sessions.length}</td>
                       <td class="member-score-cell">
                         <span class="score-value">{avgScore}%</span>
                       </td>
+                      {#if isOrgAdmin}
+                        <td class="member-actions-cell">
+                          <div class="member-actions">
+                            {#if member.status === 'pending'}
+                              <button 
+                                class="action-btn approve-btn" 
+                                on:click={() => handleMemberAction(member.userId, 'approve')}
+                                disabled={removingMember[member.userId]}
+                                title="Approve Member"
+                              >
+                                ✓ Approve
+                              </button>
+                            {/if}
+                            {#if member.status === 'approved'}
+                              {#if member.role !== 'org_admin'}
+                                <button 
+                                  class="action-btn promote-btn" 
+                                  on:click={() => handleMemberAction(member.userId, 'promote')}
+                                  disabled={removingMember[member.userId]}
+                                  title="Promote to Admin"
+                                >
+                                  ⬆️ Promote
+                                </button>
+                              {:else}
+                                <button 
+                                  class="action-btn demote-btn" 
+                                  on:click={() => handleMemberAction(member.userId, 'demote')}
+                                  disabled={removingMember[member.userId]}
+                                  title="Remove Admin"
+                                >
+                                  ⬇️ Demote
+                                </button>
+                              {/if}
+                            {/if}
+                            <button 
+                              class="action-btn remove-btn" 
+                              on:click={() => handleMemberAction(member.userId, 'remove')}
+                              disabled={removingMember[member.userId]}
+                              title="Remove Member"
+                            >
+                              {removingMember[member.userId] ? '⏳' : '🗑️'} Remove
+                            </button>
+                          </div>
+                        </td>
+                      {/if}
                     </tr>
                   {/each}
                 {/if}
@@ -404,8 +648,51 @@
       <div class="members-section" style="margin-top: 0; padding-top: 2rem;">
         <div class="section-header">
           <h2>Organization Members</h2>
+          {#if isViewingAsOrgAdmin() || isOrgAdmin}
+            <button class="add-member-btn" on:click={() => { showingAddMember = !showingAddMember; if (showingAddMember) loadAvailableUsers(); }}>
+              ➕ Add Member
+            </button>
+          {/if}
         </div>
-        <div class="card" style="margin: 0;">No members in this organization yet.</div>
+        {#if showingAddMember && (isViewingAsOrgAdmin() || isOrgAdmin)}
+          <div class="add-member-form">
+            <div class="add-member-header">
+              <h3>Add New Member</h3>
+              <button class="close-btn" on:click={() => { showingAddMember = false; newMemberId = ''; searchUserQuery = ''; }}>✕</button>
+            </div>
+            <div class="add-member-content">
+              <input
+                type="text"
+                class="user-search-input"
+                placeholder="Search users by name or ID..."
+                bind:value={searchUserQuery}
+                on:input={loadAvailableUsers}
+              />
+              {#if loadingAvailableUsers}
+                <div class="loading-text">Loading users...</div>
+              {:else if availableUsers.length === 0}
+                <div class="no-users-text">No available users found.</div>
+              {:else}
+                <select class="user-select" bind:value={newMemberId} size={Math.min(availableUsers.length, 8)}>
+                  <option value="">Select a user...</option>
+                  {#each availableUsers as user}
+                    <option value={user.id}>{user.username} ({user.id})</option>
+                  {/each}
+                </select>
+              {/if}
+              <div class="add-member-actions">
+                <button class="add-btn" on:click={handleAddMember} disabled={addingMember || !newMemberId}>
+                  {addingMember ? 'Adding...' : 'Add Member'}
+                </button>
+                <button class="cancel-btn" on:click={() => { showingAddMember = false; newMemberId = ''; searchUserQuery = ''; }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <div class="card" style="margin: 0;">No members in this organization yet.</div>
+        {/if}
       </div>
     {/if}
 
@@ -1320,5 +1607,244 @@
     filter: brightness(1.05);
     border-color: rgba(239,68,68,.5);
     background: linear-gradient(180deg, rgba(254,226,226,.95), rgba(254,202,202,.9));
+  }
+
+  .add-member-btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.4);
+    background: linear-gradient(135deg, #10b981, #059669);
+    backdrop-filter: blur(16px);
+    color: white;
+    font-weight: 700;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(16,185,129,.3);
+  }
+
+  .add-member-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16,185,129,.4);
+    filter: brightness(1.05);
+  }
+
+  .add-member-form {
+    background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.20));
+    border: 1px solid rgba(255,255,255,.55);
+    border-radius: 20px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 12px 40px rgba(0,0,0,.2);
+    backdrop-filter: blur(22px) saturate(140%);
+  }
+
+  .add-member-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .add-member-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    -webkit-text-stroke: 1px rgba(0,0,0,.3);
+    text-shadow: 0 4px 8px rgba(0,0,0,.2);
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    transition: background 0.2s;
+  }
+
+  .close-btn:hover {
+    background: rgba(255,255,255,.2);
+  }
+
+  .add-member-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .user-search-input {
+    padding: 0.625rem 1rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.4);
+    background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.9));
+    backdrop-filter: blur(16px);
+    color: #111;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .user-select {
+    padding: 0.625rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.4);
+    background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.9));
+    backdrop-filter: blur(16px);
+    color: #111;
+    font-size: 0.875rem;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .loading-text, .no-users-text {
+    padding: 1rem;
+    text-align: center;
+    color: rgba(255,255,255,0.9);
+    font-size: 0.875rem;
+  }
+
+  .add-member-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+  }
+
+  .add-btn, .cancel-btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.4);
+    backdrop-filter: blur(16px);
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .add-btn {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: white;
+    box-shadow: 0 4px 12px rgba(16,185,129,.3);
+  }
+
+  .add-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16,185,129,.4);
+  }
+
+  .add-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .cancel-btn {
+    background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.9));
+    color: #111;
+  }
+
+  .cancel-btn:hover {
+    filter: brightness(1.05);
+  }
+
+  .member-actions-cell {
+    min-width: 200px;
+  }
+
+  .member-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    padding: 0.375rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.4);
+    backdrop-filter: blur(16px);
+    font-weight: 600;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .promote-btn {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+    border-color: rgba(251, 191, 36, .4);
+  }
+
+  .promote-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+
+  .demote-btn {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #1e40af;
+    border-color: rgba(59, 130, 246, .4);
+  }
+
+  .demote-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+
+  .remove-btn {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border-color: rgba(239, 68, 68, .4);
+  }
+
+  .remove-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+  }
+
+  .member-status-cell {
+    font-size: 0.8rem;
+    min-width: 100px;
+  }
+
+  .status-badge {
+    padding: 0.25rem 0.625rem;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .status-badge.pending {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #92400e;
+  }
+
+  .status-badge.approved {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+  }
+
+  .status-badge.removed {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+  }
+
+  .approve-btn {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border-color: rgba(16, 185, 129, .4);
+  }
+
+  .approve-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
   }
 </style>

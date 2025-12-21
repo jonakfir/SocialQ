@@ -66,7 +66,8 @@ async function readJson(body: any): Promise<any> {
  *  - /api/* routes always stay local (use SvelteKit routes, not backend)
  */
 export async function apiFetch(path: string, init: RequestInit = {}) {
-  const shouldMock = isLocalMock() && path.startsWith('/auth/');
+  // NEVER use mock auth when PUBLIC_API_URL is set (we have a real backend)
+  const shouldMock = isLocalMock() && path.startsWith('/auth/') && !ABS_BASE;
   if (!shouldMock) {
     // /api/* and /ekman routes should always use SvelteKit routes (stay on same origin)
     // Don't send them to the backend via PUBLIC_API_URL

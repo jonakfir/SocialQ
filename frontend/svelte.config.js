@@ -5,8 +5,10 @@ const config = {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter(),
-    // optional: only needed if you POST from a different origin
-    csrf: { checkOrigin: false }
+    csrf: { 
+      checkOrigin: false,
+      trustedOrigins: ['localhost', '127.0.0.1']
+    }
   }
 };
 

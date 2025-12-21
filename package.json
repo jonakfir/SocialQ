@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "./start-all.sh",
+    "start:backend": "./start-backend.sh",
+    "start:frontend": "./start-frontend.sh",
+    "stop": "./stop-all.sh",
+    "dev": "./start-all.sh"
   },
   "keywords": [],
   "author": "",

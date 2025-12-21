@@ -1,30 +1,46 @@
 import { PrismaClient } from '@prisma/client';
 import { dev } from '$app/environment';
 
-// Ensure DATABASE_URL is set before creating Prisma client
-// For PostgreSQL, DATABASE_URL should be set in environment variables
-if (!process.env.DATABASE_URL) {
-  if (typeof window === 'undefined') {
-    // Only log in server context
-    console.error('[db] DATABASE_URL not set! Please add DATABASE_URL to Vercel environment variables.');
-    console.error('[db] Go to Vercel Dashboard → Settings → Environment Variables');
-    console.error('[db] Add: DATABASE_URL = your PostgreSQL connection string');
-    // Set a dummy value ONLY for Prisma generate during build
-    // This allows the build to complete, but runtime will fail if DATABASE_URL is not set
-    process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
-  }
-}
+// LAZY INIT: Don't create Prisma client on import - only when actually used
+// This prevents database connection attempts from blocking Vite startup
+let _prisma: PrismaClient | null = null;
 
 // Prevent multiple instances of Prisma Client in development
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: dev ? ['query', 'error', 'warn'] : ['error'],
-  });
+function getPrisma(): PrismaClient {
+  if (typeof window !== 'undefined') {
+    throw new Error('Prisma can only be used server-side');
+  }
+  
+  if (globalForPrisma.prisma) {
+    return globalForPrisma.prisma;
+  }
+  
+  if (!_prisma) {
+    // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
+    if (!process.env.DATABASE_URL) {
+      process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
+    }
+    
+    _prisma = new PrismaClient({
+      log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
+    });
+    
+    if (dev) {
+      globalForPrisma.prisma = _prisma;
+    }
+  }
+  
+  return _prisma;
+}
 
-if (dev) globalForPrisma.prisma = prisma;
+// Export as a getter function that creates client lazily
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    return getPrisma()[prop as keyof PrismaClient];
+  }
+});
 
