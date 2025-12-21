@@ -1,11 +1,9 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { unlink } from 'fs/promises';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
 import { PUBLIC_API_URL } from '$env/static/public';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, '..', '..', '..', '..', '..', 'static');
@@ -142,6 +140,7 @@ async function getCurrentUser(event: { request: Request; cookies: any; fetch: ty
 
 /**
  * DELETE /api/collages/[id] - Delete a collage
+ * Allows admins to delete any collage, or users to delete their own
  */
 export const DELETE: RequestHandler = async (event) => {
   try {
@@ -156,7 +155,12 @@ export const DELETE: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Find the collage and verify ownership
+    // Check if user is admin
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const email = (me?.username || '').trim().toLowerCase();
+    const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
+
+    // Find the collage
     const collage = await prisma.collage.findUnique({
       where: { id: collageId }
     });
@@ -165,18 +169,13 @@ export const DELETE: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Collage not found' }, { status: 404 });
     }
 
-    if (collage.userId !== user.id) {
-      return json({ ok: false, error: 'Forbidden' }, { status: 403 });
+    // Verify ownership (unless admin)
+    if (!isAdmin && collage.userId !== user.id) {
+      return json({ ok: false, error: 'Forbidden - You can only delete your own photos' }, { status: 403 });
     }
 
-    // Delete the file
-    try {
-      const filepath = join(__dirname, collage.imageUrl);
-      await unlink(filepath);
-    } catch (err: any) {
-      // File might not exist, continue with DB deletion
-      console.warn('Could not delete file:', err);
-    }
+    // Note: Images are stored as base64 in the database, so no file deletion needed
+    // If we were storing files, we'd delete them here
 
     // Delete from database
     await prisma.collage.delete({

@@ -14,6 +14,7 @@
   
   let totalPhotos = 0;
   let error: string | null = null;
+  let deletingPhoto: Record<string, boolean> = {};
 
   // Filters
   const EMOTIONS = ['All', 'Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise'];
@@ -119,6 +120,33 @@
     if (endDate) count++;
     return count;
   }
+
+  async function deletePhoto(photoId: string) {
+    if (!confirm('Are you sure you want to delete this photo? This action cannot be undone.')) {
+      return;
+    }
+
+    deletingPhoto[photoId] = true;
+    try {
+      const res = await apiFetch(`/api/collages/${photoId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      
+      if (data.ok) {
+        // Remove from local array and reload
+        photos = photos.filter(p => p.id !== photoId);
+        totalPhotos = Math.max(0, totalPhotos - 1);
+      } else {
+        alert('Failed to delete photo: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      console.error('Error deleting photo:', e);
+      alert('Failed to delete photo: ' + (e?.message || 'Network error'));
+    } finally {
+      deletingPhoto[photoId] = false;
+    }
+  }
 </script>
 
 <div class="photos-admin-page">
@@ -216,6 +244,14 @@
           <div class="photo-card">
             <div class="photo-image-container">
               <img src={photo.imageUrl} alt="Photo" loading="lazy" />
+              <button
+                class="delete-photo-btn"
+                on:click={() => deletePhoto(photo.id)}
+                disabled={deletingPhoto[photo.id]}
+                title="Delete this photo"
+              >
+                {deletingPhoto[photo.id] ? '⏳' : '🗑️'}
+              </button>
             </div>
             <div class="photo-info">
               <div class="photo-user">
@@ -400,12 +436,45 @@
     aspect-ratio: 1;
     overflow: hidden;
     background: #f3f4f6;
+    position: relative;
   }
 
   .photo-image-container img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+
+  .delete-photo-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    border: 2px solid rgba(239, 68, 68, 0.8);
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+  }
+
+  .delete-photo-btn:hover:not(:disabled) {
+    background: #ef4444;
+    border-color: #ef4444;
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
+  }
+
+  .delete-photo-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .photo-info {
