@@ -1,16 +1,16 @@
-import { PrismaClient } from '@prisma/client';
 import { dev } from '$app/environment';
 
 // LAZY INIT: Don't create Prisma client on import - only when actually used
 // This prevents database connection attempts from blocking Vite startup
-let _prisma: PrismaClient | null = null;
+let _prisma: any = null;
+let PrismaClient: any = null;
 
 // Prevent multiple instances of Prisma Client in development
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-function getPrisma(): PrismaClient {
+function getPrisma(): any {
   if (typeof window !== 'undefined') {
     throw new Error('Prisma can only be used server-side');
   }
@@ -20,8 +20,12 @@ function getPrisma(): PrismaClient {
   }
   
   if (!_prisma) {
-    // Try to import PrismaClient - if it doesn't exist (not generated), fail gracefully
+    // Lazy import PrismaClient - only when actually needed
     try {
+      // Dynamic import to avoid blocking if Prisma Client isn't generated
+      const prismaModule = require('@prisma/client');
+      PrismaClient = prismaModule.PrismaClient;
+      
       // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
       if (!process.env.DATABASE_URL) {
         process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
@@ -39,7 +43,7 @@ function getPrisma(): PrismaClient {
       }
     } catch (error: any) {
       // If Prisma client doesn't exist or creation failed, log and return dummy
-      if (error?.message?.includes('Prisma Client') || error?.code === 'MODULE_NOT_FOUND') {
+      if (error?.message?.includes('Prisma Client') || error?.code === 'MODULE_NOT_FOUND' || error?.code === 'ERR_REQUIRE_ESM') {
         console.warn('[db.ts] Prisma Client not generated yet. Run: npm run prisma:generate');
       } else {
         console.warn('[db.ts] Prisma client creation failed:', error?.message || error);
@@ -67,9 +71,9 @@ function getPrisma(): PrismaClient {
 }
 
 // Export as a getter function that creates client lazily
-export const prisma = new Proxy({} as PrismaClient, {
+export const prisma = new Proxy({} as any, {
   get(_target, prop) {
-    return getPrisma()[prop as keyof PrismaClient];
+    return getPrisma()[prop];
   }
 });
 

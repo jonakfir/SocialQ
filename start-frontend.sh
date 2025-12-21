@@ -8,10 +8,6 @@ export SKIP_PRISMA_GENERATE=true
 pkill -f "vite dev" 2>/dev/null || true
 sleep 0.5
 
-# Run dev server with timeout protection
-timeout 30 npm run dev || {
-  echo "⚠️  Frontend startup timed out or failed"
-  echo "💡 Try: cd frontend && npm run prisma:generate && npm run dev"
-  exit 1
-}
+# Run dev server
+npm run dev
 
