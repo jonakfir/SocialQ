@@ -7,130 +7,57 @@ import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
  * Get current user from backend API
- * Returns backend user (with numeric id) and creates/finds corresponding Prisma user
+ * Returns Prisma user with proper admin role checking
  * Also supports mock auth in dev mode via X-User-Id header
  */
-async function getCurrentUser(event: { request: Request; cookies: any; fetch: typeof fetch }): Promise<{ id: string; backendId: number } | null> {
+async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
   try {
-    // Check for mock auth header (set by client when using localStorage mock)
+    // Check for mock auth headers first (dev mode)
     const mockUserId = event.request.headers.get('X-User-Id');
     const mockUserEmail = event.request.headers.get('X-User-Email');
-    
-    // In dev mode with mock auth, use the header
     if (mockUserId && mockUserEmail) {
-      const userId = String(mockUserId);
-      
-      // Find by username (email) since that's our unique identifier
-      let prismaUser = await prisma.user.findFirst({
-        where: {
-          username: mockUserEmail
-        }
-      });
-      
-      if (!prismaUser) {
-        const bcrypt = await import('bcryptjs');
-        const defaultPassword = await bcrypt.hash('temp', 10);
-        const { randomBytes } = await import('crypto');
-        
-        // Generate unique 9-digit user ID
-        const newUserId = await generateUserId();
-        
-        // Generate unique invitation code
-        let invitationCode: string;
-        let attempts = 0;
-        do {
-          invitationCode = randomBytes(8).toString('hex').toUpperCase();
-          attempts++;
-          if (attempts > 10) {
-            throw new Error('Failed to generate unique invitation code');
-          }
-        } while (await prisma.user.findUnique({ where: { invitationCode } }));
-        
-        prismaUser = await prisma.user.create({
-          data: {
-            id: newUserId,
-            username: mockUserEmail,
-            password: defaultPassword,
-            invitationCode
-          }
-        });
-      }
-      
-      return {
-        id: prismaUser.id,
-        backendId: Number(mockUserId)
-      };
+      const prismaUser = await ensurePrismaUser(mockUserEmail);
+      return prismaUser;
     }
+
+    // Try backend auth with JWT token and cookies
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
     
-    // Otherwise, try real backend auth
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
-    const authUrl = base ? `${base}/auth/me` : 'http://localhost:4000/auth/me';
-    
-    // Get all cookies from the request and forward them
+    // Get JWT token from Authorization header
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
     const cookieHeader = event.request.headers.get('cookie') || '';
     
-    // Call backend directly with cookies
-    const response = await fetch(authUrl, {
+    // Build headers for backend request
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
+    const response = await fetch(`${base}/auth/me`, {
       method: 'GET',
-      headers: {
-        'Cookie': cookieHeader
-      },
+      headers,
       credentials: 'include'
     });
     
-    const data = await response.json();
-    const backendUser = data?.user || (data?.ok && data?.user !== null) ? data?.user : null;
-    
-    if (!backendUser || !backendUser.id) {
+    if (!response.ok) {
+      console.error('[getCurrentUser] Backend /auth/me failed:', response.status, response.statusText);
       return null;
     }
     
-    // Backend returns numeric ID, but we need to find/create Prisma user
-    const email = backendUser.email || backendUser.username || `user_${backendUser.id}`;
-    
-    // Find by username (email) since that's our unique identifier
-    let prismaUser = await prisma.user.findFirst({
-      where: {
-        username: email
-      }
-    });
-    
-    // If user doesn't exist in Prisma, create it
-    if (!prismaUser) {
-      const bcrypt = await import('bcryptjs');
-      const defaultPassword = await bcrypt.hash('temp', 10);
-      const { randomBytes } = await import('crypto');
-      
-      // Generate unique 9-digit user ID
-      const newUserId = await generateUserId();
-      
-      // Generate unique invitation code
-      let invitationCode: string;
-      let attempts = 0;
-      do {
-        invitationCode = randomBytes(8).toString('hex').toUpperCase();
-        attempts++;
-        if (attempts > 10) {
-          throw new Error('Failed to generate unique invitation code');
-        }
-      } while (await prisma.user.findUnique({ where: { invitationCode } }));
-      
-      prismaUser = await prisma.user.create({
-        data: {
-          id: newUserId,
-          username: email,
-          password: defaultPassword,
-          invitationCode
-        }
-      });
+    const data = await response.json();
+    const backendUser = data?.user;
+    if (!backendUser?.email) {
+      console.error('[getCurrentUser] No user in backend response:', data);
+      return null;
     }
     
-    return {
-      id: prismaUser.id,
-      backendId: Number(backendUser.id)
-    };
+    // Ensure user exists in Prisma with correct role
+    const prismaUser = await ensurePrismaUser(backendUser.email);
+    
+    return prismaUser;
   } catch (error) {
-    console.error('Error getting current user:', error);
+    console.error('[getCurrentUser] Error:', error);
     return null;
   }
 }
@@ -141,21 +68,64 @@ async function getCurrentUser(event: { request: Request; cookies: any; fetch: ty
  */
 export const DELETE: RequestHandler = async (event) => {
   try {
+    console.log('[DELETE /api/collages/[id]] ========== AUTH CHECK ==========');
     const collageId = event.params.id;
     if (!collageId) {
       return json({ ok: false, error: 'Collage ID required' }, { status: 400 });
     }
 
-    // Check authentication
-    const user = await getCurrentUser(event);
+    // Check authentication with multiple fallbacks
+    let user = await getCurrentUser(event);
+    
+    // If getCurrentUser failed, try backend directly
     if (!user) {
+      console.log('[DELETE /api/collages/[id]] getCurrentUser returned null, trying backend directly...');
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      const headers: HeadersInit = { Cookie: cookieHeader };
+      if (authHeader) {
+        headers['Authorization'] = authHeader;
+      }
+      
+      try {
+        const backendRes = await fetch(`${base}/auth/me`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
+        
+        if (backendRes.ok) {
+          const backendData = await backendRes.json();
+          const backendUser = backendData?.user;
+          
+          if (backendUser?.email) {
+            console.log('[DELETE /api/collages/[id]] Backend user found:', backendUser.email);
+            const prismaUser = await ensurePrismaUser(backendUser.email);
+            if (prismaUser) {
+              user = prismaUser;
+              console.log('[DELETE /api/collages/[id]] Prisma user found/created:', { id: user.id, role: user.role });
+            }
+          }
+        }
+      } catch (backendError) {
+        console.error('[DELETE /api/collages/[id]] Backend auth fallback failed:', backendError);
+      }
+    }
+    
+    if (!user) {
+      console.error('[DELETE /api/collages/[id]] No user found after all attempts - returning 401');
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check if user is admin
+    // Get fresh role from database to ensure it's current
     const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    console.log('[DELETE /api/collages/[id]] User role from DB:', me?.role, 'Email:', me?.username);
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
+    console.log('[DELETE /api/collages/[id]] Is admin:', isAdmin);
 
     // Find the collage
     const collage = await prisma.collage.findUnique({
