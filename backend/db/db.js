@@ -17,23 +17,27 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   pool = new Pool({
     connectionString: DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Add connection retry settings
+    // Add connection retry settings - but don't block on connection
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionTimeoutMillis: 5000, // Reduced from 10000
+    // Don't wait for connection on startup
+    allowExitOnIdle: true
   });
   
   console.log('[DB] Using PostgreSQL');
   console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
   
-  // Test connection and log errors
-  pool.query('SELECT NOW()', (err) => {
-    if (err) {
-      console.error('[DB] PostgreSQL connection error:', err.message);
-      console.error('[DB] Connection error details:', err);
-    } else {
-      console.log('[DB] PostgreSQL connected successfully');
-    }
+  // Test connection asynchronously (non-blocking)
+  setImmediate(() => {
+    pool.query('SELECT NOW()', (err) => {
+      if (err) {
+        console.error('[DB] PostgreSQL connection error:', err.message);
+        console.error('[DB] Connection error details:', err);
+      } else {
+        console.log('[DB] PostgreSQL connected successfully');
+      }
+    });
   });
   
   // Handle pool errors
@@ -74,30 +78,36 @@ async function initializeSchema(retries = 5) {
         console.log(`[DB] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
         console.log(`[DB] DATABASE_URL host: ${process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'N/A'}`);
         
-        // Ensure pool is ready - test connection first with retry
+        // Ensure pool is ready - test connection first with quick retry (non-blocking)
         let connected = false;
-        for (let connAttempt = 1; connAttempt <= 5; connAttempt++) {
+        for (let connAttempt = 1; connAttempt <= 3; connAttempt++) {
           try {
-            const result = await pool.query('SELECT NOW(), current_database(), current_schema()');
+            const result = await Promise.race([
+              pool.query('SELECT NOW(), current_database(), current_schema()'),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timeout')), 3000))
+            ]);
             console.log('[DB] ✅ Database connection verified at', result.rows[0].now);
             console.log('[DB] Connected to database:', result.rows[0].current_database);
             console.log('[DB] Current schema:', result.rows[0].current_schema);
             connected = true;
             break;
           } catch (connErr) {
-            console.error(`[DB] ❌ Database connection failed (attempt ${connAttempt}/5):`, connErr.message);
-            if (connAttempt < 5) {
-              const waitTime = 2000 * connAttempt;
+            console.error(`[DB] ❌ Database connection failed (attempt ${connAttempt}/3):`, connErr.message);
+            if (connAttempt < 3) {
+              const waitTime = 500 * connAttempt; // Reduced from 2000ms
               console.log(`[DB] Waiting ${waitTime}ms before retry...`);
               await new Promise(resolve => setTimeout(resolve, waitTime));
             } else {
-              throw new Error(`Database connection failed after 5 attempts: ${connErr.message}`);
+              // Don't throw - let it fail gracefully and retry later
+              console.warn('[DB] ⚠️  Database connection failed, will retry on first request');
+              return false;
             }
           }
         }
         
         if (!connected) {
-          throw new Error('Failed to establish database connection');
+          console.warn('[DB] ⚠️  Could not establish database connection, will retry on first request');
+          return false;
         }
         
         // PostgreSQL schema - Users table
@@ -449,16 +459,21 @@ async function initializeSchema(retries = 5) {
 
 // Initialize schema on load - but don't block (non-blocking)
 // Export a promise so server can track it, but don't wait
-const schemaInitPromise = initializeSchema()
-  .then(() => {
-    console.log('[DB] ✅ Schema initialization completed successfully');
-    return true;
-  })
-  .catch(err => {
-    console.error('[DB] ⚠️  Schema initialization error (non-fatal):', err.message);
-    // Don't throw - let server start anyway
-    return false;
+// Use setImmediate to defer execution and not block module loading
+const schemaInitPromise = new Promise((resolve) => {
+  setImmediate(() => {
+    initializeSchema()
+      .then(() => {
+        console.log('[DB] ✅ Schema initialization completed successfully');
+        resolve(true);
+      })
+      .catch(err => {
+        console.error('[DB] ⚠️  Schema initialization error (non-fatal):', err.message);
+        // Don't throw - let server start anyway
+        resolve(false);
+      });
   });
+});
 
 // -------------------------
 // Helpers (email-centric)
