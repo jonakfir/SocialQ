@@ -121,4 +121,82 @@ export const GET: RequestHandler = async (event) => {
   }
 };
 
+// POST /api/admin/organizations - Create organization (auto-approved for admins)
+export const POST: RequestHandler = async (event) => {
+  try {
+    const user = await getCurrentUser(event);
+    if (!user) {
+      return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Check if user is admin
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
+    if (me?.role !== 'admin') {
+      return json({ ok: false, error: 'Only admins can create organizations via this endpoint' }, { status: 403 });
+    }
+
+    const body = await event.request.json();
+    const name = String(body?.name || '').trim();
+    const description = String(body?.description || '').trim() || null;
+    const createdByUserId = String(body?.createdByUserId || user.id).trim();
+
+    if (!name) {
+      return json({ ok: false, error: 'Organization name is required' }, { status: 400 });
+    }
+
+    // Check for duplicate name (case-insensitive) - PostgreSQL case-insensitive check
+    // Note: Prisma doesn't support mode: 'insensitive' for PostgreSQL, so we fetch and filter
+    const allOrgs = await prisma.organization.findMany({ select: { name: true } });
+    const existing = allOrgs.find(org => org.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      return json({ ok: false, error: 'Organization name already exists' }, { status: 400 });
+    }
+
+    // Verify createdByUserId exists
+    const creator = await prisma.user.findUnique({
+      where: { id: createdByUserId },
+      select: { id: true, username: true }
+    });
+
+    if (!creator) {
+      return json({ ok: false, error: 'Creator user not found' }, { status: 404 });
+    }
+
+    // Create organization with approved status (since admin is creating it)
+    const org = await prisma.organization.create({
+      data: {
+        name,
+        description,
+        createdByUserId,
+        status: 'approved', // Auto-approve when created by admin
+        memberships: {
+          create: {
+            userId: createdByUserId,
+            role: 'org_admin',
+            status: 'approved' // Auto-approve membership when created by admin
+          }
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        status: true,
+        createdAt: true,
+        createdBy: {
+          select: {
+            id: true,
+            username: true
+          }
+        }
+      }
+    });
+
+    return json({ ok: true, organization: org });
+  } catch (error: any) {
+    console.error('[POST /api/admin/organizations] error', error);
+    return json({ ok: false, error: error?.message || 'Failed to create organization' }, { status: 500 });
+  }
+};
+
 

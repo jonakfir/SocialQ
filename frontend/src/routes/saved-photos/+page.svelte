@@ -50,6 +50,44 @@
     }
   }
   
+  // Normalize emotion name to match EMOTIONS array (case-insensitive)
+  function normalizeEmotionName(emotion: string): string | null {
+    if (!emotion || typeof emotion !== 'string') return null;
+    const trimmed = emotion.trim();
+    if (!trimmed) return null;
+    
+    // Normalize: first letter uppercase, rest lowercase
+    const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+    
+    // Check if it matches any emotion in EMOTIONS array (case-insensitive)
+    const emotionLower = normalized.toLowerCase();
+    for (const em of EMOTIONS) {
+      if (em.toLowerCase() === emotionLower) {
+        return em; // Return the exact emotion from EMOTIONS array
+      }
+    }
+    
+    // If no exact match, try common variations
+    const variations: Record<string, string> = {
+      'angry': 'Angry',
+      'anger': 'Angry',
+      'disgust': 'Disgust',
+      'disgusted': 'Disgust',
+      'fear': 'Fear',
+      'fearful': 'Fear',
+      'afraid': 'Fear',
+      'happy': 'Happy',
+      'happiness': 'Happy',
+      'sad': 'Sad',
+      'sadness': 'Sad',
+      'surprise': 'Surprise',
+      'surprised': 'Surprise'
+    };
+    
+    const matched = variations[emotionLower];
+    return matched || null;
+  }
+
   function groupByEmotion(collages: any[]) {
     const groups: Record<string, any[]> = {};
     
@@ -66,11 +104,16 @@
       // Add to each emotion category if the collage contains that emotion
       if (collage.emotions && Array.isArray(collage.emotions)) {
         collage.emotions.forEach((emotion: string) => {
-          const normalizedEmotion = emotion.charAt(0).toUpperCase() + emotion.slice(1).toLowerCase();
-          if (groups[normalizedEmotion]) {
+          const normalizedEmotion = normalizeEmotionName(emotion);
+          if (normalizedEmotion && groups[normalizedEmotion]) {
             groups[normalizedEmotion].push(collage);
+            console.log(`[saved-photos] Added collage ${collage.id} to emotion group: ${normalizedEmotion} (original: ${emotion})`);
+          } else {
+            console.warn(`[saved-photos] Could not normalize emotion "${emotion}" for collage ${collage.id}. Available emotions:`, EMOTIONS);
           }
         });
+      } else {
+        console.warn(`[saved-photos] Collage ${collage.id} has no emotions array:`, collage.emotions);
       }
     });
     

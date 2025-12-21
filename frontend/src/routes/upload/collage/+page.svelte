@@ -531,13 +531,14 @@
           const formData = new FormData();
           formData.append('file', file);
           // Each tile has only one emotion
-          formData.append('emotions', JSON.stringify([titleCase(tile.emotion)]));
+          const emotionName = titleCase(tile.emotion);
+          formData.append('emotions', JSON.stringify([emotionName]));
           
           // CRITICAL: Append user info to FormData (MUST be in FormData for file uploads)
           formData.append('userId', String(user.id));
           formData.append('userEmail', user.email);
 
-          console.log(`[saveCollage] Saving ${tile.emotion} tile`);
+          console.log(`[saveCollage] Saving ${tile.emotion} tile as emotion: "${emotionName}"`);
 
           const response = await fetch('/api/collages', {
             method: 'POST',

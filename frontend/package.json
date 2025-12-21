@@ -4,7 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"build": "prisma generate && prisma db push --accept-data-loss --skip-generate && vite build",
+		"build": "prisma generate && prisma migrate deploy && vite build",
+		"vercel-build": "prisma generate && prisma migrate deploy && vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "prisma generate",
@@ -13,22 +14,6 @@
 		"prisma:migrate:deploy": "prisma migrate deploy",
 		"prisma:db:push": "prisma db push",
 		"prisma:generate": "prisma generate"
-	},
-	"devDependencies": {
-		"@sveltejs/adapter-vercel": "^5.9.0",
-		"@sveltejs/kit": "^2.31.0",
-		"@sveltejs/vite-plugin-svelte": "^3.1.2",
-		"autoprefixer": "^10.4.21",
-		"glob": "^11.0.3",
-		"normalize-range": "^0.1.2",
-		"path-scurry": "^2.0.1",
-		"postcss": "^8.5.6",
-		"prisma": "^6.13.0",
-		"svelte": "^4.2.20",
-		"svelte-check": "^3.6.0",
-		"tailwindcss": "^3.4.17",
-		"typescript": "^5.4.0",
-		"vite": "^5.4.19"
 	},
 	"dependencies": {
 		"@prisma/client": "^6.13.0",
