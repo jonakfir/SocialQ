@@ -145,6 +145,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 // POST /api/admin/organizations - Create organization (auto-approved for admins)
+// NOTE: This endpoint is only accessible from admin routes, which already verify admin status
 export const POST: RequestHandler = async (event) => {
   try {
     console.log('[POST /api/admin/organizations] ========== AUTH CHECK ==========');
@@ -155,20 +156,65 @@ export const POST: RequestHandler = async (event) => {
       'Cookie': event.request.headers.get('cookie') ? 'Present' : 'Missing'
     });
     
-    const user = await getCurrentUser(event);
+    let user = await getCurrentUser(event);
     console.log('[POST /api/admin/organizations] getCurrentUser result:', user ? { id: user.id, role: user.role } : 'null');
     
+    // If getCurrentUser failed, try backend directly as fallback
     if (!user) {
-      console.error('[POST /api/admin/organizations] No user found - returning 401');
+      console.log('[POST /api/admin/organizations] getCurrentUser returned null, trying backend directly...');
+      
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      
+      const headers: HeadersInit = { Cookie: cookieHeader };
+      if (authHeader) {
+        headers['Authorization'] = authHeader;
+      }
+      
+      try {
+        const backendRes = await fetch(`${base}/auth/me`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
+        
+        if (backendRes.ok) {
+          const backendData = await backendRes.json();
+          const backendUser = backendData?.user;
+          
+          if (backendUser?.email) {
+            console.log('[POST /api/admin/organizations] Backend user found:', backendUser.email);
+            // User is authenticated via backend, ensure they exist in Prisma
+            const prismaUser = await ensurePrismaUser(backendUser.email);
+            if (prismaUser) {
+              user = prismaUser;
+              console.log('[POST /api/admin/organizations] Prisma user found/created:', { id: prismaUser.id, role: prismaUser.role });
+            }
+          }
+        }
+      } catch (backendError) {
+        console.error('[POST /api/admin/organizations] Backend auth fallback failed:', backendError);
+      }
+    }
+    
+    // Final check - if we still don't have a user, return error
+    if (!user) {
+      console.error('[POST /api/admin/organizations] No user found after all attempts - returning 401');
       return json({ ok: false, error: 'Unauthorized - Please log in first' }, { status: 401 });
     }
 
-    // Check if user is admin - get fresh role from database
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
-    console.log('[POST /api/admin/organizations] User role from DB:', me?.role);
+    // Get fresh role from database to ensure it's current
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    console.log('[POST /api/admin/organizations] User role from DB:', me?.role, 'Email:', me?.username);
     
-    if (me?.role !== 'admin') {
-      console.error('[POST /api/admin/organizations] User is not admin. Role:', me?.role);
+    // Check if user is admin - hardcode jonakfir@gmail.com as always admin
+    const email = (me?.username || '').trim().toLowerCase();
+    const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
+    
+    if (!isAdmin) {
+      console.error('[POST /api/admin/organizations] User is not admin. Email:', email, 'Role:', me?.role);
       return json({ ok: false, error: 'Only admins can create organizations via this endpoint' }, { status: 403 });
     }
     
