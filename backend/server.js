@@ -490,80 +490,55 @@ app.use((err, _req, res, _next) => {
 });
 
 // ---------------- Boot ----------------
-// Wait for schema initialization before accepting requests
+// Start server immediately - don't wait for schema init
+// Schema will initialize in background and requests will wait via ensureDatabaseReady middleware
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('========================================');
+  console.log(`API listening on :${PORT}`);
+  console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
+  if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
+  console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+  console.log('GRAPH_VERSION:', GRAPH_VERSION);
+  console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
+  console.log('WA_TEMPLATE:', WA_TEMPLATE);
+  console.log('========================================');
+  console.log('[DB] ⚠️  Database schema initializing in background...');
+  console.log('[DB] ⚠️  First requests may be slower until schema is ready');
+});
+
+// Initialize schema in background (non-blocking)
 schemaInitPromise
   .then(async () => {
     console.log('[DB] ✅ Schema initialization completed successfully');
     
-    // Verify database tables exist before starting server
+    // For PostgreSQL, verify tables exist
     if (pool) {
-      let verified = false;
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        try {
-          const result = await pool.query(`
-            SELECT EXISTS (
-              SELECT FROM information_schema.tables 
-              WHERE table_schema = 'public' 
-              AND table_name = 'users'
-            );
-          `);
-          
-          if (result.rows[0].exists) {
-            console.log('[DB] ✅ Database tables verified');
-            verified = true;
-            break;
-          } else {
-            console.log(`[DB] ⚠️  Users table not found (attempt ${attempt}/5), retrying schema init...`);
-            const { initializeSchema } = require('./db/db');
-            await initializeSchema();
-            await new Promise(resolve => setTimeout(resolve, 2000));
-          }
-        } catch (err) {
-          console.error(`[DB] ⚠️  Verification failed (attempt ${attempt}/5):`, err.message);
-          if (attempt < 5) {
-            await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-          }
+      try {
+        const result = await pool.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'users'
+          );
+        `);
+        
+        if (result.rows[0].exists) {
+          console.log('[DB] ✅ Database tables verified');
+          dbReady = true;
+        } else {
+          console.log('[DB] ⚠️  Users table not found, schema may need initialization');
+          // Don't block - let middleware handle it
         }
+      } catch (err) {
+        console.error('[DB] ⚠️  Verification failed:', err.message);
+        // Don't block - let middleware handle retries
       }
-      
-      if (!verified) {
-        console.error('[DB] ❌ Failed to verify database tables after 5 attempts');
-        console.error('[DB] ❌ Server will NOT start without verified database schema');
-        process.exit(1);
-      }
+    } else {
+      dbReady = true;
     }
-    
-        // Start server immediately - don't wait for schema init
-    // Schema will initialize in background and requests will wait via ensureDatabaseReady middleware
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log('========================================');
-      console.log(`API listening on :${PORT}`);
-      console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
-      if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
-      console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
-      console.log('GRAPH_VERSION:', GRAPH_VERSION);
-      console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
-      console.log('WA_TEMPLATE:', WA_TEMPLATE);
-      console.log('========================================');
-      console.log('[DB] ⚠️  Database schema initializing in background...');
-      console.log('[DB] ⚠️  First requests may be slower until schema is ready');
-    });
-    
-    // Initialize schema in background (non-blocking)
-    schemaInitPromise
-      .then(() => {
-        console.log('[DB] ✅ Schema initialization complete');
-        dbReady = true;
-      })
-      .catch((err) => {
-        console.error('[DB] ⚠️  Schema initialization error (non-fatal):', err.message);
-        console.error('[DB] ⚠️  Server will continue, but database operations may fail');
-        // Don't exit - let the middleware handle retries
-      });
   })
   .catch((err) => {
-    // Only exit if we can't even start the server
-    console.error('[DB] ❌ Critical error:', err.message);
-    console.error('[DB] Error details:', err);
-    process.exit(1);
+    console.error('[DB] ⚠️  Schema initialization error (non-fatal):', err.message);
+    console.error('[DB] ⚠️  Server will continue, but database operations may fail');
+    // Don't exit - let the middleware handle retries
   });
