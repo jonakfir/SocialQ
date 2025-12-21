@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { PUBLIC_API_URL } from '$env/static/public';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
  * Get current user from backend API
@@ -327,6 +328,7 @@ export const GET: RequestHandler = async (event) => {
     console.log('[GET /api/collages] ========== AUTH CHECK ==========');
     console.log('[GET /api/collages] Headers X-User-Id:', event.request.headers.get('X-User-Id'));
     console.log('[GET /api/collages] Headers X-User-Email:', event.request.headers.get('X-User-Email'));
+    console.log('[GET /api/collages] Authorization header:', event.request.headers.get('Authorization') ? 'Present' : 'Missing');
     
     // Check authentication - same logic as POST
     const mockUserId = event.request.headers.get('X-User-Id');
@@ -337,38 +339,61 @@ export const GET: RequestHandler = async (event) => {
     // If we have mock auth headers, use them directly (fast path for mock auth)
     if (mockUserId && mockUserEmail) {
       console.log('[GET /api/collages] Using mock auth headers - ID:', mockUserId, 'Email:', mockUserEmail);
-      const userId = String(mockUserId);
       
-      // Find by username (email) since that's our unique identifier
-      let prismaUser = await prisma.user.findFirst({
-        where: {
-          username: mockUserEmail
-        }
-      });
-      
-      if (!prismaUser) {
-        console.log('[GET /api/collages] Creating Prisma user for mock auth');
-        const bcrypt = await import('bcryptjs');
-        const defaultPassword = await bcrypt.hash('temp', 10);
-        
-        prismaUser = await prisma.user.create({
-          data: {
-            id: userId,
-            username: mockUserEmail,
-            password: defaultPassword
-          }
-        });
+      // Use ensurePrismaUser to find or create user (same as POST)
+      const prismaUser = await ensurePrismaUser(mockUserEmail);
+      if (prismaUser) {
+        user = {
+          id: prismaUser.id,
+          backendId: Number(mockUserId)
+        };
+        console.log('[GET /api/collages] Authenticated via mock headers - user ID:', user.id);
       }
-      
-      user = {
-        id: prismaUser.id,
-        backendId: Number(mockUserId)
-      };
-      console.log('[GET /api/collages] Authenticated via mock headers - user ID:', user.id);
     } else {
       // Fall back to getCurrentUser which checks backend
       console.log('[GET /api/collages] No mock headers, trying getCurrentUser...');
       user = await getCurrentUser(event);
+      
+      // If getCurrentUser failed, try backend directly
+      if (!user) {
+        console.log('[GET /api/collages] getCurrentUser failed, trying backend directly...');
+        const { PUBLIC_API_URL } = await import('$env/static/public');
+        const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+        const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+        const cookieHeader = event.request.headers.get('cookie') || '';
+        
+        const headers: HeadersInit = { Cookie: cookieHeader };
+        if (authHeader) {
+          headers['Authorization'] = authHeader;
+        }
+        
+        try {
+          const backendRes = await fetch(`${base}/auth/me`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
+          
+          if (backendRes.ok) {
+            const backendData = await backendRes.json();
+            const backendUser = backendData?.user;
+            
+            if (backendUser?.email) {
+              console.log('[GET /api/collages] Backend user found:', backendUser.email);
+              const prismaUser = await ensurePrismaUser(backendUser.email);
+              if (prismaUser) {
+                user = {
+                  id: prismaUser.id,
+                  backendId: Number(backendUser.id)
+                };
+                console.log('[GET /api/collages] Found user via backend:', { id: user.id });
+              }
+            }
+          }
+        } catch (backendError) {
+          console.error('[GET /api/collages] Backend auth fallback failed:', backendError);
+        }
+      }
     }
     
     if (!user) {
