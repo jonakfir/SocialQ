@@ -9,7 +9,6 @@ const upload = multer(); // for form-data bodies (no files required here)
 const jwt = require('jsonwebtoken');
 
 // Optional DB helpers (keep if you use them)
-// Load DB module asynchronously to prevent blocking startup
 let findUserById = () => null;
 let deleteUserById = () => {};
 let countUsers = () => Promise.resolve(0);
@@ -17,16 +16,10 @@ let getUserRole = () => Promise.resolve(null);
 let db = null;
 let pool = null;
 let schemaInitPromise = Promise.resolve();
-
-// Load DB module in next tick to not block server startup
-setImmediate(() => {
-  try {
-    const dbModule = require('./db/db');
-    ({ findUserById, deleteUserById, countUsers, getUserRole, db, pool, schemaInitPromise } = dbModule);
-  } catch (err) {
-    console.warn('[Server] DB module not available:', err.message);
-  }
-});
+try {
+  const dbModule = require('./db/db');
+  ({ findUserById, deleteUserById, countUsers, getUserRole, db, pool, schemaInitPromise } = dbModule);
+} catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
 const PORT = Number(process.env.PORT) || 8080;
