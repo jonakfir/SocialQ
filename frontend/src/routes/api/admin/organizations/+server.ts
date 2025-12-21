@@ -147,16 +147,32 @@ export const GET: RequestHandler = async (event) => {
 // POST /api/admin/organizations - Create organization (auto-approved for admins)
 export const POST: RequestHandler = async (event) => {
   try {
+    console.log('[POST /api/admin/organizations] ========== AUTH CHECK ==========');
+    console.log('[POST /api/admin/organizations] Headers:', {
+      'X-User-Id': event.request.headers.get('X-User-Id'),
+      'X-User-Email': event.request.headers.get('X-User-Email'),
+      'Authorization': event.request.headers.get('Authorization') ? 'Present' : 'Missing',
+      'Cookie': event.request.headers.get('cookie') ? 'Present' : 'Missing'
+    });
+    
     const user = await getCurrentUser(event);
+    console.log('[POST /api/admin/organizations] getCurrentUser result:', user ? { id: user.id, role: user.role } : 'null');
+    
     if (!user) {
-      return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+      console.error('[POST /api/admin/organizations] No user found - returning 401');
+      return json({ ok: false, error: 'Unauthorized - Please log in first' }, { status: 401 });
     }
 
-    // Check if user is admin
+    // Check if user is admin - get fresh role from database
     const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
+    console.log('[POST /api/admin/organizations] User role from DB:', me?.role);
+    
     if (me?.role !== 'admin') {
+      console.error('[POST /api/admin/organizations] User is not admin. Role:', me?.role);
       return json({ ok: false, error: 'Only admins can create organizations via this endpoint' }, { status: 403 });
     }
+    
+    console.log('[POST /api/admin/organizations] ========== AUTH SUCCESS ==========');
 
     const body = await event.request.json();
     const name = String(body?.name || '').trim();
