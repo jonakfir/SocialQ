@@ -191,50 +191,18 @@ export const POST: RequestHandler = async (event) => {
     // If we have user info in FormData, use it directly (fast path for mock auth)
     if (formDataUserId && formDataUserEmail) {
       console.log('[POST /api/collages] Using FormData auth - ID:', formDataUserId, 'Email:', formDataUserEmail);
-      const userId = String(formDataUserId);
       
-      // Find by username only (since we're not using backend ID as Prisma ID anymore)
-      let prismaUser = await prisma.user.findFirst({
-        where: {
-          username: formDataUserEmail
-        }
-      });
-      
-      if (!prismaUser) {
-        console.log('[POST /api/collages] Creating Prisma user for FormData auth');
-        const bcrypt = await import('bcryptjs');
-        const defaultPassword = await bcrypt.hash('temp', 10);
-        const { randomBytes } = await import('crypto');
-        
-        // Generate unique 9-digit user ID
-        const userId = await generateUserId();
-        
-        // Generate unique invitation code
-        let invitationCode: string;
-        let attempts = 0;
-        do {
-          invitationCode = randomBytes(8).toString('hex').toUpperCase();
-          attempts++;
-          if (attempts > 10) {
-            throw new Error('Failed to generate unique invitation code');
-          }
-        } while (await prisma.user.findUnique({ where: { invitationCode } }));
-        
-        prismaUser = await prisma.user.create({
-          data: {
-            id: userId,
-            username: formDataUserEmail,
-            password: defaultPassword,
-            invitationCode
-          }
-        });
+      // Use ensurePrismaUser to find or create user (same as GET endpoint)
+      const prismaUser = await ensurePrismaUser(formDataUserEmail);
+      if (prismaUser) {
+        user = {
+          id: prismaUser.id,
+          backendId: Number(formDataUserId)
+        };
+        console.log('[POST /api/collages] Authenticated via FormData - user ID:', user.id);
+      } else {
+        console.error('[POST /api/collages] Failed to ensure Prisma user for:', formDataUserEmail);
       }
-      
-      user = {
-        id: prismaUser.id,
-        backendId: Number(formDataUserId)
-      };
-      console.log('[POST /api/collages] Authenticated via FormData - user ID:', user.id);
     } else {
       // Fall back to getCurrentUser which checks headers and backend
       console.log('[POST /api/collages] No FormData user, trying getCurrentUser...');
