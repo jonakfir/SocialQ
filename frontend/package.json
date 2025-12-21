@@ -9,7 +9,7 @@
 		"vercel-build": "prisma generate && prisma db push --accept-data-loss --skip-generate && vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"postinstall": "echo 'Skipping Prisma generate in postinstall for faster startup'",
+		"postinstall": "echo 'Skipping Prisma generate - run npm run prisma:generate manually if needed'",
 		"migrate:prisma": "node migrate-prisma-to-postgres.js",
 		"prisma:migrate": "prisma migrate dev",
 		"prisma:migrate:deploy": "prisma migrate deploy",

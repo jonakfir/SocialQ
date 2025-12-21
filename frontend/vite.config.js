@@ -44,5 +44,9 @@ export default defineConfig({
 	},
 	clearScreen: false,
 	// CRITICAL: Disable all slow operations
-	logLevel: 'error'
+	logLevel: 'error',
+	// Skip type checking and other slow operations
+	define: {
+		'process.env.NODE_ENV': '"development"'
+	}
 });

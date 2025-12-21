@@ -20,20 +20,15 @@ function getPrisma(): PrismaClient {
   }
   
   if (!_prisma) {
-    // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
-    if (!process.env.DATABASE_URL) {
-      process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
-    }
-    
+    // Try to import PrismaClient - if it doesn't exist (not generated), fail gracefully
     try {
+      // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
+      if (!process.env.DATABASE_URL) {
+        process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
+      }
+      
       _prisma = new PrismaClient({
         log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
-        // Don't connect on startup - lazy connect only when needed
-        datasources: {
-          db: {
-            url: process.env.DATABASE_URL
-          }
-        }
       });
       
       // Don't connect eagerly - let it connect on first query
@@ -42,11 +37,29 @@ function getPrisma(): PrismaClient {
       if (dev) {
         globalForPrisma.prisma = _prisma;
       }
-    } catch (error) {
-      // If Prisma client generation failed, create a dummy that will fail gracefully
-      console.warn('[db.ts] Prisma client creation failed, using fallback:', error);
-      // Return a proxy that fails gracefully
-      return {} as PrismaClient;
+    } catch (error: any) {
+      // If Prisma client doesn't exist or creation failed, log and return dummy
+      if (error?.message?.includes('Prisma Client') || error?.code === 'MODULE_NOT_FOUND') {
+        console.warn('[db.ts] Prisma Client not generated yet. Run: npm run prisma:generate');
+      } else {
+        console.warn('[db.ts] Prisma client creation failed:', error?.message || error);
+      }
+      // Return a dummy that will throw on use (but won't block startup)
+      _prisma = {
+        $connect: async () => { throw new Error('Prisma Client not generated. Run: npm run prisma:generate'); },
+        $disconnect: async () => {},
+        $on: () => {},
+        $use: () => {},
+        $transaction: async () => { throw new Error('Prisma Client not generated'); },
+        $extends: () => { throw new Error('Prisma Client not generated'); },
+        user: {} as any,
+        collage: {} as any,
+        organization: {} as any,
+        organizationMembership: {} as any,
+        friendRequest: {} as any,
+        friendship: {} as any,
+        gameSession: {} as any,
+      } as any;
     }
   }
   
