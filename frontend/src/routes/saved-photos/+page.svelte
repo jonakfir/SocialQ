@@ -10,6 +10,35 @@
   let collages = data?.collages || [];
   let loading = false;
 
+  // Reload collages on mount to ensure fresh data
+  onMount(async () => {
+    await loadCollages();
+  });
+
+  async function loadCollages() {
+    if (!user?.id && !user?.email) {
+      console.log('[saved-photos] No user, skipping load');
+      return;
+    }
+    
+    loading = true;
+    try {
+      console.log('[saved-photos] Loading collages for user:', user);
+      const res = await apiFetch('/api/collages');
+      const data = await res.json();
+      if (data.ok) {
+        collages = data.collages || [];
+        console.log('[saved-photos] Loaded', collages.length, 'collages');
+      } else {
+        console.error('[saved-photos] Failed to load collages:', data.error);
+      }
+    } catch (e) {
+      console.error('[saved-photos] Error loading collages:', e);
+    } finally {
+      loading = false;
+    }
+  }
+
   // Display name = email (fallback to blank to avoid "undefined")
   const displayEmail = (user.email ?? '').toString();
 
