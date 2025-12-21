@@ -6,8 +6,11 @@ const config = {
   kit: {
     adapter: adapter(),
     csrf: { 
-      checkOrigin: false,
-      trustedOrigins: ['localhost', '127.0.0.1']
+      trustedOrigins: ['localhost', '127.0.0.1', '*.vercel.app', '*.localhost']
+    },
+    // Optimize for faster dev startup
+    typescript: {
+      config: (config) => config
     }
   }
 };

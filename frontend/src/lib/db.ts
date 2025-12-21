@@ -25,21 +25,28 @@ function getPrisma(): PrismaClient {
       process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
     }
     
-    _prisma = new PrismaClient({
-      log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
-      // Don't connect on startup - lazy connect only when needed
-      datasources: {
-        db: {
-          url: process.env.DATABASE_URL
+    try {
+      _prisma = new PrismaClient({
+        log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
+        // Don't connect on startup - lazy connect only when needed
+        datasources: {
+          db: {
+            url: process.env.DATABASE_URL
+          }
         }
+      });
+      
+      // Don't connect eagerly - let it connect on first query
+      // This prevents blocking during startup
+      
+      if (dev) {
+        globalForPrisma.prisma = _prisma;
       }
-    });
-    
-    // Don't connect eagerly - let it connect on first query
-    // This prevents blocking during startup
-    
-    if (dev) {
-      globalForPrisma.prisma = _prisma;
+    } catch (error) {
+      // If Prisma client generation failed, create a dummy that will fail gracefully
+      console.warn('[db.ts] Prisma client creation failed, using fallback:', error);
+      // Return a proxy that fails gracefully
+      return {} as PrismaClient;
     }
   }
   

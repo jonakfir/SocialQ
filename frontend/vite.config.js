@@ -14,6 +14,10 @@ export default defineConfig({
 		hmr: {
 			protocol: 'ws',
 			host: 'localhost'
+		},
+		// Optimize for faster startup
+		watch: {
+			ignored: ['**/node_modules/**', '**/.svelte-kit/**', '**/prisma/**']
 		}
 	},
 	build: {
@@ -24,9 +28,11 @@ export default defineConfig({
 		}
 	},
 	optimizeDeps: {
-		exclude: ['@prisma/client'],
+		exclude: ['@prisma/client', '@vladmandic/human', '@tensorflow/tfjs-node'],
 		include: ['svelte'],
-		force: false
+		force: false,
+		// Don't pre-bundle everything - faster startup
+		entries: []
 	},
 	ssr: {
 		external: ['@prisma/client', '@vladmandic/human', '@tensorflow/tfjs-node'],
