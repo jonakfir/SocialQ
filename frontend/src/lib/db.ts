@@ -3,66 +3,12 @@ import { dev } from '$app/environment';
 // LAZY INIT: Don't create Prisma client on import - only when actually used
 // This prevents database connection attempts from blocking Vite startup
 let _prisma: any = null;
-let _prismaLoadError: Error | null = null;
+let _prismaLoadPromise: Promise<any> | null = null;
 
 // Prevent multiple instances of Prisma Client in development
 const globalForPrisma = globalThis as unknown as {
   prisma: any | undefined;
 };
-
-// Try to import PrismaClient - but don't fail if it's not generated
-let PrismaClientClass: any = null;
-try {
-  // This import will fail if Prisma Client isn't generated, but we catch it
-  const prismaModule = await import('@prisma/client').catch(() => null);
-  if (prismaModule) {
-    PrismaClientClass = prismaModule.PrismaClient;
-  }
-} catch {
-  // Prisma Client not generated - that's OK, we'll use a dummy
-}
-
-function getPrisma(): any {
-  if (typeof window !== 'undefined') {
-    throw new Error('Prisma can only be used server-side');
-  }
-  
-  if (globalForPrisma.prisma) {
-    return globalForPrisma.prisma;
-  }
-  
-  if (!_prisma) {
-    if (PrismaClientClass) {
-      // Prisma Client is available - create instance
-      try {
-        // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
-        if (!process.env.DATABASE_URL) {
-          process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
-        }
-        
-        _prisma = new PrismaClientClass({
-          log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
-        });
-        
-        // Don't connect eagerly - let it connect on first query
-        // This prevents blocking during startup
-        
-        if (dev) {
-          globalForPrisma.prisma = _prisma;
-        }
-      } catch (error: any) {
-        _prismaLoadError = error;
-        console.warn('[db.ts] Prisma client creation failed:', error?.message || error);
-        _prisma = createDummyPrisma();
-      }
-    } else {
-      // Prisma Client not generated - use dummy
-      _prisma = createDummyPrisma();
-    }
-  }
-  
-  return _prisma;
-}
 
 // Create a dummy Prisma client that will throw helpful errors
 function createDummyPrisma(): any {
@@ -100,9 +46,94 @@ function createDummyModel(name: string): any {
   };
 }
 
+// Load Prisma Client lazily (only when first accessed)
+async function loadPrismaClient(): Promise<any> {
+  if (_prismaLoadPromise) {
+    return _prismaLoadPromise;
+  }
+  
+  _prismaLoadPromise = (async () => {
+    try {
+      // Dynamic import for ESM compatibility - only loads when needed
+      const prismaModule = await import('@prisma/client');
+      const { PrismaClient } = prismaModule;
+      
+      // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
+      if (!process.env.DATABASE_URL) {
+        process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
+      }
+      
+      const client = new PrismaClient({
+        log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
+      });
+      
+      // Don't connect eagerly - let it connect on first query
+      // This prevents blocking during startup
+      
+      if (dev) {
+        globalForPrisma.prisma = client;
+      }
+      
+      return client;
+    } catch (error: any) {
+      // If Prisma client doesn't exist or creation failed, return dummy
+      if (error?.message?.includes('Prisma Client') || error?.code === 'MODULE_NOT_FOUND' || error?.code === 'ERR_MODULE_NOT_FOUND') {
+        console.warn('[db.ts] Prisma Client not generated yet. Run: npm run prisma:generate');
+      } else {
+        console.warn('[db.ts] Prisma client creation failed:', error?.message || error);
+      }
+      return createDummyPrisma();
+    }
+  })();
+  
+  return _prismaLoadPromise;
+}
+
+function getPrisma(): any {
+  if (typeof window !== 'undefined') {
+    throw new Error('Prisma can only be used server-side');
+  }
+  
+  if (globalForPrisma.prisma) {
+    return globalForPrisma.prisma;
+  }
+  
+  // Return dummy immediately - real client will load on first use
+  if (!_prisma) {
+    _prisma = createDummyPrisma();
+    
+    // Start loading real Prisma in background (non-blocking)
+    loadPrismaClient().then(client => {
+      if (client && client !== createDummyPrisma()) {
+        _prisma = client;
+        if (dev) {
+          globalForPrisma.prisma = client;
+        }
+      }
+    }).catch(() => {
+      // Keep dummy if load fails
+    });
+  }
+  
+  return _prisma;
+}
+
 // Export as a getter function that creates client lazily
 export const prisma = new Proxy({} as any, {
   get(_target, prop) {
-    return getPrisma()[prop];
+    const client = getPrisma();
+    const value = client[prop];
+    
+    // If it's a function (like findMany, create, etc.), ensure Prisma is loaded
+    if (typeof value === 'function') {
+      return async (...args: any[]) => {
+        // Wait for Prisma to load if it's still loading
+        const loadedClient = await loadPrismaClient();
+        const currentClient = (_prisma && _prisma !== createDummyPrisma()) ? _prisma : loadedClient;
+        return currentClient[prop](...args);
+      };
+    }
+    
+    return value;
   }
 });
