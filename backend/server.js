@@ -348,6 +348,54 @@ app.get('/debug/wa-templates', async (req, res) => {
   res.status(r.ok ? 200 : 500).json(r.json ?? { status: r.status, text: r.text });
 });
 
+// Check WABA subscription status
+app.get('/debug/check-waba-subscription', async (req, res) => {
+  if (!WA_TOKEN) {
+    return res.status(400).json({ error: 'WHATSAPP_TOKEN not set' });
+  }
+
+  let wabaId = req.query.waba_id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+  
+  if (!wabaId && WA_PHONE_ID) {
+    const p = await gget(`/${WA_PHONE_ID}?fields=whatsapp_business_account`);
+    wabaId = p?.json?.whatsapp_business_account?.id;
+  }
+
+  if (!wabaId) {
+    return res.status(400).json({ error: 'WABA ID not found' });
+  }
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
+  console.log(`[Check WABA] Checking subscription for ${wabaId}...`);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    return res.json({ 
+      ok: response.ok, 
+      waba_id: wabaId,
+      subscription_status: data,
+      message: response.ok ? 'Check the "data" array to see subscribed apps' : 'Failed to check subscription'
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Subscribe WABA to app for webhooks (run this once)
 app.post('/debug/subscribe-waba', async (req, res) => {
   if (!WA_TOKEN) {
