@@ -407,11 +407,11 @@ app.get('/debug/check-phone-webhook', async (req, res) => {
   }
 
   try {
-    // Get phone number details
-    const phoneInfo = await gget(`/${WA_PHONE_ID}?fields=display_phone_number,verified_name,whatsapp_business_account`);
+    // Get phone number details (without whatsapp_business_account field to avoid error)
+    const phoneInfo = await gget(`/${WA_PHONE_ID}?fields=display_phone_number,verified_name`);
     
-    // Get WABA ID
-    const wabaId = phoneInfo?.json?.whatsapp_business_account?.id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    // Get WABA ID from env or use the one we know
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '1301560021226248';
     
     if (!wabaId) {
       return res.status(400).json({ error: 'Could not determine WABA ID' });
