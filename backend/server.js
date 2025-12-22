@@ -396,6 +396,43 @@ app.get('/debug/check-waba-subscription', async (req, res) => {
   }
 });
 
+// Check webhook configuration from Meta's side
+app.get('/debug/check-webhook-config', async (req, res) => {
+  if (!WA_TOKEN) {
+    return res.status(400).json({ error: 'WHATSAPP_TOKEN not set' });
+  }
+
+  const appId = '1493031701729261';
+  const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '1301560021226248';
+
+  try {
+    // Get webhook subscriptions for the app
+    const webhookUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${appId}/subscriptions`;
+    const webhookRes = await fetch(webhookUrl, {
+      headers: { 'Authorization': `Bearer ${WA_TOKEN}` }
+    });
+    const webhookData = await webhookRes.json().catch(() => ({}));
+
+    // Get WABA subscribed apps
+    const subUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
+    const subRes = await fetch(subUrl, {
+      headers: { 'Authorization': `Bearer ${WA_TOKEN}` }
+    });
+    const subData = await subRes.json().catch(() => ({}));
+
+    return res.json({
+      ok: true,
+      app_id: appId,
+      waba_id: wabaId,
+      webhook_subscriptions: webhookData,
+      waba_subscribed_apps: subData,
+      message: 'Check webhook_subscriptions for callback_url and subscribed_fields'
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Check phone number association and webhook subscription
 app.get('/debug/check-phone-webhook', async (req, res) => {
   if (!WA_TOKEN) {
