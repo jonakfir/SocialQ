@@ -543,6 +543,71 @@ app.post('/debug/subscribe-waba', async (req, res) => {
   }
 });
 
+// Force re-subscribe WABA (sometimes needed after mode changes)
+app.post('/debug/resubscribe-waba', async (req, res) => {
+  if (!WA_TOKEN) {
+    return res.status(400).json({ error: 'WHATSAPP_TOKEN not set' });
+  }
+
+  const wabaId = req.body.waba_id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '1301560021226248';
+  const appId = '1493031701729261';
+
+  try {
+    // First, unsubscribe
+    console.log(`[Re-subscribe] Unsubscribing ${wabaId} from app ${appId}...`);
+    const unsubUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps?app_id=${appId}`;
+    await fetch(unsubUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    // Wait a moment
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Then re-subscribe
+    console.log(`[Re-subscribe] Re-subscribing ${wabaId} to app...`);
+    const subUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
+    const response = await fetch(subUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (response.ok) {
+      return res.json({ 
+        ok: true, 
+        message: 'WABA re-subscribed successfully. Try sending a message now.',
+        data 
+      });
+    } else {
+      return res.status(response.status).json({ 
+        ok: false, 
+        error: 'Failed to re-subscribe',
+        status: response.status,
+        data 
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({ 
+      ok: false, 
+      error: error.message 
+    });
+  }
+});
+
 // ---------------- Notify endpoint ----------------
 // Accepts form-data (no file required):
 //   to="+15551234567"
