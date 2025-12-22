@@ -348,6 +348,75 @@ app.get('/debug/wa-templates', async (req, res) => {
   res.status(r.ok ? 200 : 500).json(r.json ?? { status: r.status, text: r.text });
 });
 
+// Subscribe WABA to app for webhooks (run this once)
+app.post('/debug/subscribe-waba', async (req, res) => {
+  if (!WA_TOKEN) {
+    return res.status(400).json({ error: 'WHATSAPP_TOKEN not set' });
+  }
+
+  // Get WABA ID from phone number if not provided
+  let wabaId = req.body.waba_id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+  
+  if (!wabaId && WA_PHONE_ID) {
+    console.log('[Subscribe WABA] Discovering WABA ID from phone number...');
+    const p = await gget(`/${WA_PHONE_ID}?fields=whatsapp_business_account`);
+    wabaId = p?.json?.whatsapp_business_account?.id;
+  }
+
+  if (!wabaId) {
+    return res.status(400).json({ 
+      error: 'WABA ID not found. Set WHATSAPP_BUSINESS_ACCOUNT_ID or provide waba_id in request body',
+      hint: 'Your WABA ID is: 1301560021226248 (from Meta dashboard)'
+    });
+  }
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
+  console.log(`[Subscribe WABA] Subscribing ${wabaId} to app...`);
+  console.log(`[Subscribe WABA] URL: ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WA_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (response.ok) {
+      console.log('[Subscribe WABA] ✅ Success! WABA subscribed to app.');
+      console.log('[Subscribe WABA] Response:', JSON.stringify(data, null, 2));
+      return res.json({ 
+        ok: true, 
+        message: 'WABA successfully subscribed to app. Real messages should now trigger webhooks!',
+        data 
+      });
+    } else {
+      console.error('[Subscribe WABA] ❌ Failed:', response.status, data);
+      return res.status(response.status).json({ 
+        ok: false, 
+        error: 'Failed to subscribe WABA',
+        status: response.status,
+        data 
+      });
+    }
+  } catch (error) {
+    console.error('[Subscribe WABA] ❌ Error:', error.message);
+    return res.status(500).json({ 
+      ok: false, 
+      error: error.message 
+    });
+  }
+});
+
 // ---------------- Notify endpoint ----------------
 // Accepts form-data (no file required):
 //   to="+15551234567"
