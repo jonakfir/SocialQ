@@ -5,6 +5,15 @@ import { env as PUBLIC } from '$env/dynamic/public';
 const ORIGIN = (PUBLIC.PUBLIC_API_URL || '').replace(/\/$/, '');
 
 async function forward(request: Request, path: string) {
+  // If PUBLIC_API_URL is not set, return error
+  if (!ORIGIN) {
+    console.error('[API Proxy] PUBLIC_API_URL is not set. Cannot proxy request to backend.');
+    return new Response(
+      JSON.stringify({ error: 'Backend URL not configured. PUBLIC_API_URL environment variable is missing.' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+  
   const url = ORIGIN + (path.startsWith('/') ? path : `/${path}`);
 
   // forward ALL headers (esp. Cookie and Authorization) to Railway

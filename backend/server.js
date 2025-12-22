@@ -80,6 +80,14 @@ const corsOptions = {
   credentials: true
 };
 
+// Mount WhatsApp webhook routes BEFORE CORS (Meta webhooks don't need CORS)
+try {
+  app.use('/webhooks', require('./routes/webhooks-whatsapp'));
+  console.log('[Server] ✅ WhatsApp webhook routes mounted at /webhooks/whatsapp');
+} catch (err) {
+  console.warn('[Server] WhatsApp webhook routes not available:', err.message);
+}
+
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // preflight
 
