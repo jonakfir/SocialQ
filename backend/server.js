@@ -396,6 +396,47 @@ app.get('/debug/check-waba-subscription', async (req, res) => {
   }
 });
 
+// Check phone number association and webhook subscription
+app.get('/debug/check-phone-webhook', async (req, res) => {
+  if (!WA_TOKEN) {
+    return res.status(400).json({ error: 'WHATSAPP_TOKEN not set' });
+  }
+
+  if (!WA_PHONE_ID) {
+    return res.status(400).json({ error: 'WHATSAPP_PHONE_NUMBER_ID not set' });
+  }
+
+  try {
+    // Get phone number details
+    const phoneInfo = await gget(`/${WA_PHONE_ID}?fields=display_phone_number,verified_name,whatsapp_business_account`);
+    
+    // Get WABA ID
+    const wabaId = phoneInfo?.json?.whatsapp_business_account?.id || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    
+    if (!wabaId) {
+      return res.status(400).json({ error: 'Could not determine WABA ID' });
+    }
+
+    // Check WABA subscription
+    const subUrl = `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`;
+    const subRes = await fetch(subUrl, {
+      headers: { 'Authorization': `Bearer ${WA_TOKEN}` }
+    });
+    const subData = await subRes.json().catch(() => ({}));
+
+    return res.json({
+      ok: true,
+      phone_number_id: WA_PHONE_ID,
+      phone_info: phoneInfo?.json,
+      waba_id: wabaId,
+      waba_subscribed_apps: subData,
+      message: 'Check if your app ID (1493031701729261) is in the subscribed_apps data array'
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Subscribe WABA to app for webhooks (run this once)
 app.post('/debug/subscribe-waba', async (req, res) => {
   if (!WA_TOKEN) {
