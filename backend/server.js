@@ -81,6 +81,14 @@ const corsOptions = {
 };
 
 // Mount WhatsApp webhook routes BEFORE CORS (Meta webhooks don't need CORS)
+// Add logging middleware to catch ALL requests to webhooks
+app.use('/webhooks', (req, res, next) => {
+  console.log(`\n[Webhook Middleware] ${req.method} ${req.path} at ${new Date().toISOString()}`);
+  console.log('[Webhook Middleware] Query:', JSON.stringify(req.query));
+  console.log('[Webhook Middleware] Headers:', JSON.stringify(req.headers, null, 2));
+  next();
+});
+
 try {
   app.use('/webhooks', require('./routes/webhooks-whatsapp'));
   console.log('[Server] ✅ WhatsApp webhook routes mounted at /webhooks/whatsapp');
