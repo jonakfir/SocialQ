@@ -15,7 +15,9 @@ router.get('/whatsapp', (req, res) => {
 
 // POST: events
 router.post('/whatsapp', express.json(), (req, res) => {
-  console.log('[WA Webhook] Received event:', JSON.stringify(req.body, null, 2));
+  console.log('[WA Webhook] ========== POST REQUEST RECEIVED ==========');
+  console.log('[WA Webhook] Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('[WA Webhook] Body:', JSON.stringify(req.body, null, 2));
   
   try {
     const body = req.body;
