@@ -99,6 +99,34 @@ try {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // preflight
 
+// ---------------- Database Schema Initialization ----------------
+app.post('/debug/init-schema', async (_req, res) => {
+  try {
+    const { initializeSchema } = require('./db/db');
+    console.log('[Init Schema] Starting manual schema initialization...');
+    const result = await initializeSchema();
+    
+    if (result) {
+      return res.json({ 
+        ok: true, 
+        message: 'Database schema initialized successfully. Tables should now exist.' 
+      });
+    } else {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Schema initialization failed. Check server logs for details.' 
+      });
+    }
+  } catch (error) {
+    console.error('[Init Schema] Error:', error);
+    return res.status(500).json({ 
+      ok: false, 
+      error: error.message,
+      details: 'Check Railway logs for more information'
+    });
+  }
+});
+
 // ---------------- Health ----------------
 app.get('/health', async (_req, res) => {
   let dbStatus = 'unknown';
