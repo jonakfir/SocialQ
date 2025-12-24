@@ -12,41 +12,38 @@ let pool = null;
 let usePostgres = false;
 
 if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
-  // Use PostgreSQL - create pool lazily to not block module loading
+  // Use PostgreSQL - create pool immediately so schema init can use it
   usePostgres = true;
   
-  // Defer pool creation to next tick to not block module loading
+  // Create pool immediately (not deferred) so schema initialization can use it
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Add connection retry settings
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    allowExitOnIdle: true
+  });
+  
+  console.log('[DB] Using PostgreSQL');
+  console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
+  
+  // Test connection asynchronously (non-blocking)
   setImmediate(() => {
-    pool = new Pool({
-      connectionString: DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      // Add connection retry settings - but don't block on connection
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000, // Reduced from 10000
-      // Don't wait for connection on startup
-      allowExitOnIdle: true
+    pool.query('SELECT NOW()', (err) => {
+      if (err) {
+        console.error('[DB] PostgreSQL connection error:', err.message);
+        console.error('[DB] Connection error details:', err);
+      } else {
+        console.log('[DB] PostgreSQL connected successfully');
+      }
     });
-    
-    console.log('[DB] Using PostgreSQL');
-    console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
-    
-    // Test connection asynchronously (non-blocking)
-    setTimeout(() => {
-      pool.query('SELECT NOW()', (err) => {
-        if (err) {
-          console.error('[DB] PostgreSQL connection error:', err.message);
-          console.error('[DB] Connection error details:', err);
-        } else {
-          console.log('[DB] PostgreSQL connected successfully');
-        }
-      });
-    }, 100);
-    
-    // Handle pool errors
-    pool.on('error', (err) => {
-      console.error('[DB] Unexpected PostgreSQL pool error:', err);
-    });
+  });
+  
+  // Handle pool errors
+  pool.on('error', (err) => {
+    console.error('[DB] Unexpected PostgreSQL pool error:', err);
   });
 } else {
   // Fall back to SQLite for local development

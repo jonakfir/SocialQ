@@ -102,14 +102,66 @@ app.options('*', cors(corsOptions)); // preflight
 // ---------------- Database Schema Initialization ----------------
 app.post('/debug/init-schema', async (_req, res) => {
   try {
-    const { initializeSchema } = require('./db/db');
+    const dbModule = require('./db/db');
+    const { initializeSchema, pool } = dbModule;
+    
     console.log('[Init Schema] Starting manual schema initialization...');
-    const result = await initializeSchema();
+    
+    // Wait for pool to be ready if using PostgreSQL
+    if (pool) {
+      let poolReady = false;
+      for (let i = 0; i < 10; i++) {
+        try {
+          await Promise.race([
+            pool.query('SELECT NOW()'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+          ]);
+          poolReady = true;
+          console.log('[Init Schema] Pool is ready');
+          break;
+        } catch (err) {
+          console.log(`[Init Schema] Waiting for pool... (attempt ${i + 1}/10)`);
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      
+      if (!poolReady) {
+        return res.status(500).json({ 
+          ok: false, 
+          error: 'Database pool not ready. Please try again in a moment.' 
+        });
+      }
+    }
+    
+    const result = await initializeSchema(10); // More retries for manual init
     
     if (result) {
+      // Verify tables were created
+      if (pool) {
+        const check = await pool.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'users'
+          );
+        `);
+        
+        if (check.rows[0].exists) {
+          return res.json({ 
+            ok: true, 
+            message: 'Database schema initialized successfully. Users table exists.' 
+          });
+        } else {
+          return res.status(500).json({ 
+            ok: false, 
+            error: 'Schema initialization reported success but users table not found.' 
+          });
+        }
+      }
+      
       return res.json({ 
         ok: true, 
-        message: 'Database schema initialized successfully. Tables should now exist.' 
+        message: 'Database schema initialized successfully.' 
       });
     } else {
       return res.status(500).json({ 
