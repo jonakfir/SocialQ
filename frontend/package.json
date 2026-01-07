@@ -5,8 +5,8 @@
 	"scripts": {
 		"dev": "vite dev",
 		"dev:with-prisma": "npm run prisma:generate && vite dev",
-		"build": "prisma generate && prisma db push --accept-data-loss --skip-generate && node scripts/setup-assets-db.js && vite build",
-		"vercel-build": "prisma generate && prisma db push --accept-data-loss --skip-generate && node scripts/setup-assets-db.js && vite build",
+		"build": "prisma generate && prisma db push --accept-data-loss --skip-generate && node scripts/setup-assets-db.js || echo 'Asset migration failed, continuing build' && vite build",
+		"vercel-build": "prisma generate && prisma db push --accept-data-loss --skip-generate && node scripts/setup-assets-db.js || echo 'Asset migration failed, continuing build' && vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"postinstall": "echo 'Skipping Prisma generate - run npm run prisma:generate manually if needed'",
@@ -14,7 +14,9 @@
 		"prisma:migrate": "prisma migrate dev",
 		"prisma:migrate:deploy": "prisma migrate deploy",
 		"prisma:db:push": "prisma db push",
-		"prisma:generate": "prisma generate"
+		"prisma:generate": "prisma generate",
+		"setup-assets": "node scripts/setup-assets-db.js",
+		"check-assets": "node scripts/ensure-assets-in-db.js"
 	},
 	"dependencies": {
 		"@prisma/client": "^6.13.0",

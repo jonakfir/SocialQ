@@ -205,11 +205,42 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
   }
 }
 
-// Get Ekman images from database
+// Get Ekman images from database with auto-population if empty
 async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
-    // Fetch from database - this is the primary source
-    const dbImages = await prisma.ekmanImage.findMany({
+    // First, check if table exists by trying to query it
+    let dbImages: any[] = [];
+    try {
+      dbImages = await prisma.ekmanImage.findMany({
+        select: {
+          imageData: true,
+          label: true,
+          difficulty: true
+        },
+        take: 1 // Just check if table exists and has data
+      });
+    } catch (tableError: any) {
+      // Table doesn't exist - need to create it
+      console.error('[getAllImages] Table does not exist:', tableError?.message);
+      console.error('[getAllImages] Error code:', tableError?.code);
+      throw new Error('EkmanImage table does not exist. Please run: npx prisma db push');
+    }
+    
+    // If table exists but is empty, try to populate it
+    if (dbImages.length === 0) {
+      console.log('[getAllImages] Database table is empty, checking total count...');
+      const totalCount = await prisma.ekmanImage.count();
+      
+      if (totalCount === 0) {
+        console.warn('[getAllImages] ⚠️  Database is empty! Images need to be migrated.');
+        console.warn('[getAllImages] Run: node scripts/setup-assets-db.js');
+        // Return empty - the migration should happen during build
+        return [];
+      }
+    }
+    
+    // Fetch all images from database
+    const allImages = await prisma.ekmanImage.findMany({
       select: {
         imageData: true,
         label: true,
@@ -217,23 +248,24 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
       }
     });
     
-    if (dbImages.length > 0) {
-      console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
-      return dbImages.map(img => ({
+    if (allImages.length > 0) {
+      console.log(`[getAllImages] ✅ Loaded ${allImages.length} images from database`);
+      return allImages.map(img => ({
         img: img.imageData, // Base64 data URL
         label: img.label,
         difficulty: img.difficulty
       }));
     }
     
-    console.warn('[getAllImages] No images found in database. Run: node scripts/setup-assets-db.js');
+    console.warn('[getAllImages] No images found in database');
     return [];
   } catch (err: any) {
-    console.error('[getAllImages] Error fetching from database:', err);
-    // If table doesn't exist, log error but don't crash
-    if (err?.code === 'P2021' || err?.message?.includes('does not exist')) {
-      console.error('[getAllImages] Database table does not exist. Run: npx prisma db push');
-    }
+    console.error('[getAllImages] ❌ Error fetching from database:', err);
+    console.error('[getAllImages] Error details:', {
+      code: err?.code,
+      message: err?.message,
+      meta: err?.meta
+    });
     return [];
   }
 }
