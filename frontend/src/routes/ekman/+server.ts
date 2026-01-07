@@ -205,62 +205,35 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
   }
 }
 
-// Load images using import.meta.glob at build time (works in Vercel)
-const imageModules = import.meta.glob('$lib/assets/ekman/**/*.{png,jpg,jpeg,webp}', { 
-  eager: true,
-  query: '?url'
-}) as Record<string, string>;
-
-// Get Ekman images from database (preferred) or static imports (fallback)
+// Get Ekman images from database
 async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
-    // Try to fetch from database first
-    try {
-      const dbImages = await prisma.ekmanImage.findMany({
-        select: {
-          imageData: true,
-          label: true,
-          difficulty: true
-        }
-      });
-      
-      if (dbImages.length > 0) {
-        console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
-        return dbImages.map(img => ({
-          img: img.imageData, // Already base64 data URL
-          label: img.label,
-          difficulty: img.difficulty
-        }));
+    // Fetch from database - this is the primary source
+    const dbImages = await prisma.ekmanImage.findMany({
+      select: {
+        imageData: true,
+        label: true,
+        difficulty: true
       }
-    } catch (dbError: any) {
-      // Table might not exist yet - that's ok, fall back to static imports
-      console.log('[getAllImages] Database query failed (table may not exist), using static imports fallback:', dbError?.message);
+    });
+    
+    if (dbImages.length > 0) {
+      console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
+      return dbImages.map(img => ({
+        img: img.imageData, // Base64 data URL
+        label: img.label,
+        difficulty: img.difficulty
+      }));
     }
     
-    // Fallback to static imports if database is empty or table doesn't exist
-    console.log('[getAllImages] Using static imports fallback...');
-    const images: Array<{ img: string; label: string; difficulty: string }> = [];
-    
-    for (const [path, url] of Object.entries(imageModules)) {
-      // path like: $lib/assets/ekman/Happy_3/001.png
-      const parts = path.split('/');
-      const folder = parts[parts.length - 2]; // "Happy_3"
-      if (folder && !folder.startsWith('Transition')) {
-        const [label, difficulty] = folder.split('_');
-        if (label && EMOTIONS.includes(label)) {
-          images.push({
-            img: url as string,
-            label: label,
-            difficulty: difficulty || '1'
-          });
-        }
-      }
-    }
-    
-    console.log(`[getAllImages] Found ${images.length} images from static imports`);
-    return images;
+    console.warn('[getAllImages] No images found in database. Run: node scripts/setup-assets-db.js');
+    return [];
   } catch (err: any) {
-    console.error('[getAllImages] Error:', err);
+    console.error('[getAllImages] Error fetching from database:', err);
+    // If table doesn't exist, log error but don't crash
+    if (err?.code === 'P2021' || err?.message?.includes('does not exist')) {
+      console.error('[getAllImages] Database table does not exist. Run: npx prisma db push');
+    }
     return [];
   }
 }
