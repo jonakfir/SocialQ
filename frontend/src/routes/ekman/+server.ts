@@ -1,6 +1,6 @@
 // src/routes/ekman/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { readdir, stat } from 'fs/promises';
+import { readdir } from 'fs/promises';
 import { join, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { prisma } from '$lib/db';
@@ -46,8 +46,9 @@ async function getUserCollages(userId: string | null): Promise<Array<{ img: stri
           
           // Only include if it's a recognized emotion
           if (EMOTIONS.includes(ekmanEmotion)) {
+            // imageUrl is already a base64 data URL for user collages
             userImages.push({
-              img: collage.imageUrl, // This is already a URL path like /uploads/collages/...
+              img: collage.imageUrl, // Base64 data URL
               label: ekmanEmotion,
               difficulty: 'user' // Mark user photos with difficulty 'user'
             });
@@ -207,64 +208,77 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
   }
 }
 
-// Use Node fs API instead of import.meta.glob to avoid Vite scanning files at startup
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = join(__filename, '..');
-// From routes/ekman/__dirname -> routes -> src -> src/lib/assets/ekman
-const assetsBase = join(__dirname, '../../lib/assets/ekman');
-
-async function getAllImages(): Promise<Array<{ path: string; url: string; label: string; difficulty: string }>> {
-  const images: Array<{ path: string; url: string; label: string; difficulty: string }> = [];
-  const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
-
-  async function scanDir(dir: string, relativePath: string = '') {
-    const entries = await readdir(dir, { withFileTypes: true });
+// Get Ekman images from database (preferred) or filesystem (fallback)
+async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
+  try {
+    // Try to fetch from database first
+    const dbImages = await prisma.ekmanImage.findMany({
+      select: {
+        imageData: true,
+        label: true,
+        difficulty: true
+      }
+    });
     
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+    if (dbImages.length > 0) {
+      console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
+      return dbImages.map(img => ({
+        img: img.imageData, // Already base64 data URL
+        label: img.label,
+        difficulty: img.difficulty
+      }));
+    }
+    
+    // Fallback to filesystem if database is empty
+    console.log('[getAllImages] Database empty, falling back to filesystem...');
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = join(__filename, '..');
+    const assetsBase = join(__dirname, '../../lib/assets/ekman');
+    const images: Array<{ img: string; label: string; difficulty: string }> = [];
+    const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
+    async function scanDir(dir: string, relativePath: string = '') {
+      const entries = await readdir(dir, { withFileTypes: true });
       
-      if (entry.isDirectory()) {
-        await scanDir(fullPath, relPath);
-      } else if (entry.isFile()) {
-        const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
-        if (extensions.has(ext)) {
-          // path like: Happy_3/PE3-21.png
-          const parts = relPath.split(sep);
-          if (parts.length >= 2) {
-            const folder = parts[parts.length - 2]; // "Happy_3"
-            const [label, difficulty] = folder.split('_');
-            // Convert to URL path (forward slashes)
-            // Vite serves assets from src/lib/assets with their original paths in dev mode
-            const urlPath = relPath.replace(/\\/g, '/');
-            // Use the path that Vite will serve - same as what import.meta.glob would produce
-            images.push({
-              path: relPath,
-              url: `/src/lib/assets/ekman/${urlPath}`,
-              label: label || '',
-              difficulty: difficulty || ''
-            });
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+        
+        if (entry.isDirectory()) {
+          if (!entry.name.startsWith('Transition')) {
+            await scanDir(fullPath, relPath);
+          }
+        } else if (entry.isFile()) {
+          const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
+          if (extensions.has(ext)) {
+            const parts = relPath.split(sep);
+            if (parts.length >= 2) {
+              const folder = parts[parts.length - 2];
+              const [label, difficulty] = folder.split('_');
+              const urlPath = relPath.replace(/\\/g, '/');
+              images.push({
+                img: `/src/lib/assets/ekman/${urlPath}`,
+                label: label || '',
+                difficulty: difficulty || '1'
+              });
+            }
           }
         }
       }
     }
-  }
 
-  try {
-    console.log('[getAllImages] Scanning directory:', assetsBase);
-    await scanDir(assetsBase);
-    console.log(`[getAllImages] Found ${images.length} images`);
+    try {
+      await scanDir(assetsBase);
+      console.log(`[getAllImages] Found ${images.length} images from filesystem`);
+    } catch (err: any) {
+      console.error('[getAllImages] Error scanning filesystem:', err);
+    }
+
+    return images;
   } catch (err: any) {
-    console.error('[getAllImages] Error scanning ekman images:', err);
-    console.error('[getAllImages] Error details:', {
-      message: err?.message,
-      code: err?.code,
-      path: err?.path || assetsBase
-    });
-    // Don't throw - return empty array so the endpoint can still work with user photos
+    console.error('[getAllImages] Error:', err);
+    return [];
   }
-
-  return images;
 }
 
 function shuffle<T>(a: T[]) {
@@ -276,7 +290,7 @@ function shuffle<T>(a: T[]) {
 }
 
 // Cache the image list to avoid re-scanning on every request
-let imageCache: Array<{ path: string; url: string; label: string; difficulty: string }> | null = null;
+let imageCache: Array<{ img: string; label: string; difficulty: string }> | null = null;
 
 export const GET: RequestHandler = async (event) => {
   try {
@@ -286,15 +300,15 @@ export const GET: RequestHandler = async (event) => {
 
     // Load images once and cache
     if (!imageCache) {
-      console.log('[ekman] Loading images from filesystem...');
+      console.log('[ekman] Loading images from database/filesystem...');
       imageCache = await getAllImages();
-      console.log(`[ekman] Loaded ${imageCache.length} images from filesystem`);
+      console.log(`[ekman] Loaded ${imageCache.length} images`);
     }
 
-    // Build a bank of { img, label, difficulty } from file system
+    // Build a bank of { img, label, difficulty } from database or filesystem
     let pool = imageCache
       .filter((row) => (diff === 'all' ? true : row.difficulty === diff))
-      .map((row) => ({ img: row.url, label: row.label, difficulty: row.difficulty }));
+      .map((row) => ({ img: row.img, label: row.label, difficulty: row.difficulty }));
 
     console.log(`[ekman] Base pool size for difficulty ${diff}: ${pool.length}`);
 

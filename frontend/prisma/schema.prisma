@@ -132,3 +132,29 @@ model OrganizationMembership {
   @@index([status])
   @@index([role])
 }
+
+// Ekman images for facial recognition quiz
+model EkmanImage {
+  id         String   @id @default(cuid())
+  imageData  String   // Base64 encoded image data (data URL)
+  label      String   // Emotion label: 'Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'
+  difficulty String   // Difficulty level: '1', '2', '3', '4', or 'all'
+  createdAt  DateTime @default(now())
+
+  @@index([label])
+  @@index([difficulty])
+  @@index([label, difficulty])
+}
+
+// Transition videos for transition recognition quiz
+model TransitionVideo {
+  id        String   @id @default(cuid())
+  videoData String   // Base64 encoded video data (data URL)
+  from      String   // Starting emotion
+  to        String   // Ending emotion
+  createdAt DateTime @default(now())
+
+  @@index([from])
+  @@index([to])
+  @@index([from, to])
+}
