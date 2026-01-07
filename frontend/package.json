@@ -16,6 +16,7 @@
 		"prisma:db:push": "prisma db push",
 		"prisma:generate": "prisma generate",
 		"setup-assets": "node scripts/setup-assets-db.js",
+		"populate-db": "node scripts/populate-db-direct.js",
 		"check-assets": "node scripts/ensure-assets-in-db.js"
 	},
 	"dependencies": {
