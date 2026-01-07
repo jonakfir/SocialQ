@@ -82,15 +82,15 @@ async function getAllVideos(): Promise<Array<{ href: string; from: Emotion; to: 
     }
 
     try {
-      const stats = await import('fs/promises').then(m => m.stat(assetsBase)).catch(() => null);
-      if (stats) {
-        await scanDir(assetsBase);
-        console.log(`[transitions] Found ${videos.length} videos from filesystem`);
-      } else {
-        console.warn('[transitions] Assets directory not found, returning empty array');
-      }
+      await scanDir(assetsBase);
+      console.log(`[transitions] Found ${videos.length} videos from filesystem`);
     } catch (err) {
       console.error('[transitions] Error scanning filesystem:', err);
+      console.error('[transitions] Error details:', {
+        message: err?.message,
+        code: err?.code,
+        path: assetsBase
+      });
     }
 
     return videos;
