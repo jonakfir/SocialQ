@@ -251,6 +251,8 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
   const imageModules = getStaticImages();
   const images: Array<{ img: string; label: string; difficulty: string }> = [];
   
+  console.log(`[getAllImages] Static modules loaded: ${Object.keys(imageModules).length} entries`);
+  
   for (const [path, url] of Object.entries(imageModules)) {
     // path like: $lib/assets/ekman/Happy_3/001.png
     const parts = path.split('/');
@@ -258,8 +260,10 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
     if (folder && !folder.startsWith('Transition')) {
       const [label, difficulty] = folder.split('_');
       if (label && EMOTIONS.includes(label)) {
+        // Ensure URL is absolute for Vercel
+        const imageUrl = typeof url === 'string' ? url : (url as any).default || url;
         images.push({
-          img: url as string,
+          img: imageUrl,
           label: label,
           difficulty: difficulty || '1'
         });
@@ -268,6 +272,9 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
   }
   
   console.log(`[getAllImages] Found ${images.length} images from static imports`);
+  if (images.length === 0) {
+    console.error('[getAllImages] ⚠️  No images found in static imports! Check asset paths.');
+  }
   return images;
 }
 
