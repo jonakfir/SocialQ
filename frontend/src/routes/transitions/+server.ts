@@ -1,14 +1,17 @@
 // src/routes/transitions/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { readdir } from 'fs/promises';
-import { join, sep } from 'path';
-import { fileURLToPath } from 'url';
 import { prisma } from '$lib/db';
 
 const EMOTIONS = ['Anger','Disgust','Fear','Happy','Neutral','Sad','Surprise'] as const;
 type Emotion = typeof EMOTIONS[number];
 
-// Get transition videos from database (preferred) or filesystem (fallback)
+// Load videos using import.meta.glob at build time (works in Vercel)
+const videoModules = import.meta.glob('$lib/assets/ekman/Transition*/*.{mp4,webm}', { 
+  eager: true,
+  query: '?url'
+}) as Record<string, string>;
+
+// Get transition videos from database (preferred) or static imports (fallback)
 async function getAllVideos(): Promise<Array<{ href: string; from: Emotion; to: Emotion }>> {
   try {
     // Try to fetch from database first
@@ -30,69 +33,38 @@ async function getAllVideos(): Promise<Array<{ href: string; from: Emotion; to: 
         }));
       }
     } catch (dbError: any) {
-      // Table might not exist yet - that's ok, fall back to filesystem
-      console.log('[transitions] Database query failed (table may not exist), using filesystem fallback:', dbError?.message);
+      // Table might not exist yet - that's ok, fall back to static imports
+      console.log('[transitions] Database query failed (table may not exist), using static imports fallback:', dbError?.message);
     }
     
-    // Fallback to filesystem if database is empty or table doesn't exist
-    console.log('[transitions] Using filesystem fallback...');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = join(__filename, '..');
-    const assetsBase = join(__dirname, '../../lib/assets/ekman');
+    // Fallback to static imports if database is empty or table doesn't exist
+    console.log('[transitions] Using static imports fallback...');
     const videos: Array<{ href: string; from: Emotion; to: Emotion }> = [];
-    const extensions = new Set(['.mp4', '.webm']);
-
-    async function scanDir(dir: string, relativePath: string = '') {
-      const entries = await readdir(dir, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name);
-        const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+    
+    for (const [path, url] of Object.entries(videoModules)) {
+      // path like: $lib/assets/ekman/TransitionAngryHappy/AngryHappy1.mp4
+      const parts = path.split('/');
+      const folder = parts[parts.length - 2]; // "TransitionAngryHappy"
+      if (folder && folder.startsWith('Transition')) {
+        const base = folder.replace(/^Transition/i, ''); // "AngryHappy"
+        const emotionParts = base.match(/[A-Z][a-z]+/g) ?? [];
         
-        if (entry.isDirectory()) {
-          if (entry.name.startsWith('Transition')) {
-            await scanDir(fullPath, relPath);
-          }
-        } else if (entry.isFile()) {
-          const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
-          if (extensions.has(ext)) {
-            const parts = relPath.split(sep);
-            if (parts.length >= 2) {
-              const folder = parts[parts.length - 2];
-              const base = folder.replace(/^Transition/i, '');
-              const emotionParts = base.match(/[A-Z][a-z]+/g) ?? [];
-              
-              if (emotionParts.length >= 2) {
-                const from = emotionParts[0] as Emotion;
-                const to = emotionParts[1] as Emotion;
-                
-                if (EMOTIONS.includes(from) && EMOTIONS.includes(to)) {
-                  const urlPath = relPath.replace(/\\/g, '/');
-                  videos.push({
-                    href: `/src/lib/assets/ekman/${urlPath}`,
-                    from,
-                    to
-                  });
-                }
-              }
-            }
+        if (emotionParts.length >= 2) {
+          const from = emotionParts[0] as Emotion;
+          const to = emotionParts[1] as Emotion;
+          
+          if (EMOTIONS.includes(from) && EMOTIONS.includes(to)) {
+            videos.push({
+              href: url as string,
+              from,
+              to
+            });
           }
         }
       }
     }
-
-    try {
-      await scanDir(assetsBase);
-      console.log(`[transitions] Found ${videos.length} videos from filesystem`);
-    } catch (err) {
-      console.error('[transitions] Error scanning filesystem:', err);
-      console.error('[transitions] Error details:', {
-        message: err?.message,
-        code: err?.code,
-        path: assetsBase
-      });
-    }
-
+    
+    console.log(`[transitions] Found ${videos.length} videos from static imports`);
     return videos;
   } catch (err) {
     console.error('[transitions] Error:', err);

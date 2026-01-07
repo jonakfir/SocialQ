@@ -1,8 +1,5 @@
 // src/routes/ekman/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { readdir } from 'fs/promises';
-import { join, sep } from 'path';
-import { fileURLToPath } from 'url';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
 import { PUBLIC_API_URL } from '$env/static/public';
@@ -208,7 +205,13 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
   }
 }
 
-// Get Ekman images from database (preferred) or filesystem (fallback)
+// Load images using import.meta.glob at build time (works in Vercel)
+const imageModules = import.meta.glob('$lib/assets/ekman/**/*.{png,jpg,jpeg,webp}', { 
+  eager: true,
+  query: '?url'
+}) as Record<string, string>;
+
+// Get Ekman images from database (preferred) or static imports (fallback)
 async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
     // Try to fetch from database first
@@ -230,61 +233,31 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
         }));
       }
     } catch (dbError: any) {
-      // Table might not exist yet - that's ok, fall back to filesystem
-      console.log('[getAllImages] Database query failed (table may not exist), using filesystem fallback:', dbError?.message);
+      // Table might not exist yet - that's ok, fall back to static imports
+      console.log('[getAllImages] Database query failed (table may not exist), using static imports fallback:', dbError?.message);
     }
     
-    // Fallback to filesystem if database is empty or table doesn't exist
-    console.log('[getAllImages] Using filesystem fallback...');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = join(__filename, '..');
-    const assetsBase = join(__dirname, '../../lib/assets/ekman');
+    // Fallback to static imports if database is empty or table doesn't exist
+    console.log('[getAllImages] Using static imports fallback...');
     const images: Array<{ img: string; label: string; difficulty: string }> = [];
-    const extensions = new Set(['.png', '.jpg', '.jpeg', '.webp']);
-
-    async function scanDir(dir: string, relativePath: string = '') {
-      const entries = await readdir(dir, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name);
-        const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-        
-        if (entry.isDirectory()) {
-          if (!entry.name.startsWith('Transition')) {
-            await scanDir(fullPath, relPath);
-          }
-        } else if (entry.isFile()) {
-          const ext = entry.name.substring(entry.name.lastIndexOf('.')).toLowerCase();
-          if (extensions.has(ext)) {
-            const parts = relPath.split(sep);
-            if (parts.length >= 2) {
-              const folder = parts[parts.length - 2];
-              const [label, difficulty] = folder.split('_');
-              const urlPath = relPath.replace(/\\/g, '/');
-              images.push({
-                img: `/src/lib/assets/ekman/${urlPath}`,
-                label: label || '',
-                difficulty: difficulty || '1'
-              });
-            }
-          }
+    
+    for (const [path, url] of Object.entries(imageModules)) {
+      // path like: $lib/assets/ekman/Happy_3/001.png
+      const parts = path.split('/');
+      const folder = parts[parts.length - 2]; // "Happy_3"
+      if (folder && !folder.startsWith('Transition')) {
+        const [label, difficulty] = folder.split('_');
+        if (label && EMOTIONS.includes(label)) {
+          images.push({
+            img: url as string,
+            label: label,
+            difficulty: difficulty || '1'
+          });
         }
       }
     }
-
-    try {
-      await scanDir(assetsBase);
-      console.log(`[getAllImages] Found ${images.length} images from filesystem`);
-    } catch (err: any) {
-      console.error('[getAllImages] Error scanning filesystem:', err);
-      console.error('[getAllImages] Error details:', {
-        message: err?.message,
-        code: err?.code,
-        path: assetsBase
-      });
-      // Don't throw - return empty array so endpoint can still work with user photos
-    }
-
+    
+    console.log(`[getAllImages] Found ${images.length} images from static imports`);
     return images;
   } catch (err: any) {
     console.error('[getAllImages] Error:', err);
