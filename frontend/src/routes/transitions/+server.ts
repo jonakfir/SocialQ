@@ -12,25 +12,30 @@ type Emotion = typeof EMOTIONS[number];
 async function getAllVideos(): Promise<Array<{ href: string; from: Emotion; to: Emotion }>> {
   try {
     // Try to fetch from database first
-    const dbVideos = await prisma.transitionVideo.findMany({
-      select: {
-        videoData: true,
-        from: true,
-        to: true
+    try {
+      const dbVideos = await prisma.transitionVideo.findMany({
+        select: {
+          videoData: true,
+          from: true,
+          to: true
+        }
+      });
+      
+      if (dbVideos.length > 0) {
+        console.log(`[transitions] Loaded ${dbVideos.length} videos from database`);
+        return dbVideos.map(v => ({
+          href: v.videoData, // Already base64 data URL
+          from: v.from as Emotion,
+          to: v.to as Emotion
+        }));
       }
-    });
-    
-    if (dbVideos.length > 0) {
-      console.log(`[transitions] Loaded ${dbVideos.length} videos from database`);
-      return dbVideos.map(v => ({
-        href: v.videoData, // Already base64 data URL
-        from: v.from as Emotion,
-        to: v.to as Emotion
-      }));
+    } catch (dbError: any) {
+      // Table might not exist yet - that's ok, fall back to filesystem
+      console.log('[transitions] Database query failed (table may not exist), using filesystem fallback:', dbError?.message);
     }
     
-    // Fallback to filesystem if database is empty
-    console.log('[transitions] Database empty, falling back to filesystem...');
+    // Fallback to filesystem if database is empty or table doesn't exist
+    console.log('[transitions] Using filesystem fallback...');
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = join(__filename, '..');
     const assetsBase = join(__dirname, '../../lib/assets/ekman');
@@ -77,8 +82,13 @@ async function getAllVideos(): Promise<Array<{ href: string; from: Emotion; to: 
     }
 
     try {
-      await scanDir(assetsBase);
-      console.log(`[transitions] Found ${videos.length} videos from filesystem`);
+      const stats = await import('fs/promises').then(m => m.stat(assetsBase)).catch(() => null);
+      if (stats) {
+        await scanDir(assetsBase);
+        console.log(`[transitions] Found ${videos.length} videos from filesystem`);
+      } else {
+        console.warn('[transitions] Assets directory not found, returning empty array');
+      }
     } catch (err) {
       console.error('[transitions] Error scanning filesystem:', err);
     }

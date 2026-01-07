@@ -212,25 +212,30 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
     // Try to fetch from database first
-    const dbImages = await prisma.ekmanImage.findMany({
-      select: {
-        imageData: true,
-        label: true,
-        difficulty: true
+    try {
+      const dbImages = await prisma.ekmanImage.findMany({
+        select: {
+          imageData: true,
+          label: true,
+          difficulty: true
+        }
+      });
+      
+      if (dbImages.length > 0) {
+        console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
+        return dbImages.map(img => ({
+          img: img.imageData, // Already base64 data URL
+          label: img.label,
+          difficulty: img.difficulty
+        }));
       }
-    });
-    
-    if (dbImages.length > 0) {
-      console.log(`[getAllImages] Loaded ${dbImages.length} images from database`);
-      return dbImages.map(img => ({
-        img: img.imageData, // Already base64 data URL
-        label: img.label,
-        difficulty: img.difficulty
-      }));
+    } catch (dbError: any) {
+      // Table might not exist yet - that's ok, fall back to filesystem
+      console.log('[getAllImages] Database query failed (table may not exist), using filesystem fallback:', dbError?.message);
     }
     
-    // Fallback to filesystem if database is empty
-    console.log('[getAllImages] Database empty, falling back to filesystem...');
+    // Fallback to filesystem if database is empty or table doesn't exist
+    console.log('[getAllImages] Using filesystem fallback...');
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = join(__filename, '..');
     const assetsBase = join(__dirname, '../../lib/assets/ekman');
