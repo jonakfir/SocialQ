@@ -277,6 +277,12 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
       console.log(`[getAllImages] Found ${images.length} images from filesystem`);
     } catch (err: any) {
       console.error('[getAllImages] Error scanning filesystem:', err);
+      console.error('[getAllImages] Error details:', {
+        message: err?.message,
+        code: err?.code,
+        path: assetsBase
+      });
+      // Don't throw - return empty array so endpoint can still work with user photos
     }
 
     return images;
