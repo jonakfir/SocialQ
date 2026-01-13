@@ -99,6 +99,21 @@ try {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // preflight
 
+// ---------------- Rate Limiting ----------------
+try {
+  const { apiLimiter, authLimiter, passwordResetLimiter } = require('./middleware/rateLimiter');
+  // Apply general API rate limiting (skip webhooks - they're handled separately)
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/webhooks')) {
+      return next(); // Skip rate limiting for webhooks
+    }
+    return apiLimiter(req, res, next);
+  });
+  console.log('[Server] ✅ Rate limiting middleware enabled');
+} catch (err) {
+  console.warn('[Server] Rate limiting not available (install express-rate-limit):', err.message);
+}
+
 // ---------------- Database Schema Initialization ----------------
 app.post('/debug/init-schema', async (_req, res) => {
   try {

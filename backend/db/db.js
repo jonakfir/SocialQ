@@ -16,14 +16,18 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   usePostgres = true;
   
   // Create pool immediately (not deferred) so schema initialization can use it
+  // Increased max connections for 1000 users: default 50, configurable via DB_POOL_MAX
+  const maxConnections = parseInt(process.env.DB_POOL_MAX || '50', 10);
   pool = new Pool({
     connectionString: DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Add connection retry settings
-    max: 20,
+    // Connection pool settings optimized for 1000 users
+    max: maxConnections,
+    min: 5, // Keep minimum connections alive for faster response
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    allowExitOnIdle: true
+    allowExitOnIdle: true,
+    statement_timeout: 30000 // 30 second query timeout to prevent hanging queries
   });
   
   console.log('[DB] Using PostgreSQL');
