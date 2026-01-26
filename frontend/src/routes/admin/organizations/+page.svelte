@@ -32,6 +32,12 @@
   let loadingAvailableUsers = false;
   let searchUserQuery = '';
   
+  // Folder management state
+  let managingFoldersFor: string | null = null;
+  let folderSettings: Array<{ folder: string; enabled: boolean }> = [];
+  let loadingFolders = false;
+  let savingFolders = false;
+  
   // Create organization state
   let showCreateOrgModal = false;
   let creatingOrg = false;
@@ -205,6 +211,72 @@
     availableUsers = [];
     newMemberId = '';
     searchUserQuery = '';
+  }
+
+  async function manageFolders(orgId: string) {
+    managingFoldersFor = orgId;
+    await loadFolderSettings(orgId);
+  }
+
+  async function loadFolderSettings(orgId: string) {
+    loadingFolders = true;
+    try {
+      const res = await apiFetch(`/api/admin/organizations/${orgId}/folders`);
+      const data = await res.json();
+      if (data.ok) {
+        folderSettings = data.folders || [];
+      } else {
+        alert(data.error || 'Failed to load folder settings');
+        folderSettings = [];
+      }
+    } catch (e: any) {
+      console.error('loadFolderSettings error', e);
+      alert('Failed to load folder settings: ' + (e?.message || 'Unknown error'));
+      folderSettings = [];
+    } finally {
+      loadingFolders = false;
+    }
+  }
+
+  async function saveFolderSettings() {
+    if (!managingFoldersFor) return;
+    
+    savingFolders = true;
+    try {
+      const res = await apiFetch(`/api/admin/organizations/${managingFoldersFor}/folders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folders: folderSettings })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        folderSettings = data.folders || [];
+        alert('Folder settings saved successfully!');
+        closeManageFolders();
+      } else {
+        alert(data.error || 'Failed to save folder settings');
+      }
+    } catch (e: any) {
+      console.error('saveFolderSettings error', e);
+      alert('Failed to save folder settings: ' + (e?.message || 'Unknown error'));
+    } finally {
+      savingFolders = false;
+    }
+  }
+
+  function closeManageFolders() {
+    managingFoldersFor = null;
+    folderSettings = [];
+  }
+
+  function toggleFolder(folder: string) {
+    const setting = folderSettings.find(f => f.folder === folder);
+    if (setting) {
+      setting.enabled = !setting.enabled;
+    } else {
+      folderSettings.push({ folder, enabled: true });
+    }
+    folderSettings = [...folderSettings]; // Trigger reactivity
   }
 
   // Debounce search for available users
@@ -416,9 +488,14 @@
               </td>
               <td class="date-cell">{formatDate(org.createdAt)}</td>
               <td class="actions-cell">
-                <button class="view-btn" on:click={() => manageMembers(org.id)}>
-                  Manage Members
-                </button>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button class="view-btn" on:click={() => manageMembers(org.id)}>
+                    Manage Members
+                  </button>
+                  <button class="view-btn" on:click={() => manageFolders(org.id)}>
+                    Manage Folders
+                  </button>
+                </div>
               </td>
             </tr>
           {/each}
@@ -612,6 +689,71 @@
               {creatingOrg ? 'Creating...' : 'Create Organization'}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Manage Folders Modal -->
+  {#if managingFoldersFor}
+    <div 
+      class="modal-overlay" 
+      on:click={closeManageFolders} 
+      on:keydown={(e) => e.key === 'Escape' && closeManageFolders()}
+      role="presentation"
+      tabindex="-1"
+    >
+      <div 
+        class="modal-content" 
+        on:click|stopPropagation 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
+        <div class="modal-header">
+          <h2 id="modal-title">Manage Image Folders</h2>
+          <button class="close-btn" on:click={closeManageFolders} aria-label="Close modal">×</button>
+        </div>
+        
+        <div class="modal-body">
+          {#if loadingFolders}
+            <div class="loading-text">Loading folder settings...</div>
+          {:else}
+            <p style="margin-bottom: 1rem; color: #6b7280; font-size: 0.875rem;">
+              Select which image folders should be available to users in this organization for facial recognition and mirroring games.
+            </p>
+            
+            <div class="folders-list">
+              {#each folderSettings as folderSetting}
+                <label class="folder-checkbox">
+                  <input 
+                    type="checkbox" 
+                    checked={folderSetting.enabled}
+                    on:change={() => toggleFolder(folderSetting.folder)}
+                  />
+                  <span class="folder-label">
+                    <strong>{folderSetting.folder.charAt(0).toUpperCase() + folderSetting.folder.slice(1)}</strong>
+                    {#if folderSetting.folder === 'ekman'}
+                      <span class="folder-desc"> - Original Ekman dataset images</span>
+                    {:else if folderSetting.folder === 'synthetic'}
+                      <span class="folder-desc"> - Synthetic/AI-generated images</span>
+                    {:else if folderSetting.folder === 'user'}
+                      <span class="folder-desc"> - User-uploaded images (collages)</span>
+                    {/if}
+                  </span>
+                </label>
+              {/each}
+            </div>
+            
+            <div class="modal-actions">
+              <button class="modal-btn cancel-btn" on:click={closeManageFolders} disabled={savingFolders}>
+                Cancel
+              </button>
+              <button class="modal-btn create-btn" on:click={saveFolderSettings} disabled={savingFolders}>
+                {savingFolders ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -1171,5 +1313,64 @@
   .create-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #5b52f5, #34e3fe);
     box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+  }
+
+  /* Folder Management Styles */
+  .folders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .folder-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 2px solid rgba(79, 70, 229, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .folder-checkbox:hover {
+    border-color: rgba(79, 70, 229, 0.4);
+    background: rgba(255, 255, 255, 1);
+  }
+
+  .folder-checkbox input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #4f46e5;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  .folder-label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .folder-label strong {
+    font-size: 1rem;
+    color: #111;
+    font-weight: 700;
+  }
+
+  .folder-desc {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 400;
+  }
+
+  .loading-text {
+    text-align: center;
+    padding: 2rem;
+    color: #6b7280;
   }
 </style>

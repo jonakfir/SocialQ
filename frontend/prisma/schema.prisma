@@ -110,6 +110,7 @@ model Organization {
   createdByUserId String
   createdAt       DateTime                  @default(now())
   memberships     OrganizationMembership[]
+  imageFolders    OrganizationImageFolder[]
   createdBy       User                      @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
 
   @@index([status])
@@ -133,17 +134,34 @@ model OrganizationMembership {
   @@index([role])
 }
 
+// Organization folder mappings - controls which image folders are available to each organization
+model OrganizationImageFolder {
+  id             String       @id @default(cuid())
+  organizationId String
+  folder         String       // Folder type: 'ekman', 'synthetic', 'user'
+  enabled        Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, folder])
+  @@index([organizationId])
+  @@index([folder])
+}
+
 // Ekman images for facial recognition quiz
 model EkmanImage {
   id         String   @id @default(cuid())
   imageData  String   // Base64 encoded image data (data URL)
   label      String   // Emotion label: 'Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'
   difficulty String   // Difficulty level: '1', '2', '3', '4', or 'all'
+  folder     String   @default("ekman") // Folder type: 'ekman', 'synthetic', 'user'
   createdAt  DateTime @default(now())
 
   @@index([label])
   @@index([difficulty])
+  @@index([folder])
   @@index([label, difficulty])
+  @@index([folder, label])
 }
 
 // Transition videos for transition recognition quiz

@@ -1,8 +1,9 @@
 import type { Handle } from '@sveltejs/kit';
-import { PUBLIC_API_URL } from '$env/static/public';
 
 export const handle: Handle = async ({ event, resolve }) => {
-  const base = PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
+  // Get env dynamically to avoid circular dependency
+  const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
+  const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') ?? '';
 
   // Intercept server-side `fetch` calls that start with `/api/...`
   const orig = event.fetch;

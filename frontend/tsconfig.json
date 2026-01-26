@@ -11,9 +11,6 @@
 		"strict": false,
 		"moduleResolution": "bundler",
 		"noEmit": true
-	},
-	"ts-node": {
-		"transpileOnly": true
 	}
 }
 

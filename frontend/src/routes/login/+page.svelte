@@ -229,6 +229,14 @@
     text-shadow: 0 10px 10px rgba(0,0,0,0.4);
   }
 
+  .already-user {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #111;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
   form { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; padding: 0 1rem; box-sizing: border-box; }
 
   .input {
@@ -302,6 +310,8 @@
   >
     <h2 class="title">Login</h2>
 
+    <p class="already-user">Already AboutFace™ User?</p>
+
     <form on:submit={handleLogin} autocomplete="on">
       <input class="input" type="email" bind:value={email} placeholder="Email" required />
       <div class="password-wrapper">
@@ -328,7 +338,7 @@
     {#if error}<div class="error">{error}</div>{/if}
 
     <p class="muted">No account yet?</p>
-    <button class="btn" type="button" on:click={goCreate}>Create Account</button>
+    <button class="btn" type="button" on:click={() => goto('/register')}>Create Account</button>
     <button class="btn" type="button" on:click={goHome}>Back to Home</button>
   </div>
 </div>

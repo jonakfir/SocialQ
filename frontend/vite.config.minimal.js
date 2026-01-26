@@ -5,10 +5,13 @@ export default defineConfig({
 	plugins: [sveltekit()],
 	server: {
 		port: 5173,
-		host: true,
-		strictPort: false
+		host: true
+	},
+	optimizeDeps: {
+		exclude: ['@prisma/client', 'pg', 'bcryptjs']
 	},
 	ssr: {
-		noExternal: []
-	}
+		external: ['@prisma/client', 'pg', 'bcryptjs']
+	},
+	logLevel: 'warn'
 });

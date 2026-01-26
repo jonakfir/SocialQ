@@ -302,6 +302,59 @@
   .friends-btn:active { transform: translateY(0) scale(1); }
   .friends-btn .label { position: absolute; left: -9999px; }
 
+  .journey-btn{
+    position: fixed;
+    top: 80px;
+    left: 22px;
+    width: 50px;
+    height: 50px;
+    border-radius: 9999px;
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    box-shadow: 0 8px 20px rgba(79,70,229,.3);
+    cursor: pointer;
+    z-index: 1001;
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    font-weight: 900;
+    line-height: 1;
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .journey-btn:hover { transform: translateY(-2px) scale(1.05); filter: brightness(1.03); box-shadow: 0 12px 28px rgba(79,70,229,.4); }
+  .journey-btn:active { transform: translateY(0) scale(1); }
+  .journey-btn .label { position: absolute; left: -9999px; }
+
+  .pricing-btn{
+    position: fixed;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 50px;
+    height: 50px;
+    border-radius: 9999px;
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    box-shadow: 0 8px 20px rgba(79,70,229,.3);
+    cursor: pointer;
+    z-index: 1001;
+    display: grid;
+    place-items: center;
+    font-size: 24px;
+    font-weight: 900;
+    line-height: 1;
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .pricing-btn:hover { transform: translateX(-50%) translateY(-2px) scale(1.05); filter: brightness(1.03); box-shadow: 0 12px 28px rgba(79,70,229,.4); }
+  .pricing-btn:active { transform: translateX(-50%) translateY(0) scale(1); }
+  .pricing-btn .label { position: absolute; left: -9999px; }
+
   .exit-admin-btn{
     position: fixed;
     left: 22px;
@@ -386,6 +439,28 @@
 >
   +
   <span class="label">Friends</span>
+</button>
+
+<!-- Journey Button (top left, below profile) -->
+<button
+  class="journey-btn"
+  aria-label="Journey"
+  title="Your Journey"
+  on:click={() => goto('/journey')}
+>
+  🧩
+  <span class="label">Journey</span>
+</button>
+
+<!-- Pricing Button (top center) -->
+<button
+  class="pricing-btn"
+  aria-label="Pricing"
+  title="Membership"
+  on:click={() => goto('/pricing')}
+>
+  💎
+  <span class="label">Pricing</span>
 </button>
 
 <!-- Floating Upload FAB (bottom right) -->

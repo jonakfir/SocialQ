@@ -2,7 +2,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-import { PUBLIC_API_URL } from '$env/static/public';
+// Lazy load env
 
 const EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'];
 
@@ -146,7 +146,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     
     // Try backend auth
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
+    const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
     
     try {
@@ -222,15 +222,69 @@ function getStaticImages() {
   return staticImageModules;
 }
 
+// Get enabled folders for a user's organizations
+async function getEnabledFoldersForUser(userId: string): Promise<Set<string>> {
+  try {
+    // Get user's organizations
+    const memberships = await prisma.organizationMembership.findMany({
+      where: { 
+        userId,
+        status: 'approved' // Only approved memberships
+      },
+      select: { organizationId: true }
+    });
+
+    if (memberships.length === 0) {
+      // User not in any organization - default to all folders
+      return new Set(['ekman', 'synthetic', 'user']);
+    }
+
+    const orgIds = memberships.map(m => m.organizationId);
+    
+    // Get folder settings for all organizations
+    const folderSettings = await prisma.organizationImageFolder.findMany({
+      where: { 
+        organizationId: { in: orgIds },
+        enabled: true
+      },
+      select: { folder: true }
+    });
+
+    // Get union of enabled folders
+    const enabledFolders = new Set(folderSettings.map(f => f.folder));
+    
+    // If no folder settings found, default to ekman only
+    if (enabledFolders.size === 0) {
+      enabledFolders.add('ekman');
+    }
+    
+    // Always include user folder (user's own images)
+    enabledFolders.add('user');
+    
+    return enabledFolders;
+  } catch (err: any) {
+    console.warn('[getEnabledFoldersForUser] Error:', err?.message);
+    // Default to all folders on error
+    return new Set(['ekman', 'synthetic', 'user']);
+  }
+}
+
 // Get Ekman images from database with static fallback
-async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
+async function getAllImages(allowedFolders?: Set<string>): Promise<Array<{ img: string; label: string; difficulty: string; folder?: string }>> {
   // Try database first
   try {
+    const whereClause: any = {};
+    if (allowedFolders && allowedFolders.size > 0) {
+      whereClause.folder = { in: Array.from(allowedFolders) };
+    }
+    
     const allImages = await prisma.ekmanImage.findMany({
+      where: whereClause,
       select: {
         imageData: true,
         label: true,
-        difficulty: true
+        difficulty: true,
+        folder: true
       }
     });
     
@@ -239,7 +293,8 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
       return allImages.map(img => ({
         img: img.imageData, // Base64 data URL
         label: img.label,
-        difficulty: img.difficulty
+        difficulty: img.difficulty,
+        folder: img.folder || 'ekman'
       }));
     }
   } catch (err: any) {
@@ -286,34 +341,49 @@ function shuffle<T>(a: T[]) {
   return a;
 }
 
-// Cache the image list to avoid re-scanning on every request
-let imageCache: Array<{ img: string; label: string; difficulty: string }> | null = null;
-
 export const GET: RequestHandler = async (event) => {
   try {
     const diff = (event.url.searchParams.get('difficulty') ?? '1').toString();
     console.log(`[ekman] Fetching images for difficulty: ${diff}`);
     const count = Number(event.url.searchParams.get('count') ?? '12');
 
-    // Load images once and cache
-    if (!imageCache) {
-      console.log('[ekman] Loading images from database/filesystem...');
-      imageCache = await getAllImages();
-      console.log(`[ekman] Loaded ${imageCache.length} images`);
+    // Get current user and determine allowed folders
+    let allowedFolders: Set<string> | undefined = undefined;
+    let user: { id: string } | null = null;
+    
+    try {
+      user = await getCurrentUser(event);
+      if (user) {
+        // Get enabled folders for user's organizations
+        allowedFolders = await getEnabledFoldersForUser(user.id);
+        console.log(`[ekman] User ${user.id} allowed folders:`, Array.from(allowedFolders));
+      } else {
+        console.log('[ekman] No user authenticated, using all folders');
+        allowedFolders = new Set(['ekman', 'synthetic', 'user']);
+      }
+    } catch (userError: any) {
+      console.error('[ekman] Error getting user or folder settings:', userError);
+      // Default to all folders on error
+      allowedFolders = new Set(['ekman', 'synthetic', 'user']);
     }
 
+    // Load images with folder filtering
+    // Note: We don't cache filtered images since folder settings can change
+    console.log('[ekman] Loading images from database/filesystem...');
+    const allImages = await getAllImages(allowedFolders);
+    console.log(`[ekman] Loaded ${allImages.length} images`);
+
     // Build a bank of { img, label, difficulty } from database or filesystem
-    let pool = imageCache
+    let pool = allImages
       .filter((row) => (diff === 'all' ? true : row.difficulty === diff))
       .map((row) => ({ img: row.img, label: row.label, difficulty: row.difficulty }));
 
     console.log(`[ekman] Base pool size for difficulty ${diff}: ${pool.length}`);
 
     // Get current user and add their saved photos + friends' photos to the corpus
-    // User and friend photos are ALWAYS included in ALL difficulty levels
-    try {
-      const user = await getCurrentUser(event);
-      if (user) {
+    // User and friend photos are ALWAYS included in ALL difficulty levels (if user folder is enabled)
+    if (user && (!allowedFolders || allowedFolders.has('user'))) {
+      try {
         console.log(`[ekman] Adding user collages for user ID: ${user.id} (all difficulty levels)`);
         const userCollages = await getUserCollages(user.id);
         
@@ -327,12 +397,12 @@ export const GET: RequestHandler = async (event) => {
         const friendsCollages = await getFriendsCollages(user.id);
         pool = [...pool, ...friendsCollages];
         console.log(`[ekman] Added ${friendsCollages.length} friends' photos to corpus for difficulty: ${diff}`);
-      } else {
-        console.log('[ekman] No user authenticated, using base pool only');
+      } catch (userError: any) {
+        console.error('[ekman] Error getting user collages:', userError);
+        // Continue without user photos if there's an error
       }
-    } catch (userError: any) {
-      console.error('[ekman] Error getting user or collages:', userError);
-      // Continue without user photos if there's an error
+    } else if (user) {
+      console.log('[ekman] User folder not enabled, skipping user/friend photos');
     }
 
     if (pool.length === 0) {
