@@ -3,6 +3,7 @@
   import { goto, invalidate } from '$app/navigation';
   import { apiFetch } from '$lib/api';
   import { page } from '$app/stores';
+  import TrashDeleteButton from '$lib/components/TrashDeleteButton.svelte';
   
   export let data: { users: any[]; total: number; limit: number; offset: number; dateRange?: string };
   
@@ -64,7 +65,6 @@
   }
 
   async function deleteUser(userId: string, username: string) {
-    if (!confirm(`Delete user ${username}? This cannot be undone.`)) return;
     try {
       const res = await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
       const j = await res.json();
@@ -565,7 +565,11 @@
                   </select>
                   <button class="view-btn" on:click={(e) => promoteOrg(user.id, e)}>Promote to Org Admin</button>
                   <button class="view-btn" on:click={(e) => demoteOrg(user.id, e)}>Demote</button>
-                  <button class="icon-btn delete-icon" aria-label="Delete user" title="Delete user" on:click={() => deleteUser(user.id, user.username)}>🗑️</button>
+                  <TrashDeleteButton
+                    confirmMessage={`Delete user ${user.username}? This cannot be undone.`}
+                    onConfirm={() => deleteUser(user.id, user.username)}
+                    title="Delete user"
+                  />
                 </div>
               </td>
             </tr>
@@ -697,10 +701,6 @@
   .friends-btn:hover { background: linear-gradient(135deg, #fde68a, #fcd34d); border-color: #f59e0b; transform: translateY(-1px); }
   .view-btn { padding: 0.375rem 0.75rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; color: #4f46e5; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .view-btn:hover { background: #4f46e5; color: white; border-color: #4f46e5; }
-  .icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 6px; border: 1px solid #e5e7eb; background: white; cursor: pointer; }
-  .icon-btn.delete-icon { border-color: #ef4444; background: linear-gradient(135deg, #fecaca, #ef4444); color: #fff; font-weight: 900; }
-  .icon-btn.delete-icon:hover { filter: brightness(1.05); }
-
   .empty-state { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.875rem; }
   .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
   .pagination button { padding: 0.5rem 0.875rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; color: #4f46e5; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }

@@ -133,7 +133,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
 
   .wrap{
     min-height:100vh;

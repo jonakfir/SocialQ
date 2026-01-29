@@ -115,7 +115,7 @@ export const POST: RequestHandler = async (event) => {
     }
     
     // Validate game type
-    const validGameTypes = ['facial_recognition', 'transition_recognition', 'mirroring'];
+    const validGameTypes = ['facial_recognition', 'transition_recognition', 'mirroring', 'emotion_training'];
     if (!validGameTypes.includes(gameType)) {
       return json({ ok: false, error: 'Invalid gameType' }, { status: 400 });
     }

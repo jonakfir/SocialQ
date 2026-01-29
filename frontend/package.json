@@ -3,9 +3,22 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev --host --port 5173",
-		"build": "vite build",
-		"preview": "vite preview --host --port 5173"
+		"dev": "vite dev",
+		"dev:with-prisma": "npm run prisma:generate && vite dev",
+		"build": "prisma generate && vite build",
+		"vercel-build": "prisma generate && prisma db push --accept-data-loss --skip-generate || echo 'DB push failed' && node scripts/setup-assets-db.js || echo 'Asset migration failed, static fallback will be used' && vite build",
+		"preview": "vite preview",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"postinstall": "echo 'Skipping Prisma generate - run npm run prisma:generate manually if needed'",
+		"migrate:prisma": "node migrate-prisma-to-postgres.js",
+		"prisma:migrate": "prisma migrate dev",
+		"prisma:migrate:deploy": "prisma migrate deploy",
+		"prisma:db:push": "prisma db push",
+		"prisma:generate": "prisma generate",
+		"setup-assets": "node scripts/setup-assets-db.js",
+		"populate-db": "node scripts/populate-db-direct.js",
+		"check-assets": "node scripts/ensure-assets-in-db.js",
+		"generate-synthetic-photos": "node scripts/generate-synthetic-photos.js"
 	},
 	"dependencies": {
 		"@prisma/client": "^6.13.0",
@@ -21,6 +34,7 @@
 		"@sveltejs/vite-plugin-svelte": "^3.1.2",
 		"autoprefixer": "^10.4.21",
 		"better-sqlite3": "^9.6.0",
+		"dotenv": "^16.6.1",
 		"glob": "^11.0.3",
 		"normalize-range": "^0.1.2",
 		"path-scurry": "^2.0.1",

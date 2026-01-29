@@ -72,7 +72,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
 
   .page-container { display:flex; justify-content:center; align-items:center; min-height:100vh; position:relative; }
   .result-box { width:95%; max-width:600px; background:rgba(255,255,255,.8); backdrop-filter:blur(20px); padding:40px; border-radius:20px; text-align:center; margin:auto; box-shadow:0 4px 30px rgba(0,0,0,.2); position:relative; }

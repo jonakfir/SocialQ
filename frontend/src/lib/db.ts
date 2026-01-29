@@ -58,10 +58,31 @@ async function loadPrismaClient(): Promise<any> {
       const prismaModule = await import('@prisma/client');
       const { PrismaClient } = prismaModule;
       
-      // Set dummy DATABASE_URL if not set to prevent Prisma from blocking
-      if (!process.env.DATABASE_URL) {
-        process.env.DATABASE_URL = 'postgresql://dummy:dummy@dummy:5432/dummy';
+      // Check if DATABASE_URL is set - SvelteKit should load it from .env automatically
+      // But if it's not set or is dummy, try to load from dotenv
+      if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes('dummy')) {
+        // Try to load from dotenv if available (for server-side)
+        try {
+          const dotenv = await import('dotenv');
+          const result = dotenv.config();
+          if (result.parsed?.DATABASE_URL) {
+            process.env.DATABASE_URL = result.parsed.DATABASE_URL;
+          }
+        } catch {
+          // dotenv not available, that's ok
+        }
+        
+        // If still not set or is dummy, log warning
+        if (!process.env.DATABASE_URL || process.env.DATABASE_URL.includes('dummy')) {
+          console.error('[db.ts] ❌ DATABASE_URL not set or is dummy value!');
+          console.error('[db.ts] Make sure DATABASE_URL is in .env file');
+          console.error('[db.ts] Current DATABASE_URL:', process.env.DATABASE_URL?.substring(0, 30) + '...');
+          // Don't set dummy - let it fail so we know there's a problem
+          throw new Error('DATABASE_URL not configured. Please set it in .env file.');
+        }
       }
+      
+      console.log('[db.ts] ✅ Using DATABASE_URL:', process.env.DATABASE_URL.replace(/:[^:@]+@/, ':****@'));
       
       const client = new PrismaClient({
         log: dev ? ['error'] : ['error'], // Reduced logging for faster startup
@@ -79,6 +100,7 @@ async function loadPrismaClient(): Promise<any> {
       // If Prisma client doesn't exist or creation failed, return dummy
       if (error?.message?.includes('Prisma Client') || error?.code === 'MODULE_NOT_FOUND' || error?.code === 'ERR_MODULE_NOT_FOUND') {
         console.warn('[db.ts] Prisma Client not generated yet. Run: npm run prisma:generate');
+        console.warn('[db.ts] Error details:', error.message);
       } else {
         console.warn('[db.ts] Prisma client creation failed:', error?.message || error);
       }
@@ -118,22 +140,23 @@ function getPrisma(): any {
   return _prisma;
 }
 
-// Export as a getter function that creates client lazily
+// Export Prisma client with proper lazy loading
+// The proxy ensures Prisma is loaded before accessing any property
 export const prisma = new Proxy({} as any, {
   get(_target, prop) {
-    const client = getPrisma();
-    const value = client[prop];
-    
-    // If it's a function (like findMany, create, etc.), ensure Prisma is loaded
-    if (typeof value === 'function') {
-      return async (...args: any[]) => {
-        // Wait for Prisma to load if it's still loading
-        const loadedClient = await loadPrismaClient();
-        const currentClient = (_prisma && _prisma !== createDummyPrisma()) ? _prisma : loadedClient;
-        return currentClient[prop](...args);
-      };
-    }
-    
-    return value;
+    // For model access (like prisma.user), return a proxy that waits for client
+    return new Proxy({}, {
+      get(_modelTarget, modelProp) {
+        // Return async function that waits for Prisma to load
+        return async (...args: any[]) => {
+          const client = await loadPrismaClient();
+          const model = client[prop];
+          if (model && typeof model[modelProp] === 'function') {
+            return model[modelProp].apply(model, args);
+          }
+          throw new Error(`Prisma model ${String(prop)}.${String(modelProp)} not found or not a function`);
+        };
+      }
+    });
   }
 });

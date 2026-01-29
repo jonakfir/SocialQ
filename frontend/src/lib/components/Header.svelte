@@ -230,11 +230,15 @@
     place-items: center;
     font-weight: 800;
     background: #fff;
+    color: #111;
     cursor: pointer;
     font-size: 16px;
     margin: 0;
+    pointer-events: auto;
+    position: relative;
+    z-index: 1001;
   }
-  .profile:hover, .menu:hover { background: #4f46e5; color: #fff; }
+  .profile:hover, .menu:hover { background: #4f46e5; color: #fff; border-color: #4f46e5; }
 
   .menu-wrap { position: relative; }
   .menu-pop {
@@ -247,13 +251,40 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.18);
     padding: 8px;
     display: none;
-    z-index: 1001;
+    z-index: 1002;
   }
   .menu-pop[data-open="true"] { display: block; }
   .item {
     display: block; width: 100%; text-align: left;
-    background: #fff; border: 0; padding: 12px 14px;
+    background: #fff; color: #111; border: 0; padding: 12px 14px;
     border-radius: 8px; cursor: pointer; font-weight: 701;
   }
   .item:hover { background: #4f46e5; color: #fff; }
+
+  /* Dark mode: top buttons and menu use theme colors so they’re visible and clickable */
+  :global(html.dark) .profile,
+  :global(html.dark) .menu {
+    background: var(--bg-card, rgba(30, 41, 59, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .profile:hover,
+  :global(html.dark) .menu:hover {
+    background: #4f46e5;
+    color: #fff;
+    border-color: #4f46e5;
+  }
+  :global(html.dark) .menu-pop {
+    background: var(--bg-card, rgba(30, 41, 59, 0.98));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  :global(html.dark) .item {
+    background: transparent;
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .item:hover {
+    background: #4f46e5;
+    color: #fff;
+  }
 </style>

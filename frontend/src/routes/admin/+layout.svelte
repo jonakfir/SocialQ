@@ -72,7 +72,6 @@
 </div>
 
 <style>
-  @import '/static/style.css';
 
   :global(body) {
     margin: 0 !important;

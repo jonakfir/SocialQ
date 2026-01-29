@@ -245,7 +245,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
 
   :root{
     --brand: #4f46e5;

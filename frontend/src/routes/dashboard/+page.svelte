@@ -145,8 +145,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
-
   :root{
     --brand:#4f46e5;
     --brand2:#22d3ee;
@@ -155,9 +153,9 @@
 
   .stage{ position:relative; display:grid; place-items:center; min-height:100vh; width:100%; overflow:hidden; }
 
-  /* Smaller card like before */
+  /* Larger card for glimmer effect */
   .shell{
-    width:min(92vw, 560px);
+    width:min(92vw, 720px);
     background:
       linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.20)),
       radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
@@ -165,7 +163,7 @@
     border:1px solid rgba(255,255,255,.55);
     border-radius:24px;
     box-shadow: 0 24px 68px rgba(0,0,0,.25);
-    padding:28px 24px 26px;
+    padding:40px 32px 36px;
     text-align:center;
     backdrop-filter: blur(22px) saturate(140%);
     transition: box-shadow .22s ease, filter .22s ease;
@@ -177,12 +175,12 @@
 
   .title{
     font-family: Georgia, serif;
-    font-size:clamp(2.6rem, 6.2vw, 4.8rem);
-    margin:0 0 16px;
+    font-size:clamp(3.2rem, 7.5vw, 6.2rem);
+    margin:0 0 24px;
     color:#fff; -webkit-text-stroke: 2px rgba(0,0,0,.45);
     text-shadow: 0 10px 14px rgba(0,0,0,.35);
   }
-  .stack{ display:grid; gap:14px; padding:6px 10px 4px; }
+  .stack{ display:grid; gap:18px; padding:8px 12px 6px; }
 
   /* Shared gradient text (Train/Test and option labels) */
   .fxtext{
@@ -195,11 +193,12 @@
   }
 
   .big{
-    display:block; width:min(520px, 88%); margin:0 auto;
-    padding:18px 22px;
+    display:block; width:min(680px, 90%); margin:0 auto;
+    padding:24px 28px;
     border-radius:9999px; border:2px solid #111; background:#fff;
     cursor:pointer; transform: translateZ(0);
     transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, border-color .2s ease;
+    font-size: 1.15em;
   }
   .big:hover{ transform: translateY(-1px) scale(1.012); box-shadow: 0 14px 32px rgba(79,70,229,.28); border-color: var(--brand); }
   .big:active{ transform: translateY(0) scale(.992); }
@@ -368,8 +367,50 @@
     box-shadow: 0 10px 24px rgba(0,0,0,.18);
     cursor: pointer;
     z-index: 31;
+    pointer-events: auto;
   }
   .exit-admin-btn:hover{ filter: brightness(1.05); transform: translateY(-1px); }
+
+  /* Dark mode: card, buttons and chips use theme so labels stay visible */
+  :global(html.dark) .shell {
+    background: var(--bg-card, rgba(30, 41, 59, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 24px 68px var(--shadow, rgba(0,0,0,.5));
+  }
+  :global(html.dark) .title {
+    color: var(--text-primary, #f1f5f9);
+    -webkit-text-stroke: 1px var(--border-color, rgba(255,255,255,.2));
+    text-shadow: 0 4px 12px var(--shadow, rgba(0,0,0,.4));
+  }
+  :global(html.dark) .big {
+    background: var(--bg-card-hover, rgba(30, 41, 59, 0.95));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+  }
+  :global(html.dark) .big .fxtext {
+    background: linear-gradient(90deg, #a5b4fc, #22d3ee);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  :global(html.dark) .chip {
+    background: var(--bg-card-hover, rgba(30, 41, 59, 0.95));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 8px 20px var(--shadow, rgba(0,0,0,.4));
+  }
+  :global(html.dark) .chip .fxtext {
+    background: linear-gradient(90deg, #a5b4fc, #22d3ee);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  :global(html.dark) .chip::after {
+    color: var(--text-secondary, #94a3b8);
+  }
+  :global(html.dark) .fab,
+  :global(html.dark) .friends-btn {
+    color: #fff;
+    pointer-events: auto;
+  }
 </style>
 
 <!-- background blobs -->

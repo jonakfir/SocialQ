@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { apiFetch } from '$lib/api';
   import { onMount } from 'svelte';
+  import TrashDeleteButton from '$lib/components/TrashDeleteButton.svelte';
 
   // Accept what the backend actually returns: { id, email }
   export let data: { user: { id: number; email?: string } | null; collages: any[] };
@@ -294,16 +295,9 @@
     closeFolderModal();
   }
 
-  async function deleteFolder(folderName: string, e: Event) {
-    e.stopPropagation();
-    
+  async function deleteFolder(folderName: string) {
     // Don't allow deleting default folders
     if (DEFAULT_FOLDERS.includes(folderName)) {
-      return;
-    }
-
-    // Confirm deletion
-    if (!confirm(`Delete folder "${folderName}"? Photos in this folder will be moved to "Me".`)) {
       return;
     }
 
@@ -504,39 +498,11 @@
     }
   }
 
-  .folder-delete-btn {
+  .folder-delete-wrapper {
     position: absolute;
     top: -6px;
     right: -6px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 2px solid rgba(239, 68, 68, 0.8);
-    background: rgba(239, 68, 68, 0.95);
-    color: white;
-    font-size: 16px;
-    font-weight: 900;
-    line-height: 1;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    margin: 0;
     z-index: 10;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  }
-
-  .folder-delete-btn:hover {
-    background: rgba(220, 38, 38, 1);
-    border-color: rgba(220, 38, 38, 1);
-    transform: scale(1.1);
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  .folder-delete-btn:active {
-    transform: scale(0.95);
   }
 
   .photos-grid {
@@ -599,42 +565,17 @@
     pointer-events: none;
   }
 
-  .delete-btn {
+  .delete-btn-wrapper {
     position: absolute;
     top: 12px;
     right: 12px;
-    background: rgba(239, 68, 68, 0.95);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    width: 36px;
-    height: 36px;
-    cursor: pointer;
-    font-weight: 900;
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     opacity: 0;
-    transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.2s ease;
     z-index: 10;
   }
 
-  .delete-btn:hover {
-    background: rgba(220, 38, 38, 1);
-    transform: scale(1.1);
-  }
-
-  .photo-item:hover .delete-btn {
+  .photo-item:hover .delete-btn-wrapper {
     opacity: 1;
-  }
-
-  /* Trash icon SVG */
-  .delete-btn svg {
-    width: 18px;
-    height: 18px;
-    fill: white;
   }
 
   .empty-state {
@@ -868,14 +809,13 @@
               {f}
             </button>
             {#if !isDefaultFolder(f)}
-              <button
-                class="folder-delete-btn"
-                on:click={(e) => deleteFolder(f, e)}
-                title={`Delete folder "${f}"`}
-                aria-label={`Delete folder "${f}"`}
-              >
-                ×
-              </button>
+              <span class="folder-delete-wrapper" on:click|stopPropagation role="presentation">
+                <TrashDeleteButton
+                  confirmMessage={`Delete folder "${f}"? Photos in this folder will be moved to "Me".`}
+                  onConfirm={() => deleteFolder(f)}
+                  title={`Delete folder "${f}"`}
+                />
+              </span>
             {/if}
           </div>
         {/each}
@@ -903,15 +843,13 @@
               on:dragend={(e) => handleDragEnd(e)}
             >
               <img src={collage.imageUrl} alt="Saved collage" draggable="false" />
-              <button
-                class="delete-btn"
-                on:click|stopPropagation={() => deleteCollage(collage.id)}
-                title="Delete"
-              >
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                </svg>
-              </button>
+              <div class="delete-btn-wrapper" on:click|stopPropagation role="presentation">
+                <TrashDeleteButton
+                  confirmMessage="Delete this photo? This cannot be undone."
+                  onConfirm={() => deleteCollage(collage.id)}
+                  title="Delete"
+                />
+              </div>
               <div class="folder-badge" title={`Current folder: ${collage.folder || 'Me'}`}>
                 📁 {collage.folder || 'Me'}
               </div>

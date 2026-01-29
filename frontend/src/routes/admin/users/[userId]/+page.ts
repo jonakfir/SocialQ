@@ -20,7 +20,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
         user: data.user,
         stats: data.stats,
         friends: data.friends,
-        collages: data.collages
+        collages: data.collages,
+        organizations: data.organizations || []
       };
     }
     
@@ -28,7 +29,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
       user: null,
       stats: null,
       friends: null,
-      collages: null
+      collages: null,
+      organizations: []
     };
   } catch (error) {
     console.error('[admin user detail] Error loading user:', error);
@@ -36,7 +38,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
       user: null,
       stats: null,
       friends: null,
-      collages: null
+      collages: null,
+      organizations: []
     };
   }
 };

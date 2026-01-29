@@ -328,7 +328,6 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
   :root{ --brand:#4f46e5; --brand2:#22d3ee; --ink:#0f172a; }
 
   .panel{

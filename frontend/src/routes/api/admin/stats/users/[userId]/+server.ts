@@ -123,6 +123,25 @@ export const GET: RequestHandler = async (event) => {
         createdAt: true
       }
     });
+
+    // Get user's organization memberships
+    const memberships = await prisma.organizationMembership.findMany({
+      where: { userId, status: { not: 'removed' } },
+      include: {
+        organization: {
+          select: { id: true, name: true, status: true }
+        }
+      },
+      orderBy: { joinedAt: 'desc' }
+    });
+    const organizations = memberships.map((m) => ({
+      id: m.organization.id,
+      name: m.organization.name,
+      status: m.organization.status,
+      role: m.role,
+      membershipStatus: m.status,
+      joinedAt: m.joinedAt
+    }));
     
     // Get all game sessions for this user
     const sessions = await prisma.gameSession.findMany({
@@ -227,6 +246,7 @@ export const GET: RequestHandler = async (event) => {
         count: collages.length,
         list: collages
       },
+      organizations,
       stats: {
         totalSessions: sessions.length,
         gameTypeStats,

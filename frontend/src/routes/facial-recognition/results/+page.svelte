@@ -95,7 +95,6 @@ ${link}
 </script>
 
 <style>
-  @import '/static/style.css';
 
   .page-container{
     min-height:100vh;

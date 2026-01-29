@@ -4,13 +4,15 @@
   import { apiFetch } from '$lib/api';
   import LineChart from '$lib/components/charts/LineChart.svelte';
   import BarChart from '$lib/components/charts/BarChart.svelte';
+  import TrashDeleteButton from '$lib/components/TrashDeleteButton.svelte';
   
-  export let data: { user: any; stats: any; friends?: any; collages?: any };
+  export let data: { user: any; stats: any; friends?: any; collages?: any; organizations?: any[] };
   
   let user = data.user;
   let stats = data.stats;
   let friends = data.friends || { count: 0, list: [] };
   let collages = data.collages || { count: 0, list: [] };
+  let organizations: Array<{ id: string; name: string; status: string; role: string; membershipStatus: string; joinedAt: string }> = data.organizations || [];
   
   // Update user and stats when data changes
   $: if (data.user) {
@@ -24,6 +26,9 @@
   }
   $: if (data.collages) {
     collages = data.collages;
+  }
+  $: if (data.organizations) {
+    organizations = data.organizations;
   }
   
   let loading = false;
@@ -78,10 +83,6 @@
   $: currentCollages = groupedCollages[selectedEmotion] || [];
 
   async function deletePhoto(collageId: string) {
-    if (!confirm('Are you sure you want to delete this photo? This action cannot be undone.')) {
-      return;
-    }
-
     deletingPhoto[collageId] = true;
     try {
       const res = await apiFetch(`/api/collages/${collageId}`, {
@@ -199,9 +200,54 @@
     return gameType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
   
+  // Photo sources for facial recognition
+  let photoSourceSettings = { ekman: true, own: true, synthetic: true };
+  let savingPhotoSources = false;
+  let loadingPhotoSources = false;
+
+  async function loadPhotoSources() {
+    if (!user?.id) return;
+    loadingPhotoSources = true;
+    try {
+      const res = await apiFetch(`/api/admin/users/${user.id}/photo-sources`);
+      const data = await res.json();
+      if (data.ok && data.photoSourceSettings) {
+        photoSourceSettings = { ...data.photoSourceSettings };
+      }
+    } catch (e) {
+      console.error('Error loading photo sources:', e);
+    } finally {
+      loadingPhotoSources = false;
+    }
+  }
+
+  async function savePhotoSources() {
+    if (!user?.id) return;
+    savingPhotoSources = true;
+    try {
+      const res = await apiFetch(`/api/admin/users/${user.id}/photo-sources`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(photoSourceSettings)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        photoSourceSettings = { ...data.photoSourceSettings };
+        alert('Photo sources saved.');
+      } else {
+        alert('Failed to save: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      alert('Failed to save: ' + (e?.message || 'Network error'));
+    } finally {
+      savingPhotoSources = false;
+    }
+  }
+
   onMount(() => {
     if (user) {
       document.title = `${user.username} - User Details - Admin Panel`;
+      loadPhotoSources();
     }
   });
 </script>
@@ -264,7 +310,53 @@
           <span class="info-label">Total Photos:</span>
           <span class="info-value">{collages.count || 0}</span>
         </div>
+        {#if organizations && organizations.length > 0}
+          <div class="info-item info-item-full">
+            <span class="info-label">Organizations:</span>
+            <div class="organizations-list">
+              {#each organizations as org (org.id)}
+                <a href="/admin/organizations?org={org.id}" class="org-tag" title="{org.name} – {org.role} ({org.membershipStatus})">
+                  {org.name}
+                  {#if org.role === 'org_admin'}
+                    <span class="org-role-badge">admin</span>
+                  {/if}
+                </a>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <div class="info-item">
+            <span class="info-label">Organizations:</span>
+            <span class="info-value info-value-muted">None</span>
+          </div>
+        {/if}
       </div>
+    </div>
+
+    <div class="user-info-card photo-sources-card">
+      <h2>Photo sources for facial recognition</h2>
+      <p class="photo-sources-help">Choose which image sources this user can see in the facial recognition quiz.</p>
+      {#if loadingPhotoSources}
+        <p class="loading-inline">Loading...</p>
+      {:else}
+        <div class="photo-sources-checkboxes">
+          <label class="photo-source-checkbox">
+            <input type="checkbox" bind:checked={photoSourceSettings.ekman} />
+            <span>Ekman / reference photos</span>
+          </label>
+          <label class="photo-source-checkbox">
+            <input type="checkbox" bind:checked={photoSourceSettings.own} />
+            <span>Own photos and friends' photos</span>
+          </label>
+          <label class="photo-source-checkbox">
+            <input type="checkbox" bind:checked={photoSourceSettings.synthetic} />
+            <span>Generated (synthetic) photos</span>
+          </label>
+        </div>
+        <button class="save-photo-sources-btn" on:click={savePhotoSources} disabled={savingPhotoSources}>
+          {savingPhotoSources ? 'Saving...' : 'Save'}
+        </button>
+      {/if}
     </div>
     
     {#if friends.list && friends.list.length > 0}
@@ -306,14 +398,15 @@
             <div class="photo-card">
               <div class="photo-image-wrapper">
                 <img src={collage.imageUrl} alt="User photo" loading="lazy" />
-                <button
-                  class="delete-photo-btn"
-                  on:click={() => deletePhoto(collage.id)}
-                  disabled={deletingPhoto[collage.id]}
-                  title="Delete this photo"
-                >
-                  {deletingPhoto[collage.id] ? '⏳' : '🗑️'}
-                </button>
+                <div class="delete-photo-btn-wrapper">
+                  <TrashDeleteButton
+                    confirmMessage="Are you sure you want to delete this photo? This action cannot be undone."
+                    onConfirm={() => deletePhoto(collage.id)}
+                    disabled={deletingPhoto[collage.id]}
+                    loading={deletingPhoto[collage.id]}
+                    title="Delete this photo"
+                  />
+                </div>
               </div>
               <div class="photo-info">
                 <span class="photo-date">{formatDate(collage.createdAt)}</span>
@@ -520,6 +613,7 @@
   }
   
   .user-info-card,
+  .photo-sources-card,
   .stats-section,
   .chart-section,
   .history-section,
@@ -631,36 +725,11 @@
     display: block;
   }
 
-  .delete-photo-btn {
+  .delete-photo-btn-wrapper {
     position: absolute;
     top: 0.5rem;
     right: 0.5rem;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    border: 2px solid rgba(239, 68, 68, 0.8);
-    background: rgba(239, 68, 68, 0.9);
-    color: white;
-    font-size: 1.2rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     z-index: 10;
-  }
-
-  .delete-photo-btn:hover:not(:disabled) {
-    background: #ef4444;
-    border-color: #ef4444;
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.5);
-  }
-
-  .delete-photo-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
   
   .photo-info {
@@ -756,6 +825,51 @@
     color: transparent;
     font-family: monospace;
   }
+
+  .info-value-muted {
+    background: none;
+    color: #9ca3af;
+    font-weight: 500;
+  }
+
+  .info-item-full {
+    grid-column: 1 / -1;
+  }
+
+  .organizations-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .org-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: rgba(79, 70, 229, 0.1);
+    border: 1px solid rgba(79, 70, 229, 0.3);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #4f46e5;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .org-tag:hover {
+    background: rgba(79, 70, 229, 0.2);
+    border-color: rgba(79, 70, 229, 0.5);
+  }
+
+  .org-role-badge {
+    font-size: 0.65rem;
+    padding: 0.125rem 0.375rem;
+    background: rgba(79, 70, 229, 0.25);
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
   
   .role-badge {
     display: inline-block;
@@ -768,6 +882,54 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
+  .photo-sources-help {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin: 0 0 1rem 0;
+  }
+  .photo-sources-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .photo-source-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9375rem;
+  }
+  .photo-source-checkbox input {
+    width: 1.125rem;
+    height: 1.125rem;
+    cursor: pointer;
+  }
+  .save-photo-sources-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(79, 70, 229, 0.3);
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .save-photo-sources-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+  .save-photo-sources-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .loading-inline {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
   .role-badge.admin {
     background: linear-gradient(135deg, #fef3c7, #fde68a);
     color: #92400e;

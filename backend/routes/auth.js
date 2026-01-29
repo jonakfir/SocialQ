@@ -9,6 +9,7 @@ const {
   findUserByUsername,             // back-compat alias to email lookup
   findUserById,
   updateUserEmailAndOrPassword,
+  updateUserDarkMode,
   getUserRole,
   updateUserRole,
   initializeSchema
@@ -427,7 +428,15 @@ router.get('/me', async (req, res) => {
     }
 
     console.log('[me] ✅ User found:', email, 'Role:', role);
-    return res.json({ ok: true, user: { id: user.id, email: user.email, role } });
+    return res.json({ 
+      ok: true, 
+      user: { 
+        id: user.id, 
+        email: user.email, 
+        role,
+        darkMode: user.dark_mode ?? false
+      } 
+    });
   } catch (e) {
     console.error('[me] error', e);
     return res.json({ ok: true, user: null });
@@ -486,9 +495,59 @@ router.post('/update', async (req, res) => {
     // refresh cookies in case email changed
     setSessionCookies(res, { id: updated.id, email: updated.email });
 
-    return res.json({ ok: true, user: { id: updated.id, email: updated.email, role } });
+    return res.json({ 
+      ok: true, 
+      user: { 
+        id: updated.id, 
+        email: updated.email, 
+        role,
+        darkMode: updated.dark_mode ?? false
+      } 
+    });
   } catch (e) {
     console.error('[update] error', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /auth/preferences
+router.post('/preferences', async (req, res) => {
+  try {
+    const uid = uidFromCookiesOrJWT(req);
+    if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+
+    const darkMode = req.body?.darkMode;
+    if (typeof darkMode !== 'boolean') {
+      return res.status(400).json({ error: 'darkMode must be a boolean' });
+    }
+
+    await updateUserDarkMode(uid, darkMode);
+
+    const updated = await findUserById(uid);
+    if (!updated) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const updatedEmail = normEmail(updated.email);
+    let role = updated.role || 'personal';
+    
+    // Ensure jonakfir@gmail.com always has admin role
+    if (updatedEmail === 'jonakfir@gmail.com' && role !== 'admin') {
+      await updateUserRole(updated.id, 'admin');
+      role = 'admin';
+    }
+
+    return res.json({ 
+      ok: true, 
+      user: { 
+        id: updated.id, 
+        email: updated.email, 
+        role,
+        darkMode: updated.dark_mode ?? false
+      } 
+    });
+  } catch (e) {
+    console.error('[preferences] error', e);
     return res.status(500).json({ error: 'Server error' });
   }
 });

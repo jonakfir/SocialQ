@@ -293,6 +293,23 @@
 
   .muted { margin-top: 8px; font-size: 13px; color: #6b7280; }
   .error { margin-top: 10px; color: #b91c1c; font-weight: 700; }
+
+  /* Dark mode: card, inputs and buttons stay visible */
+  :global(html.dark) .card { background: var(--bg-card, rgba(30, 41, 59, 0.9)); border-color: var(--border-color, rgba(255,255,255,.2)); }
+  :global(html.dark) .title { color: var(--text-primary, #f1f5f9); -webkit-text-stroke: 1px var(--border-color, rgba(255,255,255,.2)); }
+  :global(html.dark) .input {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .input::placeholder { color: var(--text-secondary, #94a3b8); }
+  :global(html.dark) .btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .btn.primary { color: #fff; }
+  :global(html.dark) .muted { color: var(--text-secondary, #94a3b8); }
 </style>
 
 <div class="blobs">

@@ -268,7 +268,6 @@
 </div>
 
 <style>
-  @import '/static/style.css';
 
   :global(body){ margin:0; overflow:hidden; font-family:Arial, sans-serif; background:#fdfcfc; }
 

@@ -179,6 +179,33 @@
     padding: 14px;
     margin-bottom: 12px;
   }
+
+  /* Dark mode: edit box, inputs and buttons stay visible */
+  :global(html.dark) .edit-box {
+    background: var(--bg-card, rgba(30, 41, 59, 0.9));
+    border: 1px solid var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 4px 30px var(--shadow, rgba(0,0,0,.5));
+  }
+  :global(html.dark) h2 { color: var(--text-primary, #f1f5f9); -webkit-text-stroke: 1px var(--border-color, rgba(255,255,255,.2)); }
+  :global(html.dark) input[type="email"],
+  :global(html.dark) input[type="password"] {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .hint { color: var(--text-secondary, #94a3b8); }
+  :global(html.dark) .btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .btn.primary { color: #fff; }
+  :global(html.dark) .btn.outline { background: transparent; color: var(--text-primary, #f1f5f9); border-color: var(--border-color, rgba(255,255,255,.3)); }
+  :global(html.dark) .notice {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
 </style>
 
 <!-- blobs -->

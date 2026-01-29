@@ -45,7 +45,6 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
 
   .page { min-height:100vh; display:grid; place-items:center; position:relative; }
   .box{

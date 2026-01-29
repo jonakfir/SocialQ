@@ -16,18 +16,15 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   usePostgres = true;
   
   // Create pool immediately (not deferred) so schema initialization can use it
-  // Increased max connections for 1000 users: default 50, configurable via DB_POOL_MAX
-  const maxConnections = parseInt(process.env.DB_POOL_MAX || '50', 10);
+  // Railway PostgreSQL requires SSL, so enable it for all environments
   pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Connection pool settings optimized for 1000 users
-    max: maxConnections,
-    min: 5, // Keep minimum connections alive for faster response
+    ssl: { rejectUnauthorized: false }, // Railway requires SSL
+    // Add connection retry settings
+    max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    allowExitOnIdle: true,
-    statement_timeout: 30000 // 30 second query timeout to prevent hanging queries
+    allowExitOnIdle: true
   });
   
   console.log('[DB] Using PostgreSQL');
@@ -147,6 +144,28 @@ async function initializeSchema(retries = 5) {
           }
         } catch (e) {
           console.error('[DB] Role column migration failed:', e);
+        }
+        
+        // Add darkMode column if it doesn't exist (migration)
+        try {
+          const darkModeCheck = await pool.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'dark_mode'
+          `);
+          
+          if (darkModeCheck.rows.length === 0) {
+            console.log('[DB] Adding dark_mode column to users table...');
+            await pool.query(`
+              ALTER TABLE users 
+              ADD COLUMN dark_mode BOOLEAN DEFAULT false;
+            `);
+            // Set default dark_mode for existing users
+            await pool.query(`UPDATE users SET dark_mode = false WHERE dark_mode IS NULL;`);
+            console.log('[DB] Dark mode column added successfully');
+          }
+        } catch (e) {
+          console.error('[DB] Dark mode column migration failed:', e);
         }
       
         await pool.query(`
@@ -363,6 +382,18 @@ async function initializeSchema(retries = 5) {
       console.error('[DB role migration failed]', e);
     }
     
+    // Add darkMode column if it doesn't exist (migration)
+    try {
+      const cols = db.prepare(`PRAGMA table_info(users);`).all().map(c => c.name);
+      if (!cols.includes('dark_mode')) {
+        db.exec(`ALTER TABLE users ADD COLUMN dark_mode INTEGER DEFAULT 0;`);
+        db.exec(`UPDATE users SET dark_mode = 0 WHERE dark_mode IS NULL;`);
+        console.log('[DB] Dark mode column added successfully');
+      }
+    } catch (e) {
+      console.error('[DB dark mode migration failed]', e);
+    }
+    
     db.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);`);
     
@@ -528,24 +559,30 @@ async function findUserByEmail(email) {
     
     if (usePostgres) {
       const result = await pool.query(
-        'SELECT id, email, password, role FROM users WHERE email = $1',
+        'SELECT id, email, password, role, dark_mode FROM users WHERE email = $1',
         [e]
       );
       const user = result.rows[0] || null;
-      // Ensure jonakfir@gmail.com always has admin role
-      if (user && e === 'jonakfir@gmail.com' && user.role !== 'admin') {
-        await updateUserRole(user.id, 'admin');
-        user.role = 'admin';
+      if (user) {
+        user.dark_mode = user.dark_mode ?? false;
+        // Ensure jonakfir@gmail.com always has admin role
+        if (e === 'jonakfir@gmail.com' && user.role !== 'admin') {
+          await updateUserRole(user.id, 'admin');
+          user.role = 'admin';
+        }
       }
       return user;
     } else {
       const user = db
-        .prepare('SELECT id, email, password, role FROM users WHERE email = ?')
+        .prepare('SELECT id, email, password, role, dark_mode FROM users WHERE email = ?')
         .get(e) || null;
-      // Ensure jonakfir@gmail.com always has admin role
-      if (user && e === 'jonakfir@gmail.com' && user.role !== 'admin') {
-        await updateUserRole(user.id, 'admin');
-        user.role = 'admin';
+      if (user) {
+        user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
+        // Ensure jonakfir@gmail.com always has admin role
+        if (e === 'jonakfir@gmail.com' && user.role !== 'admin') {
+          await updateUserRole(user.id, 'admin');
+          user.role = 'admin';
+        }
       }
       return user;
     }
@@ -561,24 +598,30 @@ const findUserByUsername = (email) => findUserByEmail(email);
 async function findUserById(id) {
   if (usePostgres) {
     const result = await pool.query(
-      'SELECT id, email, password, role FROM users WHERE id = $1',
+      'SELECT id, email, password, role, dark_mode FROM users WHERE id = $1',
       [id]
     );
     const user = result.rows[0] || null;
-    // Ensure jonakfir@gmail.com always has admin role
-    if (user && user.email && toEmailKey(user.email) === 'jonakfir@gmail.com' && user.role !== 'admin') {
-      await updateUserRole(user.id, 'admin');
-      user.role = 'admin';
+    if (user) {
+      user.dark_mode = user.dark_mode ?? false;
+      // Ensure jonakfir@gmail.com always has admin role
+      if (user.email && toEmailKey(user.email) === 'jonakfir@gmail.com' && user.role !== 'admin') {
+        await updateUserRole(user.id, 'admin');
+        user.role = 'admin';
+      }
     }
     return user;
   } else {
     const user = db
-      .prepare('SELECT id, email, password, role FROM users WHERE id = ?')
+      .prepare('SELECT id, email, password, role, dark_mode FROM users WHERE id = ?')
       .get(id) || null;
-    // Ensure jonakfir@gmail.com always has admin role
-    if (user && user.email && toEmailKey(user.email) === 'jonakfir@gmail.com' && user.role !== 'admin') {
-      await updateUserRole(user.id, 'admin');
-      user.role = 'admin';
+    if (user) {
+      user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
+      // Ensure jonakfir@gmail.com always has admin role
+      if (user.email && toEmailKey(user.email) === 'jonakfir@gmail.com' && user.role !== 'admin') {
+        await updateUserRole(user.id, 'admin');
+        user.role = 'admin';
+      }
     }
     return user;
   }
@@ -623,6 +666,18 @@ async function updateUserEmailAndOrPassword(id, { email, password }) {
     argsSql.push(id);
     const sql = `UPDATE users SET ${patchesSql.join(', ')} WHERE id = ?`;
     return db.prepare(sql).run(...argsSql);
+  }
+}
+
+async function updateUserDarkMode(id, darkMode) {
+  if (usePostgres) {
+    const result = await pool.query(
+      'UPDATE users SET dark_mode = $1 WHERE id = $2',
+      [darkMode, id]
+    );
+    return { changes: result.rowCount };
+  } else {
+    return db.prepare('UPDATE users SET dark_mode = ? WHERE id = ?').run(darkMode ? 1 : 0, id);
   }
 }
 
@@ -952,6 +1007,7 @@ module.exports = {
   findUserById,
   deleteUserById,
   updateUserEmailAndOrPassword,
+  updateUserDarkMode,
   countUsers,
   getUserRole,
   updateUserRole,

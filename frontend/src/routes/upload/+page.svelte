@@ -6,8 +6,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
-
   /* The shared blob background lives in /static/style.css.
      We just place the blob divs and keep our content above them. */
   .page {
@@ -37,20 +35,22 @@
     width: min(820px, 94vw);
     padding: 26px;
     border-radius: 28px;
-    background: rgba(255,255,255,.42);
+    background: var(--bg-card, rgba(255,255,255,.55));
     backdrop-filter: blur(18px) saturate(140%);
-    border: 1px solid rgba(17,17,17,.18);
-    box-shadow: 0 18px 50px rgba(0,0,0,.22);
+    border: 1px solid var(--border-color, rgba(17,17,17,.18));
+    box-shadow: 0 18px 50px var(--shadow, rgba(0,0,0,.22));
     text-align: center;
+    color: var(--text-primary, #000);
+    transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
   }
 
   h1 {
     margin: 6px 0 18px;
     font-family: 'Georgia', serif;
     font-size: clamp(2rem, 6vw, 2.6rem);
-    color: #fff;
-    -webkit-text-stroke: 2px rgba(0,0,0,.45);
-    text-shadow: 0 8px 14px rgba(0,0,0,.35);
+    color: var(--text-primary, #000);
+    -webkit-text-stroke: 1px var(--border-color, rgba(0,0,0,.3));
+    text-shadow: 0 4px 12px var(--shadow, rgba(0,0,0,.2));
   }
 
   .grid {
@@ -68,17 +68,15 @@
     padding: 22px 18px;
     min-height: 260px;
     border-radius: 22px;
-    border: 2px solid rgba(17,17,17,.85);
-    background:
-      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.16), transparent 60%),
-      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.16), transparent 60%),
-      #fff;
+    border: 2px solid var(--border-color, rgba(17,17,17,.85));
+    background: var(--bg-card-hover, rgba(255,255,255,.75));
     font-weight: 800;
     font-size: 18px;
+    color: var(--text-primary, #000);
     cursor: pointer;
     overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0,0,0,.10);
-    transition: filter .15s, box-shadow .18s, border-color .18s, transform .12s;
+    box-shadow: 0 8px 24px var(--shadow, rgba(0,0,0,.1));
+    transition: filter .15s, box-shadow .18s, border-color .18s, transform .12s, background .2s, color .2s;
     transform: translateZ(0);
   }
   .option:hover {
@@ -86,23 +84,37 @@
     box-shadow: 0 16px 34px rgba(79,70,229,.22);
     border-color: #4f46e5;
     filter: brightness(1.02);
+    background: var(--bg-card, rgba(255,255,255,.55));
+    color: var(--text-primary, #000);
   }
   .option:focus { outline: none; }
   .option:focus-visible { outline: 2px solid #4f46e5; outline-offset: 3px; }
 
   .emoji { font-size: 36px; }
-  .title { font-size: 1.05rem; }
-  .sub { font-size: .86rem; font-weight: 600; opacity: .78; text-align: center; }
+  .title { font-size: 1.05rem; color: inherit; }
+  .sub { font-size: .86rem; font-weight: 600; opacity: .85; text-align: center; color: var(--text-secondary, #374151); }
 
   .back {
     display: inline-block;
     margin-top: 20px;
     padding: 10px 16px;
     border-radius: 9999px;
-    border: 2px solid #111;
-    background: #fff;
+    border: 2px solid var(--border-color, #111);
+    background: var(--bg-card-hover, #fff);
+    color: var(--text-primary, #000);
     font-weight: 800;
     cursor: pointer;
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  .back:hover {
+    background: #4f46e5;
+    color: #fff;
+    border-color: #4f46e5;
+  }
+
+  /* Dark mode: ensure text and borders stay visible */
+  :global(html.dark) .sub {
+    opacity: .9;
   }
 </style>
 
