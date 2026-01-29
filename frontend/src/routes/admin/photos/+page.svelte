@@ -49,13 +49,14 @@
   // Upload modal state
   let showUploadModal = false;
   let uploading = false;
-  let uploadFile: File | null = null;
+  let uploadFiles: File[] = [];
+  let uploadPreviews: string[] = [];
+  let uploadProgress = { current: 0, total: 0 };
   let uploadEmotion = 'Happy';
   let uploadDifficulty = 'all';
   let uploadPhotoType: 'ekman' | 'other' | 'synthetic' = 'ekman';
   let uploadFolder = ''; // For generated photos folder; empty = none
   let uploadOrganizationIds: string[] = [];
-  let uploadPreview: string | null = null;
 
   // Visibility modal state
   let showVisibilityModal = false;
@@ -265,74 +266,92 @@
 
   function handleFileSelect(event: Event) {
     const target = event.target as HTMLInputElement;
-    const file = target.files?.[0];
-    if (file) {
-      uploadFile = file;
-      // Create preview
+    const files = target.files;
+    if (!files?.length) return;
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    uploadFiles = fileArray;
+    const previews: string[] = new Array(fileArray.length).fill('');
+    uploadPreviews = previews;
+    fileArray.forEach((file, i) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        uploadPreview = e.target?.result as string;
+        previews[i] = e.target?.result as string;
+        uploadPreviews = [...previews];
       };
       reader.readAsDataURL(file);
-    }
+    });
+    target.value = '';
   }
 
   async function handleUpload() {
-    if (!uploadFile) {
-      alert('Please select a file');
+    if (uploadFiles.length === 0) {
+      alert('Please select one or more photos');
       return;
     }
 
     uploading = true;
+    const total = uploadFiles.length;
+    uploadProgress = { current: 0, total };
+    let succeeded = 0;
+    let failed = 0;
     try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('emotion', uploadEmotion);
-      formData.append('difficulty', uploadDifficulty);
-      formData.append('photoType', uploadPhotoType);
-      if (uploadFolder && uploadFolder.trim() !== '') {
-        // If "Generated Photos" selected, use emotion from the Emotion dropdown above
-        const folderValue = uploadFolder === 'generated'
-          ? `Generated Photos/${uploadEmotion}`
-          : uploadFolder;
-        formData.append('folder', folderValue);
-      }
-      formData.append('organizationIds', JSON.stringify(uploadOrganizationIds));
+      const folderValue =
+        uploadFolder && uploadFolder.trim() !== ''
+          ? uploadFolder === 'generated'
+            ? `Generated Photos/${uploadEmotion}`
+            : uploadFolder
+          : '';
 
-      const res = await apiFetch('/api/admin/ekman-images', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
+      for (let i = 0; i < uploadFiles.length; i++) {
+        uploadProgress = { current: i + 1, total };
+        const formData = new FormData();
+        formData.append('file', uploadFiles[i]);
+        formData.append('emotion', uploadEmotion);
+        formData.append('difficulty', uploadDifficulty);
+        formData.append('photoType', uploadPhotoType);
+        if (folderValue) formData.append('folder', folderValue);
+        formData.append('organizationIds', JSON.stringify(uploadOrganizationIds));
 
-      if (data.ok) {
-        // Reset form
-        uploadFile = null;
-        uploadPreview = null;
-        uploadEmotion = 'Happy';
-        uploadDifficulty = 'all';
-        uploadPhotoType = 'ekman';
-        uploadFolder = '';
-        uploadOrganizationIds = [];
-        showUploadModal = false;
-        
-        // Reload images based on active tab
-        if (activeTab === 'user') {
-          await loadPhotos();
-        } else if (activeTab === 'ekman') {
-          await loadEkmanImages();
-        } else if (activeTab === 'generated') {
-          await loadGeneratedImages();
+        try {
+          const res = await apiFetch('/api/admin/ekman-images', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.ok) succeeded++;
+          else failed++;
+        } catch {
+          failed++;
         }
-        alert('Photo uploaded successfully!');
+      }
+
+      // Reset form and close
+      uploadFiles = [];
+      uploadPreviews = [];
+      uploadEmotion = 'Happy';
+      uploadDifficulty = 'all';
+      uploadPhotoType = 'ekman';
+      uploadFolder = '';
+      uploadOrganizationIds = [];
+      showUploadModal = false;
+      uploadProgress = { current: 0, total: 0 };
+
+      if (activeTab === 'user') {
+        await loadPhotos();
+      } else if (activeTab === 'ekman') {
+        await loadEkmanImages();
+      } else if (activeTab === 'generated') {
+        await loadGeneratedImages();
+      }
+
+      if (failed === 0) {
+        alert(total === 1 ? 'Photo uploaded successfully!' : `${succeeded} photos uploaded successfully!`);
       } else {
-        alert('Failed to upload photo: ' + (data.error || 'Unknown error'));
+        alert(`${succeeded} uploaded, ${failed} failed.`);
       }
     } catch (e: any) {
       console.error('Error uploading photo:', e);
-      alert('Failed to upload photo: ' + (e?.message || 'Network error'));
+      alert('Failed to upload photos: ' + (e?.message || 'Network error'));
     } finally {
       uploading = false;
+      uploadProgress = { current: 0, total: 0 };
     }
   }
 
@@ -454,8 +473,8 @@
           uploadEmotion = 'Happy';
         }
         uploadDifficulty = 'all';
-        uploadFile = null;
-        uploadPreview = null;
+        uploadFiles = [];
+        uploadPreviews = [];
         uploadOrganizationIds = [];
         showUploadModal = true;
       }}>
@@ -760,15 +779,21 @@
       <div class="modal-body">
         <div class="upload-form">
           <div class="form-group">
-            <label class="form-label">Photo File</label>
-            <input 
-              type="file" 
-              accept="image/*" 
+            <label class="form-label">Photo(s)</label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
               on:change={handleFileSelect}
               class="form-input"
             />
-            {#if uploadPreview}
-              <img src={uploadPreview} alt="Preview" class="upload-preview" />
+            {#if uploadPreviews.length > 0}
+              <div class="upload-preview-grid">
+                {#each uploadPreviews as preview, i}
+                  <img src={preview} alt="Preview {i + 1}" class="upload-preview" />
+                {/each}
+              </div>
+              <p class="form-help">{uploadFiles.length} file(s) selected</p>
             {/if}
           </div>
           <div class="form-group">
@@ -800,8 +825,12 @@
       </div>
       <div class="modal-footer">
         <button class="modal-btn cancel" on:click={() => showUploadModal = false}>Cancel</button>
-        <button class="modal-btn primary" on:click={handleUpload} disabled={uploading || !uploadFile}>
-          {uploading ? 'Uploading...' : 'Upload'}
+        <button class="modal-btn primary" on:click={handleUpload} disabled={uploading || uploadFiles.length === 0}>
+          {uploading
+            ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`
+            : uploadFiles.length > 0
+              ? `Upload ${uploadFiles.length} photo${uploadFiles.length === 1 ? '' : 's'}`
+              : 'Upload'}
         </button>
       </div>
     </div>
@@ -1232,6 +1261,18 @@
     margin: 0;
   }
 
+  .upload-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+    margin-top: 0.5rem;
+  }
+  .upload-preview-grid .upload-preview {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
   .upload-preview {
     max-width: 100%;
     max-height: 300px;

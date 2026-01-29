@@ -220,77 +220,102 @@
     { value: 'generated', label: 'Generated Photos' }
   ];
   let showUploadPhotoModal = false;
-  let uploadPhotoFile: File | null = null;
-  let uploadPhotoPreview: string | null = null;
+  let uploadPhotoFiles: File[] = [];
+  let uploadPhotoPreviews: string[] = [];
   let uploadPhotoEmotion = 'Happy';
   let uploadPhotoDifficulty = 'all';
   let uploadPhotoFolder = '';
   let uploadPhotoType: 'ekman' | 'other' | 'synthetic' = 'ekman';
   let uploadingPhoto = false;
+  let uploadPhotoProgress = { current: 0, total: 0 }; // e.g. "Uploading 2/5"
 
   function openUploadPhotoModal() {
     showUploadPhotoModal = true;
-    uploadPhotoFile = null;
-    uploadPhotoPreview = null;
+    uploadPhotoFiles = [];
+    uploadPhotoPreviews = [];
     uploadPhotoEmotion = 'Happy';
     uploadPhotoDifficulty = 'all';
     uploadPhotoFolder = '';
     uploadPhotoType = 'ekman';
+    uploadPhotoProgress = { current: 0, total: 0 };
   }
 
   function closeUploadPhotoModal() {
     showUploadPhotoModal = false;
-    uploadPhotoFile = null;
-    uploadPhotoPreview = null;
+    uploadPhotoFiles = [];
+    uploadPhotoPreviews = [];
+    uploadPhotoProgress = { current: 0, total: 0 };
   }
 
   function handleUploadPhotoFileSelect(event: Event) {
     const target = event.target as HTMLInputElement;
-    const file = target.files?.[0];
-    if (file) {
-      uploadPhotoFile = file;
+    const files = target.files;
+    if (!files?.length) return;
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    uploadPhotoFiles = fileArray;
+    const previews: string[] = new Array(fileArray.length).fill('');
+    uploadPhotoPreviews = previews;
+    fileArray.forEach((file, i) => {
       const reader = new FileReader();
       reader.onload = (e) => {
-        uploadPhotoPreview = e.target?.result as string;
+        previews[i] = e.target?.result as string;
+        uploadPhotoPreviews = [...previews];
       };
       reader.readAsDataURL(file);
-    }
+    });
+    target.value = '';
   }
 
   async function submitUploadPhoto() {
-    if (!uploadPhotoFile) {
-      alert('Please select a file');
+    if (uploadPhotoFiles.length === 0) {
+      alert('Please select one or more photos');
       return;
     }
     uploadingPhoto = true;
+    const total = uploadPhotoFiles.length;
+    uploadPhotoProgress = { current: 0, total };
+    let succeeded = 0;
+    let failed = 0;
     try {
-      const formData = new FormData();
-      formData.append('file', uploadPhotoFile);
-      formData.append('emotion', uploadPhotoEmotion);
-      formData.append('difficulty', uploadPhotoDifficulty);
-      formData.append('photoType', uploadPhotoType);
-      if (uploadPhotoFolder && uploadPhotoFolder.trim() !== '') {
-        const folderValue = uploadPhotoFolder === 'generated'
-          ? `Generated Photos/${uploadPhotoEmotion}`
-          : uploadPhotoFolder;
-        formData.append('folder', folderValue);
+      const folderValue =
+        uploadPhotoFolder && uploadPhotoFolder.trim() !== ''
+          ? uploadPhotoFolder === 'generated'
+            ? `Generated Photos/${uploadPhotoEmotion}`
+            : uploadPhotoFolder
+          : '';
+
+      for (let i = 0; i < uploadPhotoFiles.length; i++) {
+        uploadPhotoProgress = { current: i + 1, total };
+        const formData = new FormData();
+        formData.append('file', uploadPhotoFiles[i]);
+        formData.append('emotion', uploadPhotoEmotion);
+        formData.append('difficulty', uploadPhotoDifficulty);
+        formData.append('photoType', uploadPhotoType);
+        if (folderValue) formData.append('folder', folderValue);
+        formData.append('organizationIds', JSON.stringify([]));
+
+        try {
+          const res = await apiFetch('/api/admin/ekman-images', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.ok) succeeded++;
+          else failed++;
+        } catch {
+          failed++;
+        }
       }
-      formData.append('organizationIds', JSON.stringify([]));
 
-      const res = await apiFetch('/api/admin/ekman-images', { method: 'POST', body: formData });
-      const data = await res.json();
-
-      if (data.ok) {
-        closeUploadPhotoModal();
-        alert('Photo uploaded successfully!');
+      closeUploadPhotoModal();
+      if (failed === 0) {
+        alert(total === 1 ? 'Photo uploaded successfully!' : `${succeeded} photos uploaded successfully!`);
       } else {
-        alert('Failed to upload photo: ' + (data.error || 'Unknown error'));
+        alert(`${succeeded} uploaded, ${failed} failed.`);
       }
     } catch (e: any) {
       console.error('Upload photo error', e);
-      alert('Failed to upload photo: ' + (e?.message || 'Network error'));
+      alert('Failed to upload photos: ' + (e?.message || 'Network error'));
     } finally {
       uploadingPhoto = false;
+      uploadPhotoProgress = { current: 0, total: 0 };
     }
   }
 
@@ -557,10 +582,15 @@
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label for="upload-photo-file">Photo File</label>
-          <input id="upload-photo-file" type="file" accept="image/*" on:change={handleUploadPhotoFileSelect} />
-          {#if uploadPhotoPreview}
-            <img src={uploadPhotoPreview} alt="Preview" class="upload-preview-img" />
+          <label for="upload-photo-file">Photo(s)</label>
+          <input id="upload-photo-file" type="file" accept="image/*" multiple on:change={handleUploadPhotoFileSelect} />
+          {#if uploadPhotoPreviews.length > 0}
+            <div class="upload-preview-grid">
+              {#each uploadPhotoPreviews as preview, i}
+                <img src={preview} alt="Preview {i + 1}" class="upload-preview-img" />
+              {/each}
+            </div>
+            <p class="form-hint">{uploadPhotoFiles.length} file(s) selected</p>
           {/if}
         </div>
         <div class="form-group">
@@ -589,8 +619,12 @@
         </div>
         <div class="modal-actions">
           <button class="modal-btn cancel-btn" on:click={closeUploadPhotoModal} disabled={uploadingPhoto}>Cancel</button>
-          <button class="modal-btn create-btn" on:click={submitUploadPhoto} disabled={uploadingPhoto || !uploadPhotoFile}>
-            {uploadingPhoto ? 'Uploading...' : 'Upload'}
+          <button class="modal-btn create-btn" on:click={submitUploadPhoto} disabled={uploadingPhoto || uploadPhotoFiles.length === 0}>
+            {uploadingPhoto
+              ? `Uploading ${uploadPhotoProgress.current}/${uploadPhotoProgress.total}...`
+              : uploadPhotoFiles.length > 0
+                ? `Upload ${uploadPhotoFiles.length} photo${uploadPhotoFiles.length === 1 ? '' : 's'}`
+                : 'Upload'}
           </button>
         </div>
       </div>
@@ -1240,6 +1274,18 @@
     box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
   }
 
+  .upload-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+    margin-top: 0.5rem;
+  }
+  .upload-preview-grid .upload-preview-img {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
   .upload-preview-img {
     display: block;
     max-width: 100%;
