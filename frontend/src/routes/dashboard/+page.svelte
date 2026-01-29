@@ -482,7 +482,8 @@
   <span class="label">Friends</span>
 </button>
 
-<!-- Journey Button (top left, below profile) -->
+<!-- Journey Button (top left, below profile) - not ready for main yet -->
+<!--
 <button
   class="journey-btn"
   aria-label="Journey"
@@ -492,8 +493,10 @@
   🧩
   <span class="label">Journey</span>
 </button>
+-->
 
-<!-- Pricing Button (top center) -->
+<!-- Pricing Button (top center) - not ready for main yet -->
+<!--
 <button
   class="pricing-btn"
   aria-label="Pricing"
@@ -503,6 +506,7 @@
   💎
   <span class="label">Pricing</span>
 </button>
+-->
 
 <!-- Floating Upload FAB (bottom right) -->
 <button
