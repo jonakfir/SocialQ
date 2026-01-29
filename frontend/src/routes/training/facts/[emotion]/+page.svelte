@@ -171,7 +171,6 @@
   .chip.primary{ background: #4f46e5; color: #fff; border-color: #4f46e5; }
 
   .facts-body{ padding: 16px 18px 22px; overflow: auto; }
-  .intro{ margin: 0 0 10px; color: var(--text-primary, #0f172a); font-weight: 600; }
 
   .facts-list{
     margin: 10px 0 16px; padding-left: 22px;

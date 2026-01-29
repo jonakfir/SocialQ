@@ -10,5 +10,10 @@ export default defineConfig({
 	},
 	ssr: {
 		noExternal: []
+	},
+	build: {
+		rollupOptions: {
+			external: ['@vladmandic/human']
+		}
 	}
 });
