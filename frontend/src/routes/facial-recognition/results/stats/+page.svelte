@@ -83,7 +83,6 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
   :global(html, body) { height: 100%; }
 
   .page {

@@ -52,7 +52,6 @@
 </script>
 
 <style>
-  @import '/static/style.css';
 
   .settings-title {
     font-family: 'Georgia', serif;
@@ -142,6 +141,51 @@
     margin-top: 6px;
     font-size: 12px;
     color: #6b7280;
+  }
+
+  /* Dark mode: card, labels, inputs and buttons stay visible */
+  :global(html.dark) .settings-title {
+    color: var(--text-primary, #f1f5f9);
+    -webkit-text-stroke: 1px var(--border-color, rgba(255,255,255,.2));
+    text-shadow: 0 4px 12px var(--shadow, rgba(0,0,0,.4));
+  }
+  :global(html.dark) .dashboard-box {
+    background: var(--bg-card, rgba(30, 41, 59, 0.9));
+    border: 1px solid var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 4px 30px var(--shadow, rgba(0,0,0,.5));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) select {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.95));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .settings-btn,
+  :global(html.dark) .btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .settings-btn:hover,
+  :global(html.dark) .btn:hover {
+    background: #4f46e5;
+    color: #fff;
+    border-color: #4f46e5;
+  }
+  :global(html.dark) .score-card {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.6));
+    border-color: var(--border-color, rgba(255,255,255,.15));
+  }
+  :global(html.dark) th,
+  :global(html.dark) td {
+    border-color: var(--border-color, rgba(255,255,255,.1));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) th {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.8));
+  }
+  :global(html.dark) .muted {
+    color: var(--text-secondary, #94a3b8);
   }
 </style>
 

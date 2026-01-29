@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { PUBLIC_API_URL } from '$env/static/public';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
@@ -72,7 +71,8 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
     const cookieHeader = event.request.headers.get('cookie') || '';
     
     // Build backend URL - use PUBLIC_API_URL or default to localhost
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
+    const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
+    const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
     const authUrl = `${backendUrl}/auth/me`;
     
@@ -325,8 +325,8 @@ export const GET: RequestHandler = async (event) => {
       // If getCurrentUser failed, try backend directly
       if (!user) {
         console.log('[GET /api/collages] getCurrentUser failed, trying backend directly...');
-        const { PUBLIC_API_URL } = await import('$env/static/public');
-        const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+        const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
+        const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
         const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
         const cookieHeader = event.request.headers.get('cookie') || '';
         

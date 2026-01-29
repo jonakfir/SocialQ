@@ -14,11 +14,33 @@ button { font: inherit; }
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  
+  /* Light mode colors (default) */
+  --bg-primary: transparent;
+  --bg-card: rgba(255,255,255,.55);
+  --bg-card-hover: rgba(255,255,255,.75);
+  --text-primary: #000;
+  --text-secondary: #374151;
+  --border-color: rgba(255,255,255,.45);
+  --shadow: rgba(0,0,0,.18);
+}
+html.dark {
+  color-scheme: dark;
+  /* Dark mode colors */
+  --bg-primary: #0f172a;
+  --bg-card: rgba(30, 41, 59, 0.8);
+  --bg-card-hover: rgba(30, 41, 59, 0.95);
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --border-color: rgba(255,255,255,.15);
+  --shadow: rgba(0,0,0,.5);
 }
 html {
   /* Prevent Safari auto-zooming text */
   -webkit-text-size-adjust: 100%;
   color-scheme: light;
+  background: var(--bg-primary);
+  transition: background-color 0.3s ease;
 }
 body {
   /* Fill the *visual* viewport height on iOS (no mysterious top gap) */
@@ -26,7 +48,9 @@ body {
   /* Never show page scroll on your full-screen sections */
   overflow: hidden;
   /* Keep your existing background (blobs etc.) visible */
-  background: transparent;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Utility: full-viewport page wrapper that centers content */
@@ -48,12 +72,13 @@ body {
 .card {
   width: min(92vw, 760px);
   border-radius: 24px;
-  border: 1px solid rgba(255,255,255,.45);
-  background: rgba(255,255,255,.55);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   backdrop-filter: blur(16px);
-  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  box-shadow: 0 20px 60px var(--shadow);
   padding: clamp(22px, 6vw, 56px);
   text-align: center;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 /* Keep your Georgia headline look without changing the rest of the site */
@@ -69,9 +94,10 @@ body {
 
 /* Subhead text */
 .subtle {
-  color: #374151;
+  color: var(--text-secondary);
   font-size: clamp(14px, 3.6vw, 18px);
   margin: 0 0 22px;
+  transition: color 0.3s ease;
 }
 
 /* CTA */

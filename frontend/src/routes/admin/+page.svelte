@@ -155,6 +155,182 @@
     newOrgCreatorId = '';
   }
 
+  // Create User modal (quick action)
+  let showCreateUserModal = false;
+  let newUserEmail = '';
+  let newUserPassword = '';
+  let newUserRole: 'personal' | 'admin' = 'personal';
+  let creatingUser = false;
+  let createUserError = '';
+
+  function openCreateUserModal() {
+    showCreateUserModal = true;
+    newUserEmail = '';
+    newUserPassword = '';
+    newUserRole = 'personal';
+    createUserError = '';
+  }
+
+  function closeCreateUserModal() {
+    showCreateUserModal = false;
+    newUserEmail = '';
+    newUserPassword = '';
+    newUserRole = 'personal';
+    createUserError = '';
+  }
+
+  async function createUser() {
+    if (!newUserEmail.trim() || !newUserPassword.trim()) {
+      createUserError = 'Email and password are required';
+      return;
+    }
+    creatingUser = true;
+    createUserError = '';
+    try {
+      const res = await apiFetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: newUserEmail.trim(),
+          password: newUserPassword.trim(),
+          role: newUserRole
+        })
+      });
+      const j = await res.json();
+      if (!j.ok) {
+        createUserError = j.error || 'Failed to create user';
+      } else {
+        closeCreateUserModal();
+        await refreshStats();
+        alert('User created successfully!');
+      }
+    } catch (e: any) {
+      createUserError = e?.message || 'Failed to create user';
+      console.error('createUser error', e);
+    } finally {
+      creatingUser = false;
+    }
+  }
+
+  // Upload Photo modal (quick action)
+  const EKMAN_EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral'];
+  const UPLOAD_DIFFICULTIES = ['all', '1', '2', '3', '4'];
+  const UPLOAD_FOLDER_OPTIONS: Array<{ value: string; label: string }> = [
+    { value: '', label: 'None (Ekman / default)' },
+    { value: 'generated', label: 'Generated Photos' }
+  ];
+  let showUploadPhotoModal = false;
+  let uploadPhotoFiles: File[] = [];
+  let uploadPhotoPreviews: string[] = [];
+  let uploadPhotoEmotion = 'Happy';
+  let uploadPhotoDifficulty = 'all';
+  let uploadPhotoFolder = '';
+  let uploadPhotoType: 'ekman' | 'other' | 'synthetic' = 'ekman';
+  let uploadingPhoto = false;
+  let uploadPhotoProgress = { current: 0, total: 0 }; // e.g. "Uploading 2/5"
+
+  function openUploadPhotoModal() {
+    showUploadPhotoModal = true;
+    uploadPhotoFiles = [];
+    uploadPhotoPreviews = [];
+    uploadPhotoEmotion = 'Happy';
+    uploadPhotoDifficulty = 'all';
+    uploadPhotoFolder = '';
+    uploadPhotoType = 'ekman';
+    uploadPhotoProgress = { current: 0, total: 0 };
+  }
+
+  function closeUploadPhotoModal() {
+    showUploadPhotoModal = false;
+    uploadPhotoFiles = [];
+    uploadPhotoPreviews = [];
+    uploadPhotoProgress = { current: 0, total: 0 };
+  }
+
+  function handleUploadPhotoFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const files = target.files;
+    if (!files?.length) return;
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    uploadPhotoFiles = fileArray;
+    const previews: string[] = new Array(fileArray.length).fill('');
+    uploadPhotoPreviews = previews;
+    fileArray.forEach((file, i) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previews[i] = e.target?.result as string;
+        uploadPhotoPreviews = [...previews];
+      };
+      reader.readAsDataURL(file);
+    });
+    target.value = '';
+  }
+
+  async function submitUploadPhoto() {
+    if (uploadPhotoFiles.length === 0) {
+      alert('Please select one or more photos');
+      return;
+    }
+    uploadingPhoto = true;
+    const total = uploadPhotoFiles.length;
+    uploadPhotoProgress = { current: 0, total };
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      const folderValue =
+        uploadPhotoFolder && uploadPhotoFolder.trim() !== ''
+          ? uploadPhotoFolder === 'generated'
+            ? `Generated Photos/${uploadPhotoEmotion}`
+            : uploadPhotoFolder
+          : '';
+
+      for (let i = 0; i < uploadPhotoFiles.length; i++) {
+        uploadPhotoProgress = { current: i + 1, total };
+        const formData = new FormData();
+        formData.append('file', uploadPhotoFiles[i]);
+        formData.append('emotion', uploadPhotoEmotion);
+        formData.append('difficulty', uploadPhotoDifficulty);
+        formData.append('photoType', uploadPhotoType);
+        if (folderValue) formData.append('folder', folderValue);
+        formData.append('organizationIds', JSON.stringify([]));
+
+        try {
+          const res = await apiFetch('/api/admin/ekman-images', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.ok) succeeded++;
+          else failed++;
+        } catch {
+          failed++;
+        }
+      }
+
+      closeUploadPhotoModal();
+      if (failed === 0) {
+        alert(total === 1 ? 'Photo uploaded successfully!' : `${succeeded} photos uploaded successfully!`);
+      } else {
+        alert(`${succeeded} uploaded, ${failed} failed.`);
+      }
+    } catch (e: any) {
+      console.error('Upload photo error', e);
+      alert('Failed to upload photos: ' + (e?.message || 'Network error'));
+    } finally {
+      uploadingPhoto = false;
+      uploadPhotoProgress = { current: 0, total: 0 };
+    }
+  }
+
+  // View Analytics modal (quick action)
+  let showAnalyticsModal = false;
+
+  function openAnalyticsModal() {
+    showAnalyticsModal = true;
+    if (!analyticsData) refreshStats();
+  }
+
+  function closeAnalyticsModal() {
+    showAnalyticsModal = false;
+  }
+
   function useAsPersonal() {
     setViewAs('personal');
     goto('/dashboard');
@@ -345,6 +521,165 @@
     </div>
   </div>
 {/if}
+
+<!-- Create User Modal (Quick Action) -->
+{#if showCreateUserModal}
+  <div
+    class="modal-overlay"
+    on:click={closeCreateUserModal}
+    on:keydown={(e) => e.key === 'Escape' && closeCreateUserModal()}
+    role="presentation"
+    tabindex="-1"
+  >
+    <div class="modal-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="create-user-title">
+      <div class="modal-header">
+        <h2 id="create-user-title">Create User</h2>
+        <button class="close-btn" on:click={closeCreateUserModal} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        {#if createUserError}
+          <div class="error-message">{createUserError}</div>
+        {/if}
+        <div class="form-group">
+          <label for="new-user-email">Email *</label>
+          <input id="new-user-email" type="email" bind:value={newUserEmail} placeholder="user@example.com" disabled={creatingUser} />
+        </div>
+        <div class="form-group">
+          <label for="new-user-password">Password *</label>
+          <input id="new-user-password" type="password" bind:value={newUserPassword} placeholder="••••••••" disabled={creatingUser} />
+        </div>
+        <div class="form-group">
+          <label for="new-user-role">Role</label>
+          <select id="new-user-role" bind:value={newUserRole} disabled={creatingUser}>
+            <option value="personal">Personal</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" on:click={closeCreateUserModal} disabled={creatingUser}>Cancel</button>
+          <button class="modal-btn create-btn" on:click={createUser} disabled={creatingUser || !newUserEmail.trim() || !newUserPassword.trim()}>
+            {creatingUser ? 'Creating...' : 'Create User'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Upload Photo Modal (Quick Action) -->
+{#if showUploadPhotoModal}
+  <div
+    class="modal-overlay"
+    on:click={closeUploadPhotoModal}
+    on:keydown={(e) => e.key === 'Escape' && closeUploadPhotoModal()}
+    role="presentation"
+    tabindex="-1"
+  >
+    <div class="modal-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="upload-photo-title">
+      <div class="modal-header">
+        <h2 id="upload-photo-title">Upload Photo</h2>
+        <button class="close-btn" on:click={closeUploadPhotoModal} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="upload-photo-file">Photo(s)</label>
+          <input id="upload-photo-file" type="file" accept="image/*" multiple on:change={handleUploadPhotoFileSelect} />
+          {#if uploadPhotoPreviews.length > 0}
+            <div class="upload-preview-grid">
+              {#each uploadPhotoPreviews as preview, i}
+                <img src={preview} alt="Preview {i + 1}" class="upload-preview-img" />
+              {/each}
+            </div>
+            <p class="form-hint">{uploadPhotoFiles.length} file(s) selected</p>
+          {/if}
+        </div>
+        <div class="form-group">
+          <label for="upload-photo-emotion">Emotion</label>
+          <select id="upload-photo-emotion" bind:value={uploadPhotoEmotion}>
+            {#each EKMAN_EMOTIONS as em}
+              <option value={em}>{em}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="upload-photo-difficulty">Difficulty</label>
+          <select id="upload-photo-difficulty" bind:value={uploadPhotoDifficulty}>
+            {#each UPLOAD_DIFFICULTIES as d}
+              <option value={d}>{d === 'all' ? 'All' : `Level ${d}`}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="upload-photo-folder">Folder</label>
+          <select id="upload-photo-folder" bind:value={uploadPhotoFolder}>
+            {#each UPLOAD_FOLDER_OPTIONS as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn cancel-btn" on:click={closeUploadPhotoModal} disabled={uploadingPhoto}>Cancel</button>
+          <button class="modal-btn create-btn" on:click={submitUploadPhoto} disabled={uploadingPhoto || uploadPhotoFiles.length === 0}>
+            {uploadingPhoto
+              ? `Uploading ${uploadPhotoProgress.current}/${uploadPhotoProgress.total}...`
+              : uploadPhotoFiles.length > 0
+                ? `Upload ${uploadPhotoFiles.length} photo${uploadPhotoFiles.length === 1 ? '' : 's'}`
+                : 'Upload'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- View Analytics Modal (Quick Action) -->
+{#if showAnalyticsModal}
+  <div
+    class="modal-overlay"
+    on:click={closeAnalyticsModal}
+    on:keydown={(e) => e.key === 'Escape' && closeAnalyticsModal()}
+    role="presentation"
+    tabindex="-1"
+  >
+    <div class="modal-content modal-content-wide" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="analytics-title">
+      <div class="modal-header">
+        <h2 id="analytics-title">Analytics</h2>
+        <button class="close-btn" on:click={closeAnalyticsModal} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        {#if loading && !analyticsData}
+          <p class="analytics-loading">Loading analytics...</p>
+        {:else}
+          <div class="analytics-quick-stats">
+            {#if analyticsData?.gamesPerDay}
+              {@const dates = Object.keys(analyticsData.gamesPerDay).sort().slice(-7)}
+              <p class="analytics-summary">Sessions (last 7 days): {dates.map(d => analyticsData.gamesPerDay[d]?.total || 0).reduce((a, b) => a + b, 0)}</p>
+            {/if}
+            {#if analyticsData?.activeUsersPerDay}
+              {@const dates = Object.keys(analyticsData.activeUsersPerDay).sort().slice(-7)}
+              <p class="analytics-summary">Active users (last 7 days): {dates.map(d => analyticsData.activeUsersPerDay[d] || 0).reduce((a, b) => a + b, 0)}</p>
+            {/if}
+          </div>
+          {#if miniChartData}
+            <div class="analytics-mini-chart">
+              <LineChart data={miniChartData} options={{ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }} />
+            </div>
+          {/if}
+          {#if gameDistributionData}
+            <div class="analytics-mini-chart">
+              <DoughnutChart data={gameDistributionData} options={{ plugins: { legend: { display: true } } }} />
+            </div>
+          {/if}
+          <div class="modal-actions" style="margin-top: 1rem;">
+            <button class="modal-btn create-btn" on:click={() => { closeAnalyticsModal(); goto('/admin/analytics'); }}>
+              Open full Analytics →
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
   
   <!-- Enhanced KPI Cards with Sparklines -->
   <div class="kpi-grid">
@@ -458,19 +793,19 @@
   <div class="quick-actions">
     <h2>Quick Actions</h2>
     <div class="actions-grid">
-      <button class="action-btn" on:click={() => goto('/admin/users')}>
+      <button class="action-btn" on:click={openCreateUserModal}>
         <span class="action-icon">👤</span>
-        <span class="action-label">Manage Users</span>
+        <span class="action-label">Create User</span>
       </button>
-      <button class="action-btn" on:click={() => goto('/admin/organizations')}>
-        <span class="action-icon">🏢</span>
-        <span class="action-label">Manage Organizations</span>
+      <button class="action-btn" on:click={openUploadPhotoModal}>
+        <span class="action-icon">📷</span>
+        <span class="action-label">Upload Photo</span>
       </button>
       <button class="action-btn" on:click={openCreateOrgModal}>
         <span class="action-icon">➕</span>
         <span class="action-label">Create Organization</span>
       </button>
-      <button class="action-btn" on:click={() => goto('/admin/analytics')}>
+      <button class="action-btn" on:click={openAnalyticsModal}>
         <span class="action-icon">📈</span>
         <span class="action-label">View Analytics</span>
       </button>
@@ -937,6 +1272,102 @@
   .create-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #5b52f5, #34e3fe);
     box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+  }
+
+  .upload-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 8px;
+    margin-top: 0.5rem;
+  }
+  .upload-preview-grid .upload-preview-img {
+    width: 100%;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+  .upload-preview-img {
+    display: block;
+    max-width: 100%;
+    max-height: 200px;
+    margin-top: 0.5rem;
+    border-radius: 8px;
+    object-fit: contain;
+  }
+
+  .modal-content-wide {
+    max-width: 640px;
+  }
+
+  .analytics-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #6b7280;
+  }
+
+  .analytics-quick-stats {
+    margin-bottom: 1rem;
+  }
+
+  .analytics-summary {
+    margin: 0.5rem 0;
+    font-weight: 600;
+    color: #111;
+  }
+
+  .analytics-mini-chart {
+    height: 220px;
+    width: 100%;
+    margin: 1rem 0;
+  }
+
+  /* Dark mode: modals and action buttons stay visible */
+  :global(html.dark) .modal-content {
+    background: var(--bg-card, rgba(30, 41, 59, 0.98));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    box-shadow: 0 24px 68px var(--shadow, rgba(0,0,0,.5));
+  }
+  :global(html.dark) .modal-header { border-bottom-color: var(--border-color, rgba(255,255,255,.15)); }
+  :global(html.dark) .modal-header h2 { color: var(--text-primary, #f1f5f9); }
+  :global(html.dark) .close-btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    color: var(--text-secondary, #cbd5e1);
+  }
+  :global(html.dark) .close-btn:hover { background: #475569; color: #f1f5f9; }
+  :global(html.dark) .form-group label { color: var(--text-primary, #f1f5f9); }
+  :global(html.dark) .form-group input,
+  :global(html.dark) .form-group textarea,
+  :global(html.dark) .form-group select {
+    background: var(--bg-card-hover, rgba(30, 41, 59, 0.95));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .form-group input:focus,
+  :global(html.dark) .form-group textarea:focus,
+  :global(html.dark) .form-group select:focus {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.95));
+  }
+  :global(html.dark) .form-hint,
+  :global(html.dark) .analytics-loading { color: var(--text-secondary, #cbd5e1); }
+  :global(html.dark) .modal-actions { border-top-color: var(--border-color, rgba(255,255,255,.15)); }
+  :global(html.dark) .modal-btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .cancel-btn { background: rgba(51, 65, 85, 0.8); color: var(--text-secondary, #cbd5e1); }
+  :global(html.dark) .cancel-btn:hover:not(:disabled) { background: #475569; color: #f1f5f9; }
+  :global(html.dark) .create-btn { color: #fff; }
+  :global(html.dark) .analytics-summary { color: var(--text-primary, #f1f5f9); }
+  :global(html.dark) .action-btn {
+    background: var(--bg-card-hover, rgba(30, 41, 59, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .action-btn:hover {
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.5);
   }
   
   @media (max-width: 768px) {

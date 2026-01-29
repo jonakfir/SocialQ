@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { PUBLIC_API_URL } from '$env/static/public';
+// Lazy load env
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';

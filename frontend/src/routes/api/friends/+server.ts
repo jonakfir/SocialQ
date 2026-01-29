@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-import { PUBLIC_API_URL } from '$env/static/public';
+// Lazy load env
 import { randomBytes } from 'crypto';
 
 /**
@@ -61,7 +61,7 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
     
     // Try backend auth
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
+    const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
     const authUrl = `${backendUrl}/auth/me`;
     

@@ -229,6 +229,14 @@
     text-shadow: 0 10px 10px rgba(0,0,0,0.4);
   }
 
+  .already-user {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #111;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
   form { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; padding: 0 1rem; box-sizing: border-box; }
 
   .input {
@@ -285,6 +293,23 @@
 
   .muted { margin-top: 8px; font-size: 13px; color: #6b7280; }
   .error { margin-top: 10px; color: #b91c1c; font-weight: 700; }
+
+  /* Dark mode: card, inputs and buttons stay visible */
+  :global(html.dark) .card { background: var(--bg-card, rgba(30, 41, 59, 0.9)); border-color: var(--border-color, rgba(255,255,255,.2)); }
+  :global(html.dark) .title { color: var(--text-primary, #f1f5f9); -webkit-text-stroke: 1px var(--border-color, rgba(255,255,255,.2)); }
+  :global(html.dark) .input {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.2));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .input::placeholder { color: var(--text-secondary, #94a3b8); }
+  :global(html.dark) .btn {
+    background: var(--bg-card-hover, rgba(51, 65, 85, 0.9));
+    border-color: var(--border-color, rgba(255,255,255,.25));
+    color: var(--text-primary, #f1f5f9);
+  }
+  :global(html.dark) .btn.primary { color: #fff; }
+  :global(html.dark) .muted { color: var(--text-secondary, #94a3b8); }
 </style>
 
 <div class="blobs">
@@ -301,6 +326,8 @@
     on:mouseleave={resetTilt}
   >
     <h2 class="title">Login</h2>
+
+    <p class="already-user">Already AboutFace™ User?</p>
 
     <form on:submit={handleLogin} autocomplete="on">
       <input class="input" type="email" bind:value={email} placeholder="Email" required />
@@ -328,7 +355,7 @@
     {#if error}<div class="error">{error}</div>{/if}
 
     <p class="muted">No account yet?</p>
-    <button class="btn" type="button" on:click={goCreate}>Create Account</button>
+    <button class="btn" type="button" on:click={() => goto('/register')}>Create Account</button>
     <button class="btn" type="button" on:click={goHome}>Back to Home</button>
   </div>
 </div>

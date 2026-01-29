@@ -181,7 +181,6 @@
 {/if}
 
 <style>
-  @import '/static/style.css';
 
   .stage { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 
@@ -192,20 +191,22 @@
     width: min(920px, 94vw);
     padding: clamp(24px, 5vw, 48px);
     border-radius: 22px;
-    border: 2px solid #111;
-    background: rgba(255,255,255,.22);
+    border: 2px solid var(--border-color, #111);
+    background: var(--bg-card, rgba(255,255,255,.55));
     backdrop-filter: blur(18px);
-    box-shadow: 0 16px 48px rgba(0,0,0,.18);
+    box-shadow: 0 16px 48px var(--shadow, rgba(0,0,0,.18));
     text-align: center;
+    color: var(--text-primary, #000);
+    transition: background .3s ease, border-color .3s ease, color .3s ease;
   }
 
   .title {
     font-family: Georgia, serif;
     font-size: clamp(28px, 4.6vw, 44px);
     margin: 0 0 16px;
-    color: #fff;
-    -webkit-text-stroke: 2px rgba(0,0,0,.45);
-    text-shadow: 0 3px 8px rgba(0,0,0,.35);
+    color: var(--text-primary, #000);
+    -webkit-text-stroke: 1px var(--border-color, rgba(0,0,0,.3));
+    text-shadow: 0 3px 8px var(--shadow, rgba(0,0,0,.2));
     animation: titlePop .45s ease both .05s;
   }
 
@@ -218,13 +219,14 @@
 
   .pill {
     position: relative; width: 100%; padding: 14px 18px; border-radius: 9999px;
-    border: 2px solid #111; background: #fff; font-weight: 800; font-size: medium; cursor: pointer;
-    transition: transform .12s ease, box-shadow .22s ease, background .2s ease, color .2s ease;
+    border: 2px solid var(--border-color, #111); background: var(--bg-card-hover, #fff); color: var(--text-primary, #111);
+    font-weight: 800; font-size: medium; cursor: pointer;
+    transition: transform .12s ease, box-shadow .22s ease, background .2s ease, color .2s ease, border-color .2s ease;
     will-change: transform, box-shadow;
     opacity: 0; transform: translateY(8px) scale(.96); animation: pillIn .44s ease forwards;
     animation-delay: var(--stagger, 0ms);
   }
-  .pill:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 12px 28px rgba(79,70,229,.28); background: #4f46e5; color: #fff; }
+  .pill:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 12px 28px rgba(79,70,229,.28); background: #4f46e5; color: #fff; border-color: #4f46e5; }
   .pill .sweep {
     position: absolute; inset: 0; border-radius: inherit;
     background: linear-gradient(115deg, transparent 0 45%, rgba(255,255,255,.45) 50%, transparent 55% 100%);
@@ -256,14 +258,15 @@
   }
 
   .opt{
-    background:#fff; border:2px solid #111; border-radius:9999px;
-    padding:8px 14px; font-weight:900; cursor:pointer;
-    box-shadow:0 10px 20px rgba(0,0,0,.12);
+    background: var(--bg-card-hover, #fff); color: var(--text-primary, #111);
+    border: 2px solid var(--border-color, #111); border-radius: 9999px;
+    padding: 8px 14px; font-weight: 900; cursor: pointer;
+    box-shadow: 0 10px 20px var(--shadow, rgba(0,0,0,.12));
     transition: transform .12s ease, box-shadow .2s ease, background .2s ease, color .2s ease, opacity .2s ease;
     animation: chipIn .22s ease both; animation-delay: var(--d, 0ms);
   }
-  .opt:hover{ transform: translateY(-1px); box-shadow:0 16px 28px rgba(0,0,0,.18); }
-  .opt.primary{ background:#4f46e5; color:#fff; }
+  .opt:hover{ transform: translateY(-1px); box-shadow: 0 16px 28px rgba(0,0,0,.18); }
+  .opt.primary{ background: #4f46e5; color: #fff; border-color: #4f46e5; }
 
   @keyframes popAt   { from { opacity:0; } to { opacity:1; } }
   @keyframes chipIn  { from { opacity:0; transform: translateY(6px) scale(.96) } to { opacity:1; transform:none } }

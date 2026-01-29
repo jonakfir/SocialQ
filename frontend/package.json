@@ -17,7 +17,8 @@
 		"prisma:generate": "prisma generate",
 		"setup-assets": "node scripts/setup-assets-db.js",
 		"populate-db": "node scripts/populate-db-direct.js",
-		"check-assets": "node scripts/ensure-assets-in-db.js"
+		"check-assets": "node scripts/ensure-assets-in-db.js",
+		"generate-synthetic-photos": "node scripts/generate-synthetic-photos.js"
 	},
 	"dependencies": {
 		"@prisma/client": "^6.13.0",
@@ -33,6 +34,7 @@
 		"@sveltejs/vite-plugin-svelte": "^3.1.2",
 		"autoprefixer": "^10.4.21",
 		"better-sqlite3": "^9.6.0",
+		"dotenv": "^16.6.1",
 		"glob": "^11.0.3",
 		"normalize-range": "^0.1.2",
 		"path-scurry": "^2.0.1",

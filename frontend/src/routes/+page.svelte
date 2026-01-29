@@ -86,8 +86,6 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
-
   :global(html, body){ margin:0; height:100%; }
 
   .stage{

@@ -1,7 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-import { PUBLIC_API_URL } from '$env/static/public';
+// Lazy load env
 import { randomBytes } from 'crypto';
 
 /**

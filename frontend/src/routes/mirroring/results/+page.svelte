@@ -88,7 +88,6 @@ ${link}
 </script>
 
 <style>
-  @import '/static/style.css';
 
   .page-container {
     display:flex; justify-content:center; align-items:center;

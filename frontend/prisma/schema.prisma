@@ -8,14 +8,16 @@ datasource db {
 }
 
 model User {
-  id               String          @id // Will be set manually as 9-digit number
-  username         String          @unique
-  password         String
-  role             String          @default("personal") // "personal" | "admin"
-  invitationCode   String?         @unique
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  collages         Collage[]
+  id                  String          @id // Will be set manually as 9-digit number
+  username            String          @unique
+  password            String
+  role                String          @default("personal") // "personal" | "admin"
+  darkMode            Boolean         @default(false)
+  invitationCode      String?         @unique
+  photoSourceSettings String?         // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  collages            Collage[]
   sentRequests     FriendRequest[] @relation("SentRequests")
   receivedRequests FriendRequest[] @relation("ReceivedRequests")
   friendships1     Friendship[]    @relation("User1Friendships")
@@ -103,14 +105,16 @@ model GameQuestion {
 
 // Organizations enable org-scoped administration and analytics
 model Organization {
-  id              String                    @id @default(cuid())
-  name            String                    @unique
-  description     String?
-  status          String                    @default("pending") // 'pending' | 'approved' | 'rejected'
-  createdByUserId String
-  createdAt       DateTime                  @default(now())
-  memberships     OrganizationMembership[]
-  createdBy       User                      @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  id                  String                              @id @default(cuid())
+  name                String                              @unique
+  description         String?
+  status              String                              @default("pending") // 'pending' | 'approved' | 'rejected'
+  photoSourceSettings String?                             // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
+  createdByUserId     String
+  createdAt           DateTime                            @default(now())
+  memberships         OrganizationMembership[]
+  createdBy       User                                @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  ekmanImageVisibility EkmanImageOrganizationVisibility[]
 
   @@index([status])
   @@index([createdByUserId])
@@ -135,15 +139,34 @@ model OrganizationMembership {
 
 // Ekman images for facial recognition quiz
 model EkmanImage {
-  id         String   @id @default(cuid())
-  imageData  String   // Base64 encoded image data (data URL)
-  label      String   // Emotion label: 'Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'
-  difficulty String   // Difficulty level: '1', '2', '3', '4', or 'all'
-  createdAt  DateTime @default(now())
+  id         String                      @id @default(cuid())
+  imageData  String                      // Base64 encoded image data (data URL)
+  label      String                      // Emotion label: 'Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'
+  difficulty String                      // Difficulty level: '1', '2', '3', '4', or 'all'
+  folder     String?                     // Optional folder (existing column in DB)
+  photoType  String                      @default("ekman") // 'ekman' | 'other' | 'synthetic'
+  createdAt  DateTime                    @default(now())
+  organizationVisibility EkmanImageOrganizationVisibility[]
 
   @@index([label])
   @@index([difficulty])
   @@index([label, difficulty])
+  @@index([photoType])
+}
+
+// Junction table for organization visibility of Ekman images
+// If empty, photo is visible to all organizations
+model EkmanImageOrganizationVisibility {
+  id           String      @id @default(cuid())
+  ekmanImageId String
+  organizationId String
+  ekmanImage   EkmanImage  @relation(fields: [ekmanImageId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt    DateTime    @default(now())
+
+  @@unique([ekmanImageId, organizationId])
+  @@index([ekmanImageId])
+  @@index([organizationId])
 }
 
 // Transition videos for transition recognition quiz

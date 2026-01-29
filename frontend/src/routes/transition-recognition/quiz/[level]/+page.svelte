@@ -328,7 +328,6 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
   :root{ --brand:#4f46e5; --brand2:#22d3ee; --ink:#0f172a; }
 
   .panel{
@@ -579,7 +578,14 @@
   </div>
 
   {#if instructionsOpen}
-    <div class="modal-backdrop" on:click={closeInstructions}>
+    <div
+      class="modal-backdrop"
+      role="button"
+      tabindex="0"
+      aria-label="Close instructions"
+      on:click={closeInstructions}
+      on:keydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), closeInstructions())}
+    >
       <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
         <div class="modal-header">
           <div class="badge">🎬</div>

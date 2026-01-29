@@ -222,45 +222,128 @@ function getStaticImages() {
   return staticImageModules;
 }
 
-// Get Ekman images from database with static fallback
-async function getAllImages(): Promise<Array<{ img: string; label: string; difficulty: string }>> {
-  // Try database first
+// Get user's organization IDs
+async function getUserOrganizationIds(userId: string | null): Promise<string[]> {
+  if (!userId) return [];
+  
   try {
-    const allImages = await prisma.ekmanImage.findMany({
+    const memberships = await prisma.organizationMembership.findMany({
+      where: {
+        userId,
+        status: 'approved'
+      },
       select: {
-        imageData: true,
-        label: true,
-        difficulty: true
+        organizationId: true
       }
     });
     
+    return memberships.map(m => m.organizationId);
+  } catch (error) {
+    console.error('[getUserOrganizationIds] Error:', error);
+    return [];
+  }
+}
+
+// Effective photo source settings: intersection of user and all their orgs. Default = all true.
+function parsePhotoSourceSettings(raw: string | null): { ekman: boolean; own: boolean; synthetic: boolean } {
+  const defaults = { ekman: true, own: true, synthetic: true };
+  if (!raw) return defaults;
+  try {
+    const o = JSON.parse(raw);
+    return {
+      ekman: typeof o.ekman === 'boolean' ? o.ekman : defaults.ekman,
+      own: typeof o.own === 'boolean' ? o.own : defaults.own,
+      synthetic: typeof o.synthetic === 'boolean' ? o.synthetic : defaults.synthetic
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+async function getEffectivePhotoSourceSettings(userId: string | null): Promise<{ ekman: boolean; own: boolean; synthetic: boolean }> {
+  const defaults = { ekman: true, own: true, synthetic: true };
+  if (!userId) return defaults;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { photoSourceSettings: true }
+    });
+    let effective = parsePhotoSourceSettings(user?.photoSourceSettings ?? null);
+    const orgIds = await getUserOrganizationIds(userId);
+    for (const orgId of orgIds) {
+      const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { photoSourceSettings: true }
+      });
+      const orgSettings = parsePhotoSourceSettings(org?.photoSourceSettings ?? null);
+      effective = {
+        ekman: effective.ekman && orgSettings.ekman,
+        own: effective.own && orgSettings.own,
+        synthetic: effective.synthetic && orgSettings.synthetic
+      };
+    }
+    return effective;
+  } catch (error) {
+    console.error('[getEffectivePhotoSourceSettings] Error:', error);
+    return defaults;
+  }
+}
+
+// photoTypeFilter: 'ekman' = ekman+other only, 'synthetic' = synthetic only, undefined = all
+async function getAllImages(
+  userOrganizationIds: string[] = [],
+  photoTypeFilter?: 'ekman' | 'synthetic'
+): Promise<Array<{ img: string; label: string; difficulty: string }>> {
+  try {
+    const wherePhotoType: any = {};
+    if (photoTypeFilter === 'ekman') {
+      wherePhotoType.photoType = { in: ['ekman', 'other'] };
+    } else if (photoTypeFilter === 'synthetic') {
+      wherePhotoType.photoType = 'synthetic';
+    }
+
+    const allImages = await prisma.ekmanImage.findMany({
+      where: Object.keys(wherePhotoType).length ? wherePhotoType : undefined,
+      select: {
+        id: true,
+        imageData: true,
+        label: true,
+        difficulty: true,
+        organizationVisibility: {
+          select: {
+            organizationId: true
+          }
+        }
+      }
+    });
+
     if (allImages.length > 0) {
-      console.log(`[getAllImages] ✅ Loaded ${allImages.length} images from database`);
-      return allImages.map(img => ({
-        img: img.imageData, // Base64 data URL
+      const filteredImages = allImages.filter(img => {
+        if (img.organizationVisibility.length === 0) return true;
+        if (userOrganizationIds.length === 0) return false;
+        const imageOrgIds = img.organizationVisibility.map(v => v.organizationId);
+        return userOrganizationIds.some(orgId => imageOrgIds.includes(orgId));
+      });
+      return filteredImages.map(img => ({
+        img: img.imageData,
         label: img.label,
         difficulty: img.difficulty
       }));
     }
   } catch (err: any) {
-    console.warn('[getAllImages] Database query failed, using static fallback:', err?.message);
+    console.warn('[getAllImages] Database query failed:', err?.message);
   }
-  
-  // Fallback to static imports if database is empty or fails
-  console.log('[getAllImages] Using static imports fallback...');
+
+  if (photoTypeFilter === 'synthetic') return [];
+  // Fallback to static imports only for ekman (no synthetic in static)
   const imageModules = getStaticImages();
   const images: Array<{ img: string; label: string; difficulty: string }> = [];
-  
-  console.log(`[getAllImages] Static modules loaded: ${Object.keys(imageModules).length} entries`);
-  
   for (const [path, url] of Object.entries(imageModules)) {
-    // path like: $lib/assets/ekman/Happy_3/001.png
     const parts = path.split('/');
     const folder = parts[parts.length - 2];
     if (folder && !folder.startsWith('Transition')) {
       const [label, difficulty] = folder.split('_');
       if (label && EMOTIONS.includes(label)) {
-        // Ensure URL is absolute for Vercel
         const imageUrl = typeof url === 'string' ? url : (url as any).default || url;
         images.push({
           img: imageUrl,
@@ -269,11 +352,6 @@ async function getAllImages(): Promise<Array<{ img: string; label: string; diffi
         });
       }
     }
-  }
-  
-  console.log(`[getAllImages] Found ${images.length} images from static imports`);
-  if (images.length === 0) {
-    console.error('[getAllImages] ⚠️  No images found in static imports! Check asset paths.');
   }
   return images;
 }
@@ -286,54 +364,41 @@ function shuffle<T>(a: T[]) {
   return a;
 }
 
-// Cache the image list to avoid re-scanning on every request
-let imageCache: Array<{ img: string; label: string; difficulty: string }> | null = null;
-
 export const GET: RequestHandler = async (event) => {
   try {
     const diff = (event.url.searchParams.get('difficulty') ?? '1').toString();
     console.log(`[ekman] Fetching images for difficulty: ${diff}`);
     const count = Number(event.url.searchParams.get('count') ?? '12');
 
-    // Load images once and cache
-    if (!imageCache) {
-      console.log('[ekman] Loading images from database/filesystem...');
-      imageCache = await getAllImages();
-      console.log(`[ekman] Loaded ${imageCache.length} images`);
+    const user = await getCurrentUser(event);
+    const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
+    const effective = user ? await getEffectivePhotoSourceSettings(user.id) : { ekman: true, own: true, synthetic: true };
+    console.log(`[ekman] Effective photo sources: ekman=${effective.ekman} own=${effective.own} synthetic=${effective.synthetic}`);
+
+    let pool: Array<{ img: string; label: string; difficulty: string }> = [];
+
+    if (effective.ekman) {
+      const ekmanImages = await getAllImages(userOrganizationIds, 'ekman');
+      pool = [...pool, ...ekmanImages];
+      console.log(`[ekman] Added ${ekmanImages.length} ekman/other images`);
+    }
+    if (effective.synthetic) {
+      const syntheticImages = await getAllImages(userOrganizationIds, 'synthetic');
+      pool = [...pool, ...syntheticImages];
+      console.log(`[ekman] Added ${syntheticImages.length} synthetic images`);
+    }
+    if (effective.own && user) {
+      const userCollages = await getUserCollages(user.id);
+      const friendsCollages = await getFriendsCollages(user.id);
+      pool = [...pool, ...userCollages, ...friendsCollages];
+      console.log(`[ekman] Added ${userCollages.length} user + ${friendsCollages.length} friends photos`);
     }
 
-    // Build a bank of { img, label, difficulty } from database or filesystem
-    let pool = imageCache
+    pool = pool
       .filter((row) => (diff === 'all' ? true : row.difficulty === diff))
       .map((row) => ({ img: row.img, label: row.label, difficulty: row.difficulty }));
 
-    console.log(`[ekman] Base pool size for difficulty ${diff}: ${pool.length}`);
-
-    // Get current user and add their saved photos + friends' photos to the corpus
-    // User and friend photos are ALWAYS included in ALL difficulty levels
-    try {
-      const user = await getCurrentUser(event);
-      if (user) {
-        console.log(`[ekman] Adding user collages for user ID: ${user.id} (all difficulty levels)`);
-        const userCollages = await getUserCollages(user.id);
-        
-        // User photos are included in all difficulty levels
-        // They will be mixed with the corpus images based on the requested difficulty
-        pool = [...pool, ...userCollages];
-        console.log(`[ekman] Added ${userCollages.length} user photos to corpus for difficulty: ${diff}`);
-        
-        // Also add friends' photos to the corpus
-        console.log(`[ekman] Adding friends' collages for user ID: ${user.id} (all difficulty levels)`);
-        const friendsCollages = await getFriendsCollages(user.id);
-        pool = [...pool, ...friendsCollages];
-        console.log(`[ekman] Added ${friendsCollages.length} friends' photos to corpus for difficulty: ${diff}`);
-      } else {
-        console.log('[ekman] No user authenticated, using base pool only');
-      }
-    } catch (userError: any) {
-      console.error('[ekman] Error getting user or collages:', userError);
-      // Continue without user photos if there's an error
-    }
+    console.log(`[ekman] Pool size for difficulty ${diff}: ${pool.length}`);
 
     if (pool.length === 0) {
       console.warn('[ekman] No images in pool, returning empty array');

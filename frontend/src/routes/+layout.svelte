@@ -1,5 +1,5 @@
 <!-- src/routes/+layout.svelte -->
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import Header from '$lib/components/Header.svelte';
@@ -14,6 +14,29 @@
   $: hideHeader = HIDE.has(($page.url.pathname || '/').replace(/\/$/, '').toLowerCase()) || 
                   ($page.url.pathname || '/').startsWith('/admin') ||
                   ($page.url.pathname || '/').startsWith('/org/');
+  
+  // Apply dark mode based on user preference
+  function applyDarkMode(enabled: boolean) {
+    if (typeof document === 'undefined') return;
+    const html = document.documentElement;
+    if (enabled) {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
+    }
+  }
+
+  // Apply dark mode on mount and when data changes
+  onMount(() => {
+    const darkMode = data?.user?.darkMode ?? false;
+    applyDarkMode(darkMode);
+  });
+
+  // Reactively apply dark mode when user data changes
+  $: if (data?.user) {
+    const darkMode = data.user.darkMode ?? false;
+    applyDarkMode(darkMode);
+  }
   
   // Function to apply/remove no-scroll - check pathname directly, don't rely on reactive
   function updateScrollLock() {
@@ -84,9 +107,6 @@
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
   />
-
-  <!-- Your existing global CSS from /static/style.css (loads alongside Tailwind) -->
-  <link rel="stylesheet" href="/style.css" />
 </svelte:head>
 
 <svelte:body />

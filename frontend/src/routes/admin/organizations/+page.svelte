@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { apiFetch } from '$lib/api';
   import { page } from '$app/stores';
+  import TrashDeleteButton from '$lib/components/TrashDeleteButton.svelte';
   
   // Get user from page data (set by admin layout)
   const user = $page.data?.user;
@@ -27,6 +28,7 @@
   let loadingMembers = false;
   let addingMember = false;
   let removingMember: Record<string, boolean> = {};
+  let deletingOrg: Record<string, boolean> = {};
   let newMemberId = '';
   let availableUsers: Array<{ id: string; username: string }> = [];
   let loadingAvailableUsers = false;
@@ -175,7 +177,6 @@
 
   async function removeMember(userId: string) {
     if (!managingMembersFor) return;
-    if (!confirm('Remove this member from the organization?')) return;
     removingMember[userId] = true;
     try {
       const res = await apiFetch(`/api/admin/organizations/${managingMembersFor}/members`, {
@@ -301,6 +302,24 @@
     }
   }
 
+  async function deleteOrganization(orgId: string, orgName: string) {
+    deletingOrg[orgId] = true;
+    try {
+      const res = await apiFetch(`/api/admin/organizations/${orgId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        organizations = organizations.filter((o) => o.id !== orgId);
+      } else {
+        alert('Failed to delete organization: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      console.error('deleteOrganization error', e);
+      alert('Failed to delete organization: ' + (e?.message || 'Network error'));
+    } finally {
+      deletingOrg[orgId] = false;
+    }
+  }
+
   function openCreateOrgModal() {
     showCreateOrgModal = true;
     orgError = '';
@@ -316,6 +335,56 @@
     newOrgName = '';
     newOrgDescription = '';
     newOrgCreatorId = '';
+  }
+
+  // Photo sources modal for organizations
+  let photoSourcesModalOrgId: string | null = null;
+  let orgPhotoSourceSettings = { ekman: true, own: true, synthetic: true };
+  let loadingOrgPhotoSources = false;
+  let savingOrgPhotoSources = false;
+
+  async function openPhotoSourcesModal(orgId: string) {
+    photoSourcesModalOrgId = orgId;
+    orgPhotoSourceSettings = { ekman: true, own: true, synthetic: true };
+    loadingOrgPhotoSources = true;
+    try {
+      const res = await apiFetch(`/api/admin/organizations/${orgId}/photo-sources`);
+      const data = await res.json();
+      if (data.ok && data.photoSourceSettings) {
+        orgPhotoSourceSettings = { ...data.photoSourceSettings };
+      }
+    } catch (e) {
+      console.error('Error loading org photo sources:', e);
+    } finally {
+      loadingOrgPhotoSources = false;
+    }
+  }
+
+  function closePhotoSourcesModal() {
+    photoSourcesModalOrgId = null;
+  }
+
+  async function saveOrgPhotoSources() {
+    if (!photoSourcesModalOrgId) return;
+    savingOrgPhotoSources = true;
+    try {
+      const res = await apiFetch(`/api/admin/organizations/${photoSourcesModalOrgId}/photo-sources`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orgPhotoSourceSettings)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        orgPhotoSourceSettings = { ...data.photoSourceSettings };
+        alert('Photo sources saved.');
+      } else {
+        alert('Failed to save: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      alert('Failed to save: ' + (e?.message || 'Network error'));
+    } finally {
+      savingOrgPhotoSources = false;
+    }
   }
 
   onMount(() => {
@@ -419,6 +488,18 @@
                 <button class="view-btn" on:click={() => manageMembers(org.id)}>
                   Manage Members
                 </button>
+                <button class="view-btn photo-sources-btn" on:click={() => openPhotoSourcesModal(org.id)} title="Photo sources for facial recognition">
+                  Photo sources
+                </button>
+                <span class="trash-org-wrap">
+                  <TrashDeleteButton
+                    confirmMessage={`Are you sure you want to delete the organization "${org.name}"? This will remove all memberships and cannot be undone.`}
+                    onConfirm={() => deleteOrganization(org.id, org.name)}
+                    disabled={deletingOrg[org.id]}
+                    loading={deletingOrg[org.id]}
+                    title="Delete this organization"
+                  />
+                </span>
               </td>
             </tr>
           {/each}
@@ -516,19 +597,60 @@
                         Joined: {formatDate(member.joinedAt)}
                       </div>
                     </div>
-                    <button 
-                      class="remove-member-btn" 
-                      on:click={() => removeMember(member.id)}
+                    <TrashDeleteButton
+                      confirmMessage="Remove this member from the organization?"
+                      onConfirm={() => removeMember(member.id)}
                       disabled={removingMember[member.id]}
+                      loading={removingMember[member.id]}
                       title="Remove member"
-                    >
-                      {removingMember[member.id] ? '...' : '×'}
-                    </button>
+                    />
                   </div>
                 {/each}
               </div>
             {/if}
           </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Photo sources modal -->
+  {#if photoSourcesModalOrgId}
+    <div 
+      class="modal-overlay" 
+      on:click={closePhotoSourcesModal} 
+      on:keydown={(e) => e.key === 'Escape' && closePhotoSourcesModal()}
+      role="presentation"
+      tabindex="-1"
+    >
+      <div class="modal-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="photo-sources-title">
+        <div class="modal-header">
+          <h2 id="photo-sources-title">Photo sources for members</h2>
+          <button class="close-btn" on:click={closePhotoSourcesModal} aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="photo-sources-help">Choose which image sources members of this organization can see in the facial recognition quiz.</p>
+          {#if loadingOrgPhotoSources}
+            <p class="loading-inline">Loading...</p>
+          {:else}
+            <div class="photo-sources-checkboxes">
+              <label class="photo-source-checkbox">
+                <input type="checkbox" bind:checked={orgPhotoSourceSettings.ekman} />
+                <span>Ekman / reference photos</span>
+              </label>
+              <label class="photo-source-checkbox">
+                <input type="checkbox" bind:checked={orgPhotoSourceSettings.own} />
+                <span>Own photos and friends' photos</span>
+              </label>
+              <label class="photo-source-checkbox">
+                <input type="checkbox" bind:checked={orgPhotoSourceSettings.synthetic} />
+                <span>Generated (synthetic) photos</span>
+              </label>
+            </div>
+            <button class="save-photo-sources-btn" on:click={saveOrgPhotoSources} disabled={savingOrgPhotoSources}>
+              {savingOrgPhotoSources ? 'Saving...' : 'Save'}
+            </button>
+          {/if}
         </div>
       </div>
     </div>
@@ -852,6 +974,64 @@
     cursor: not-allowed;
   }
 
+  .photo-sources-btn {
+    margin-left: 0.5rem;
+  }
+
+  .trash-org-wrap {
+    margin-left: 0.5rem;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+
+  .photo-sources-help {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin: 0 0 1rem 0;
+  }
+  .photo-sources-checkboxes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .photo-source-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9375rem;
+  }
+  .photo-source-checkbox input {
+    width: 1.125rem;
+    height: 1.125rem;
+    cursor: pointer;
+  }
+  .save-photo-sources-btn {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(79, 70, 229, 0.3);
+    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .save-photo-sources-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+  .save-photo-sources-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .loading-inline {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
   .empty-state { 
     text-align: center; 
     padding: 2rem; 
@@ -1029,30 +1209,6 @@
     color: #92400e;
   }
   
-  .remove-member-btn { 
-    width: 26px; 
-    height: 26px; 
-    border-radius: 50%; 
-    border: 0; 
-    background: rgba(239,68,68,.12); 
-    color: #ef4444; 
-    cursor: pointer; 
-    font-weight: 900; 
-    font-size: 1.2rem;
-    display: grid;
-    place-items: center;
-  }
-  
-  .remove-member-btn:hover:not(:disabled) { 
-    background: rgba(239,68,68,.2);
-    transform: scale(1.1);
-  }
-  
-  .remove-member-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* ===== Create Organization Modal Styles ===== */
   .form-group {
     margin-bottom: 1.25rem;

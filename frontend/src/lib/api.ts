@@ -248,7 +248,8 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
           return json({ 
             user: { 
               ...storedUser, 
-              role: checkData.user.role || 'personal' 
+              role: checkData.user.role || 'personal',
+              darkMode: storedUser.darkMode ?? false
             } 
           });
         }
@@ -256,7 +257,7 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
         // Fallback to stored user without role update
       }
     }
-    return json({ user: storedUser });
+    return json({ user: storedUser ? { ...storedUser, darkMode: storedUser.darkMode ?? false } : null });
   }
 
   if (path === '/auth/logout' && method === 'POST') {
@@ -269,6 +270,15 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     const current = readUser() || { id: 1, email: 'local@example.com' };
     const email = String(body?.email || current.email).trim().toLowerCase();
     const user = { id: current.id, email };
+    writeUser(user);
+    return json({ ok: true, user });
+  }
+
+  if (path === '/auth/preferences' && method === 'POST') {
+    const body = await readJson(init.body);
+    const current = readUser() || { id: 1, email: 'local@example.com', darkMode: false };
+    const darkMode = Boolean(body?.darkMode);
+    const user = { id: current.id, email: current.email, darkMode };
     writeUser(user);
     return json({ ok: true, user });
   }

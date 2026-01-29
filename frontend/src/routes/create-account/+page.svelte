@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { apiFetch } from '$lib/api';
   import { fade, fly } from 'svelte/transition';
 
@@ -13,6 +14,10 @@
   let accountType: 'personal' | 'organization' = 'personal';
   let orgName = '';
   let orgDescription = '';
+  
+  // Registration type from query param
+  $: registrationType = $page.url.searchParams.get('type') || 'myself';
+  $: isChildRegistration = registrationType === 'child';
 
   // terms and modal
   let accepted = false;
@@ -453,7 +458,9 @@
     on:mousemove={handleTilt}
     on:mouseleave={resetTilt}
   >
-    <h2 class="title" in:fade={{ duration: 220 }}>Create Account</h2>
+    <h2 class="title" in:fade={{ duration: 220 }}>
+      {isChildRegistration ? 'Register as your Child\'s Guardian' : 'Register as you...'}
+    </h2>
 
     <form on:submit={handleCreate} autocomplete="on" aria-busy={loading}>
       <input class="input" type="text" bind:value={email} placeholder="Email" required />

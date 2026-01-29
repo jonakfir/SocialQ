@@ -121,7 +121,6 @@
 <div class="bottom-haze" aria-hidden="true"></div>
 
 <style>
-  @import '/static/style.css';
 
   :global(body){ margin:0; overflow:hidden; background:#fdfcfc; }
 
@@ -135,56 +134,61 @@
   }
   .facts-card{
     width: min(980px, 66vw);
-    border: 2px solid #111;
+    border: 2px solid var(--border-color, #111);
     border-radius: 16px;
-    background: rgba(255,255,255,.28);
+    background: var(--bg-card, rgba(255,255,255,.55));
     backdrop-filter: blur(18px);
-    box-shadow: 0 16px 48px rgba(0,0,0,.18);
+    box-shadow: 0 16px 48px var(--shadow, rgba(0,0,0,.18));
     display: flex;
     flex-direction: column;
     min-height: 460px;
+    color: var(--text-primary, #0f172a);
+    transition: background .3s ease, border-color .3s ease, color .3s ease;
   }
   @media (max-width: 980px){ .facts-card{ width: 100%; } }
 
   .facts-head{
     display:flex; align-items:center; justify-content:space-between;
     gap:14px; padding:18px 18px 12px;
-    border-bottom:1px solid rgba(0,0,0,.08);
+    border-bottom:1px solid var(--border-color, rgba(0,0,0,.08));
   }
   .facts-head h1{
-    margin:0; font-family: Georgia, serif; color:#fff;
+    margin:0; font-family: Georgia, serif; color: var(--text-primary, #0f172a);
     font-size: clamp(22px, 4vw, 36px);
-    -webkit-text-stroke: 2px rgba(0,0,0,.45);
-    text-shadow: 0 3px 8px rgba(0,0,0,.35);
+    -webkit-text-stroke: 1px var(--border-color, rgba(0,0,0,.3));
+    text-shadow: 0 3px 8px var(--shadow, rgba(0,0,0,.2));
   }
   .cta-row{ display:flex; gap:10px; }
 
   .chip{
-    background:#fff; border:2px solid #111; border-radius:9999px;
-    padding:8px 14px; font-weight:900; cursor:pointer;
-    box-shadow:0 10px 20px rgba(0,0,0,.12);
+    background: var(--bg-card-hover, #fff); color: var(--text-primary, #111);
+    border: 2px solid var(--border-color, #111); border-radius: 9999px;
+    padding: 8px 14px; font-weight: 900; cursor: pointer;
+    box-shadow: 0 10px 20px var(--shadow, rgba(0,0,0,.12));
     transition: transform .12s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
   }
-  .chip:hover{ transform: translateY(-1px); box-shadow:0 16px 28px rgba(0,0,0,.18); }
-  .chip.primary{ background:#4f46e5; color:#fff; }
+  .chip:hover{ transform: translateY(-1px); box-shadow: 0 16px 28px rgba(0,0,0,.18); }
+  .chip.primary{ background: #4f46e5; color: #fff; border-color: #4f46e5; }
 
-  .facts-body{ padding:16px 18px 22px; overflow:auto; }
-  .intro{ margin:0 0 10px; color:#0f172a; font-weight:600; }
+  .facts-body{ padding: 16px 18px 22px; overflow: auto; }
 
   .facts-list{
-    margin:10px 0 16px; padding-left:22px;
-    display:grid; gap:10px;
+    margin: 10px 0 16px; padding-left: 22px;
+    display: grid; gap: 10px;
   }
   .facts-list li{
-    line-height:1.45;
+    line-height: 1.45;
+    color: var(--text-primary, #0f172a);
     animation: fadeUp .32s ease both;
     animation-delay: var(--d, 0ms);
     white-space: pre-line;   /* \n becomes a <br> visually, but still one bullet */
   }
   .note{
-    margin-top:8px; padding:10px 12px;
-    border:2px dashed rgba(0,0,0,.25);
-    border-radius:12px; background: rgba(255,255,255,.6);
+    margin-top: 8px; padding: 10px 12px;
+    border: 2px dashed var(--border-color, rgba(0,0,0,.25));
+    border-radius: 12px;
+    background: var(--bg-card-hover, rgba(255,255,255,.6));
+    color: var(--text-primary, #0f172a);
   }
 
   /* ---------- Artwork & blending (no masks; super reliable) ---------- */

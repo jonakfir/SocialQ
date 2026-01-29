@@ -1,0 +1,68 @@
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	plugins: [sveltekit({
+		typescript: {
+			check: false
+		}
+	})],
+	server: {
+		port: 5173,
+		host: true,
+		strictPort: false,
+		hmr: {
+			protocol: 'ws',
+			host: 'localhost',
+			clientPort: 5173
+		},
+		// Optimize for faster startup
+		watch: {
+			ignored: ['**/node_modules/**', '**/.svelte-kit/**', '**/prisma/**', '**/dist/**', '**/build/**', '**/.git/**']
+		},
+		fs: {
+			strict: false,
+			allow: ['..']
+		}
+	},
+	build: {
+		target: 'esnext',
+		minify: false,
+		rollupOptions: {
+			external: ['@vladmandic/human', '@tensorflow/tfjs-node']
+		}
+	},
+	optimizeDeps: {
+		exclude: ['@prisma/client', '@vladmandic/human', '@tensorflow/tfjs-node', 'pg', 'bcryptjs', 'chart.js', 'svelte-chartjs', 'jose'],
+		include: ['svelte'],
+		// Don't force re-optimization
+		force: false,
+		esbuildOptions: {
+			target: 'esnext',
+			logLevel: 'error',
+			// Faster parsing
+			legalComments: 'none'
+		}
+	},
+	ssr: {
+		external: ['@prisma/client', '@vladmandic/human', '@tensorflow/tfjs-node', 'pg', 'bcryptjs', 'jose'],
+		noExternal: []
+	},
+	esbuild: {
+		target: 'esnext',
+		logOverride: { 'this-is-undefined-in-esm': 'silent' },
+		// Faster esbuild
+		logLevel: 'error'
+	},
+	clearScreen: false,
+	// Minimal logging
+	logLevel: 'error',
+	// Disable source maps in dev for speed
+	css: {
+		devSourcemap: false
+	},
+	// Don't resolve dependencies eagerly
+	resolve: {
+		dedupe: ['svelte']
+	}
+});
