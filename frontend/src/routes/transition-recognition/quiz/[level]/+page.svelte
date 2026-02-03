@@ -41,6 +41,9 @@
   // Overall quiz stopwatch (for history "time taken")
   let quizStartedAt: number | null = null;
 
+  // Prevent double-submit while finishing
+  let finishing = false;
+
   // Preconnect/preload helpers
   let firstOrigin: string | null = null;
 
@@ -166,19 +169,33 @@
     return picks;
   }
 
-  function chooseFrom(e: Emotion) { if (!instructionsOpen) guessFrom[current] = e; }
-  function chooseTo(e: Emotion)   { if (!instructionsOpen) guessTo[current]   = e; }
+  function chooseFrom(e: Emotion) {
+    if (!instructionsOpen) {
+      guessFrom[current] = e;
+      guessFrom = guessFrom;
+    }
+  }
+  function chooseTo(e: Emotion) {
+    if (!instructionsOpen) {
+      guessTo[current] = e;
+      guessTo = guessTo;
+    }
+  }
 
   function next(auto = false) {
     if (!auto) {
       if (instructionsOpen) return;
+      if (finishing) return;
       if (!guessFrom[current] || !guessTo[current]) {
         alert('Pick BOTH the starting and ending emotions.');
         return;
       }
     }
     if (current < clips.length - 1) { current += 1; startTimer(); }
-    else { finish(); }
+    else {
+      finishing = true;
+      finish();
+    }
   }
   function back() { if (!instructionsOpen && current > 0) { current -= 1; startTimer(); } }
 
@@ -242,8 +259,23 @@
     localStorage.setItem(`tr_quiz_score_${userKey}`, String(scoreNum));
     localStorage.setItem(`tr_quiz_total_${userKey}`, String(clips.length));
 
-    // Thumbnails (best-effort)
-    const { starts, ends } = await captureBatch(clips.map(c => c.media));
+    // Thumbnails (best-effort) - timeout so submit never hangs
+    let starts: (string | undefined)[] = [];
+    let ends: (string | undefined)[] = [];
+    try {
+      const captured = await Promise.race([
+        captureBatch(clips.map(c => c.media)),
+        new Promise<{ starts: (string|undefined)[]; ends: (string|undefined)[] }>((_, rej) =>
+          setTimeout(() => rej(new Error('capture_timeout')), 12000)
+        )
+      ]);
+      starts = captured.starts;
+      ends = captured.ends;
+    } catch (_) {
+      // Use empty thumbnails if capture fails or times out
+      starts = clips.map(() => undefined);
+      ends = clips.map(() => undefined);
+    }
 
     // Rich details for Stats
     const rows = clips.map((c, i) => {
@@ -289,9 +321,11 @@
     existing.unshift(attempt);
     localStorage.setItem(historyKey, JSON.stringify(existing.slice(0, 50)));
 
-    // Save to database for admin statistics
+    // Save to database for admin statistics (non-blocking, don't delay navigation)
     try {
       const { apiFetch } = await import('$lib/api');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
       await apiFetch('/api/game-sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,8 +341,10 @@
             picked: `${pickedFrom[idx]}→${pickedTo[idx]}`,
             isCorrect: results[idx][0] && results[idx][1]
           }))
-        })
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
     } catch (error) {
       console.error('[transition-recognition] Failed to save session to database:', error);
       // Continue anyway - localStorage is the source of truth
@@ -565,7 +601,9 @@
       <div class="nav-row">
         <button class="btn ghost" on:click={replay} disabled={instructionsOpen}>Replay</button>
         <button class="btn ghost" on:click={back} disabled={current === 0 || instructionsOpen}>Back</button>
-        <button class="btn primary" on:click={() => next(false)} disabled={instructionsOpen}>Next</button>
+        <button class="btn primary" on:click={() => next(false)} disabled={instructionsOpen || finishing}>
+          {finishing ? 'Submitting…' : 'Next'}
+        </button>
       </div>
     </div>
 
