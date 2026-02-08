@@ -1,5 +1,6 @@
 // backend/routes/relationships.js
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const {
   createFriendRequest,
   acceptFriendRequest,
@@ -11,9 +12,18 @@ const {
 } = require('../db/db');
 
 const router = express.Router();
+const JWT_SECRET = process.env.AUTH_SECRET || 'dev-change-this';
 
-// Helper to get current user ID from request
+// Helper to get current user ID from request (supports Bearer token for mobile)
 function getCurrentUserId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice(7);
+      const payload = jwt.verify(token, JWT_SECRET);
+      if (payload?.uid) return Number(payload.uid);
+    } catch { /* fall through */ }
+  }
   const idFromUser = req.user?.id || req.session?.user?.id;
   if (idFromUser) return Number(idFromUser);
   const idFromCookie = Number(req.cookies?.uid) || Number(req.cookies?.userId) || null;
@@ -32,19 +42,20 @@ function requireAuth(req, res, next) {
 router.post('/requests', requireAuth, async (req, res) => {
   try {
     const fromUserId = req.currentUserId;
-    const { userEmail } = req.body;
+    const { userEmail, toUserId: toUserIdParam } = req.body;
 
-    if (!userEmail || typeof userEmail !== 'string') {
-      return res.status(400).json({ error: 'User email is required' });
+    let toUserId;
+    if (toUserIdParam != null) {
+      const targetUser = await findUserById(Number(toUserIdParam));
+      if (!targetUser) return res.status(404).json({ error: 'User not found' });
+      toUserId = targetUser.id;
+    } else if (userEmail && typeof userEmail === 'string') {
+      const targetUser = await findUserByEmail(userEmail);
+      if (!targetUser) return res.status(404).json({ error: 'User not found' });
+      toUserId = targetUser.id;
+    } else {
+      return res.status(400).json({ error: 'userEmail or toUserId is required' });
     }
-
-    // Find target user
-    const targetUser = await findUserByEmail(userEmail);
-    if (!targetUser) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const toUserId = targetUser.id;
 
     // Can't send request to yourself
     if (fromUserId === toUserId) {
@@ -161,6 +172,22 @@ router.post('/requests/:id/decline', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[POST /relationships/requests/:id/decline] error:', e);
     return res.status(500).json({ error: 'Failed to decline friend request' });
+  }
+});
+
+// GET /relationships/search?email=... - Search users by email (exact + partial match)
+router.get('/search', requireAuth, async (req, res) => {
+  try {
+    const email = (req.query.email || '').toString().trim();
+    if (email.length < 2) {
+      return res.json({ ok: true, users: [] });
+    }
+    const { searchUsersByEmail } = require('../db/db');
+    const users = await searchUsersByEmail(email, req.currentUserId, 10);
+    return res.json({ ok: true, users });
+  } catch (e) {
+    console.error('[GET /relationships/search] error:', e);
+    return res.status(500).json({ error: 'Failed to search users' });
   }
 });
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * Populate EkmanImage table from frontend assets.
- * Run from project root: cd web/backend && node scripts/populate-ekman.js
- * Requires DATABASE_URL (Railway Postgres or local).
+ * Populate EkmanImage table from the web app's assets/ekman folder only.
+ * Run: cd web/backend && node scripts/populate-ekman.js
+ * Requires DATABASE_URL. Inserts are marked folder='canonical'.
+ * Mirroring game uses ONLY these canonical images (no admin-uploaded "Ekman" photos).
+ * Repopulate after adding/removing images in frontend/src/lib/assets/ekman.
  */
 
 require('dotenv').config();
@@ -102,20 +104,21 @@ async function main() {
     await pool.query('DELETE FROM "EkmanImage"');
     console.log('🗑️  Cleared existing EkmanImage rows');
 
+    const FOLDER_CANONICAL = 'canonical'; // Only these are used for mirroring (from web app assets/ekman folder)
     const batchSize = 10;
     let inserted = 0;
 
     for (let i = 0; i < images.length; i += batchSize) {
       const batch = images.slice(i, i + batchSize);
       const placeholders = batch.map((_, idx) => {
-        const base = (i + idx) * 4;
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+        const base = (i + idx) * 5;
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
       }).join(', ');
-      const params = batch.flatMap(img => [img.id, img.imageData, img.label, img.difficulty]);
+      const params = batch.flatMap(img => [img.id, img.imageData, img.label, img.difficulty, FOLDER_CANONICAL]);
 
       try {
         await pool.query(
-          `INSERT INTO "EkmanImage" ("id", "imageData", "label", "difficulty") VALUES ${placeholders}`,
+          `INSERT INTO "EkmanImage" ("id", "imageData", "label", "difficulty", "folder") VALUES ${placeholders}`,
           params
         );
         inserted += batch.length;
@@ -123,8 +126,8 @@ async function main() {
         for (const img of batch) {
           try {
             await pool.query(
-              'INSERT INTO "EkmanImage" ("id", "imageData", "label", "difficulty") VALUES ($1, $2, $3, $4)',
-              [img.id, img.imageData, img.label, img.difficulty]
+              'INSERT INTO "EkmanImage" ("id", "imageData", "label", "difficulty", "folder") VALUES ($1, $2, $3, $4, $5)',
+              [img.id, img.imageData, img.label, img.difficulty, FOLDER_CANONICAL]
             );
             inserted++;
           } catch (e) {

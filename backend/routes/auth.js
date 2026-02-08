@@ -12,6 +12,8 @@ const {
   updateUserDarkMode,
   getUserRole,
   updateUserRole,
+  createUserProfile,
+  findUserProfileByUserId,
   initializeSchema
 } = require('../db/db');
 
@@ -199,10 +201,36 @@ router.post('/register', async (req, res) => {
     
     const user = await createUser({ email, password: hash, role });
 
+    // Store onboarding profile data tied to this user (age, verbal, literate, goals - for reminders)
+    const profile = req.body?.profile;
+    if (profile && typeof profile === 'object') {
+      try {
+        const userType = (profile.user_type || 'myself').replace(/-/g, '_').toLowerCase();
+        const validTypes = ['myself', 'my_child', 'my_student', 'someone_else'];
+        const safeUserType = validTypes.includes(userType) ? userType : 'myself';
+        await createUserProfile(user.id, {
+          user_type: safeUserType,
+          beneficiary_name: profile.beneficiary_name || null,
+          is_over_18: profile.is_over_18,
+          birthday: profile.birthday || null,
+          is_verbal: profile.is_verbal,
+          is_literate: profile.is_literate,
+          goal: profile.goal || null,
+          teacher_email: profile.teacher_email || null,
+          doctor_email: profile.doctor_email || null,
+          doctor_name: profile.doctor_name || null,
+          parent_name: profile.parent_name || null,
+          parent_email: profile.parent_email || null
+        });
+      } catch (profileErr) {
+        console.error('[register] Profile save failed (non-fatal):', profileErr.message);
+      }
+    }
+
     // Sign them in immediately - get JWT token
     const token = setSessionCookies(res, user);
 
-    return res.status(201).json({ ok: true, user: { ...user, role: user.role }, token });
+    return res.status(201).json({ ok: true, user: { ...user, role: user.role, accessLevel: user.access_level || 'none' }, token });
   } catch (e) {
     console.error('[register] error', e);
     console.error('[register] error details:', e.message);
@@ -306,8 +334,9 @@ router.post('/login', async (req, res) => {
       }
       
       const token = setSessionCookies(res, { id: user.id, email: user.email });
+      const accessLevel = user.access_level || 'none';
       console.log('[login] ✅ ADMIN LOGIN SUCCESS');
-      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role || 'admin' }, token });
+      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role || 'admin', accessLevel }, token });
     }
 
     // Regular login for other users
@@ -360,8 +389,9 @@ router.post('/login', async (req, res) => {
     }
     
     const token = setSessionCookies(res, { id: user.id, email: user.email });
-    console.log('[login] ✅ Regular login successful, role:', role, 'user.id:', user.id);
-    return res.json({ ok: true, user: { id: user.id, email: user.email, role }, token });
+    const accessLevel = user.access_level || 'none';
+    console.log('[login] ✅ Regular login successful, role:', role, 'accessLevel:', accessLevel, 'user.id:', user.id);
+    return res.json({ ok: true, user: { id: user.id, email: user.email, role, accessLevel }, token });
   } catch (e) {
     console.error('[login] FATAL ERROR:', e);
     console.error('[login] Error message:', e.message);
@@ -427,14 +457,33 @@ router.get('/me', async (req, res) => {
       role = 'admin';
     }
 
-    console.log('[me] ✅ User found:', email, 'Role:', role);
+    // Fetch profile (age, verbal, literate, goals - tied to user for reminders)
+    let profile = null;
+    try {
+      profile = await findUserProfileByUserId(uid);
+    } catch (e) {
+      console.warn('[me] Profile fetch failed:', e.message);
+    }
+
+    const accessLevel = user.access_level || 'none';
+    console.log('[me] ✅ User found:', email, 'Role:', role, 'AccessLevel:', accessLevel);
     return res.json({ 
       ok: true, 
       user: { 
         id: user.id, 
         email: user.email, 
         role,
-        darkMode: user.dark_mode ?? false
+        accessLevel,
+        darkMode: user.dark_mode ?? false,
+        profile: profile ? {
+          userType: profile.user_type,
+          beneficiaryName: profile.beneficiary_name,
+          isOver18: profile.is_over_18,
+          birthday: profile.birthday,
+          isVerbal: profile.is_verbal,
+          isLiterate: profile.is_literate,
+          goal: profile.goal
+        } : null
       } 
     });
   } catch (e) {
@@ -495,18 +544,58 @@ router.post('/update', async (req, res) => {
     // refresh cookies in case email changed
     setSessionCookies(res, { id: updated.id, email: updated.email });
 
+    const accessLevel = updated.access_level || 'none';
     return res.json({ 
       ok: true, 
       user: { 
         id: updated.id, 
         email: updated.email, 
         role,
+        accessLevel,
         darkMode: updated.dark_mode ?? false
       } 
     });
   } catch (e) {
     console.error('[update] error', e);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /auth/profile - Update or create user profile (onboarding data tied to user)
+router.post('/profile', async (req, res) => {
+  try {
+    const uid = uidFromCookiesOrJWT(req);
+    if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+
+    const profile = req.body?.profile || req.body;
+    if (!profile || typeof profile !== 'object') {
+      return res.status(400).json({ error: 'Profile data required' });
+    }
+
+    const userType = (profile.user_type || profile.userType || 'myself').replace(/-/g, '_').toLowerCase();
+    const validTypes = ['myself', 'my_child', 'my_student', 'someone_else'];
+    const safeUserType = validTypes.includes(userType) ? userType : 'myself';
+
+    await createUserProfile(uid, {
+      user_type: safeUserType,
+      beneficiary_name: profile.beneficiary_name || profile.beneficiaryName || null,
+      is_over_18: profile.is_over_18 ?? profile.isOver18,
+      birthday: profile.birthday || null,
+      is_verbal: profile.is_verbal ?? profile.isVerbal,
+      is_literate: profile.is_literate ?? profile.isLiterate,
+      goal: profile.goal || null,
+      teacher_email: profile.teacher_email || profile.teacherEmail || null,
+      doctor_email: profile.doctor_email || profile.doctorEmail || null,
+      doctor_name: profile.doctor_name || profile.doctorName || null,
+      parent_name: profile.parent_name || profile.parentName || null,
+      parent_email: profile.parent_email || profile.parentEmail || null
+    });
+
+    const updated = await findUserProfileByUserId(uid);
+    return res.json({ ok: true, profile: updated });
+  } catch (e) {
+    console.error('[profile] error', e);
+    return res.status(500).json({ error: 'Server error', details: e.message });
   }
 });
 
@@ -537,12 +626,14 @@ router.post('/preferences', async (req, res) => {
       role = 'admin';
     }
 
+    const accessLevel = updated.access_level || 'none';
     return res.json({ 
       ok: true, 
       user: { 
         id: updated.id, 
         email: updated.email, 
         role,
+        accessLevel,
         darkMode: updated.dark_mode ?? false
       } 
     });

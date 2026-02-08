@@ -18,7 +18,7 @@ let pool = null;
 let schemaInitPromise = Promise.resolve();
 try {
   const dbModule = require('./db/db');
-  ({ findUserById, deleteUserById, countUsers, getUserRole, db, pool, schemaInitPromise } = dbModule);
+  ({ findUserById, deleteUserById, countUsers, getUserRole, updateUserAccessLevel, db, pool, schemaInitPromise } = dbModule);
 } catch { /* ok if you don't have db */ }
 
 // -------------------- Env --------------------
@@ -40,6 +40,13 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // ------------- Middleware -------------
+// Stripe webhook needs raw body for signature verification (must be before express.json())
+try {
+  const { handleStripeWebhook } = require('./routes/stripe');
+  app.use('/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
+} catch (e) {
+  console.warn('[Server] Stripe webhook not mounted:', e.message);
+}
 app.use(express.json());
 app.use(cookieParser());
 
@@ -377,6 +384,25 @@ try {
   app.use('/relationships', require('./routes/relationships'));
 } catch {
   console.warn('[Server] Relationships routes not available');
+}
+
+// Friend photos for iOS (same path as web: GET /api/friends/:friendId/photos)
+try {
+  app.use('/api/friends', require('./routes/friendPhotos'));
+} catch {
+  console.warn('[Server] Friend photos API not available');
+}
+
+// Stripe: create-checkout-session requires auth; webhook is already mounted with raw body above
+try {
+  const stripeRouter = require('./routes/stripe').router;
+  app.use('/stripe', (req, res, next) => {
+    if (req.path === '/create-checkout-session' && req.method === 'POST') return requireAuth(req, res, next);
+    next();
+  }, stripeRouter);
+  console.log('[Server] Stripe routes mounted at /stripe');
+} catch (e) {
+  console.warn('[Server] Stripe routes not available:', e.message);
 }
 
 // ---------------- WhatsApp helpers ----------------
@@ -799,22 +825,28 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     let users = [];
     if (pool) {
       // PostgreSQL
-      const result = await pool.query('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC');
+      const result = await pool.query('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, created_at FROM users ORDER BY created_at DESC');
       users = result.rows.map(row => ({
         id: row.id,
         email: row.email,
         username: row.email,
         role: row.role || 'personal',
+        accessLevel: row.access_level || 'none',
+        stripeCustomerId: row.stripe_customer_id || null,
+        stripeSubscriptionId: row.stripe_subscription_id || null,
         createdAt: row.created_at
       }));
     } else if (db) {
       // SQLite
-      const allUsers = db.prepare('SELECT id, email, role, created_at FROM users ORDER BY created_at DESC').all();
+      const allUsers = db.prepare('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, created_at FROM users ORDER BY created_at DESC').all();
       users = allUsers.map(u => ({
         id: u.id,
         email: u.email,
         username: u.email,
         role: u.role || 'personal',
+        accessLevel: u.access_level || 'none',
+        stripeCustomerId: u.stripe_customer_id || null,
+        stripeSubscriptionId: u.stripe_subscription_id || null,
         createdAt: u.created_at
       }));
     }
@@ -858,6 +890,26 @@ app.patch('/admin/users/:userId/role', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('[/admin/users/:userId/role] error:', e);
     return res.status(500).json({ error: 'Failed to update user role' });
+  }
+});
+
+// PATCH /admin/users/:userId/access_level - Update user access level (Pro Access, Free Trial, None)
+app.patch('/admin/users/:userId/access_level', requireAuth, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    const { accessLevel } = req.body;
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: 'Invalid user ID' });
+    }
+    if (!['pro', 'free_trial', 'none'].includes(accessLevel)) {
+      return res.status(400).json({ error: 'Invalid access level. Must be "pro", "free_trial", or "none"' });
+    }
+    await updateUserAccessLevel(userId, accessLevel);
+    const updatedUser = await findUserById(userId);
+    return res.json({ ok: true, user: updatedUser });
+  } catch (e) {
+    console.error('[/admin/users/:userId/access_level] error:', e);
+    return res.status(500).json({ error: 'Failed to update access level' });
   }
 });
 

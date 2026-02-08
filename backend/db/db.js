@@ -115,11 +115,12 @@ async function initializeSchema(retries = 5) {
         // PostgreSQL schema - Users table
         await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
-          id         SERIAL PRIMARY KEY,
-          email      TEXT UNIQUE NOT NULL,
-          password   TEXT NOT NULL,
-          role       TEXT DEFAULT 'personal' CHECK (role IN ('admin', 'personal', 'org_admin')),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          id            SERIAL PRIMARY KEY,
+          email         TEXT UNIQUE NOT NULL,
+          password      TEXT NOT NULL,
+          role          TEXT DEFAULT 'personal' CHECK (role IN ('admin', 'personal', 'org_admin')),
+          access_level  TEXT DEFAULT 'none' CHECK (access_level IN ('pro', 'free_trial', 'none')),
+          created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         `);
         console.log('[DB] Users table created/verified');
@@ -166,6 +167,42 @@ async function initializeSchema(retries = 5) {
           }
         } catch (e) {
           console.error('[DB] Dark mode column migration failed:', e);
+        }
+
+        // Add access_level column if it doesn't exist (migration)
+        try {
+          const accessLevelCheck = await pool.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' AND column_name = 'access_level'
+          `);
+          if (accessLevelCheck.rows.length === 0) {
+            console.log('[DB] Adding access_level column to users table...');
+            await pool.query(`
+              ALTER TABLE users 
+              ADD COLUMN access_level TEXT DEFAULT 'none' CHECK (access_level IN ('pro', 'free_trial', 'none'));
+            `);
+            await pool.query(`UPDATE users SET access_level = 'none' WHERE access_level IS NULL;`);
+            console.log('[DB] access_level column added successfully');
+          }
+        } catch (e) {
+          console.error('[DB] access_level column migration failed:', e);
+        }
+
+        // Add stripe_customer_id and stripe_subscription_id if they don't exist (migration)
+        for (const col of ['stripe_customer_id', 'stripe_subscription_id']) {
+          try {
+            const check = await pool.query(`
+              SELECT column_name FROM information_schema.columns
+              WHERE table_name = 'users' AND column_name = $1
+            `, [col]);
+            if (check.rows.length === 0) {
+              await pool.query(`ALTER TABLE users ADD COLUMN ${col} TEXT;`);
+              console.log('[DB] Added column:', col);
+            }
+          } catch (e) {
+            console.error('[DB] Migration', col, 'failed:', e);
+          }
         }
       
         await pool.query(`
@@ -339,6 +376,16 @@ async function initializeSchema(retries = 5) {
             await pool.query(`ALTER TABLE "EkmanImage" ADD COLUMN "photoType" TEXT DEFAULT 'ekman';`);
           }
         } catch (e) { /* ignore */ }
+        try {
+          const fc = await pool.query(`
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'EkmanImage' AND column_name = 'folder'
+          `);
+          if (fc.rows.length === 0) {
+            await pool.query(`ALTER TABLE "EkmanImage" ADD COLUMN "folder" TEXT;`);
+            console.log('[DB] EkmanImage.folder column added');
+          }
+        } catch (e) { /* ignore */ }
         console.log('[DB] EkmanImage table created/verified');
 
         // TransitionVideo table (for Transition Recognition clips)
@@ -460,6 +507,29 @@ async function initializeSchema(retries = 5) {
       }
     } catch (e) {
       console.error('[DB dark mode migration failed]', e);
+    }
+
+    // Add access_level column if it doesn't exist (migration)
+    try {
+      const cols = db.prepare(`PRAGMA table_info(users);`).all().map(c => c.name);
+      if (!cols.includes('access_level')) {
+        db.exec(`ALTER TABLE users ADD COLUMN access_level TEXT DEFAULT 'none';`);
+        db.exec(`UPDATE users SET access_level = 'none' WHERE access_level IS NULL;`);
+        console.log('[DB] access_level column added successfully');
+      }
+    } catch (e) {
+      console.error('[DB access_level migration failed]', e);
+    }
+    for (const col of ['stripe_customer_id', 'stripe_subscription_id']) {
+      try {
+        const cols = db.prepare(`PRAGMA table_info(users);`).all().map(c => c.name);
+        if (!cols.includes(col)) {
+          db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT;`);
+          console.log('[DB] Added column:', col);
+        }
+      } catch (e) {
+        console.error('[DB] Migration', col, 'failed:', e);
+      }
     }
     
     db.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
@@ -610,7 +680,7 @@ function toEmailKey(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-async function createUser({ email, password, role }) {
+async function createUser({ email, password, role, accessLevel }) {
   try {
     const e = toEmailKey(email);
     console.log('[createUser] Creating user with email:', e);
@@ -620,21 +690,23 @@ async function createUser({ email, password, role }) {
     if (e === 'jonakfir@gmail.com') {
       userRole = 'admin';
     }
+    const level = accessLevel && ['pro', 'free_trial', 'none'].includes(accessLevel) ? accessLevel : 'none';
     
     if (usePostgres) {
       console.log('[createUser] Using PostgreSQL');
       const result = await pool.query(
-        'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id, email, role',
-        [e, password, userRole]
+        'INSERT INTO users (email, password, role, access_level) VALUES ($1, $2, $3, $4) RETURNING id, email, role, access_level',
+        [e, password, userRole, level]
       );
-      console.log('[createUser] User created, ID:', result.rows[0].id, 'Role:', result.rows[0].role);
-      return { id: Number(result.rows[0].id), email: result.rows[0].email, role: result.rows[0].role };
+      const row = result.rows[0];
+      console.log('[createUser] User created, ID:', row.id, 'Role:', row.role, 'AccessLevel:', row.access_level);
+      return { id: Number(row.id), email: row.email, role: row.role, access_level: row.access_level };
     } else {
       console.log('[createUser] Using SQLite');
-      const stmt = db.prepare('INSERT INTO users (email, password, role) VALUES (?, ?, ?)');
-      const info = stmt.run(e, password, userRole);
-      console.log('[createUser] User created, ID:', info.lastInsertRowid, 'Role:', userRole);
-      return { id: Number(info.lastInsertRowid), email: e, role: userRole };
+      const stmt = db.prepare('INSERT INTO users (email, password, role, access_level) VALUES (?, ?, ?, ?)');
+      const info = stmt.run(e, password, userRole, level);
+      console.log('[createUser] User created, ID:', info.lastInsertRowid, 'Role:', userRole, 'AccessLevel:', level);
+      return { id: Number(info.lastInsertRowid), email: e, role: userRole, access_level: level };
     }
   } catch (err) {
     console.error('[createUser] Error:', err.message);
@@ -650,7 +722,7 @@ async function findUserByEmail(email) {
     
     if (usePostgres) {
       const result = await pool.query(
-        'SELECT id, email, password, role, dark_mode FROM users WHERE email = $1',
+        'SELECT id, email, password, role, dark_mode, access_level FROM users WHERE email = $1',
         [e]
       );
       const user = result.rows[0] || null;
@@ -665,7 +737,7 @@ async function findUserByEmail(email) {
       return user;
     } else {
       const user = db
-        .prepare('SELECT id, email, password, role, dark_mode FROM users WHERE email = ?')
+        .prepare('SELECT id, email, password, role, dark_mode, access_level FROM users WHERE email = ?')
         .get(e) || null;
       if (user) {
         user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
@@ -689,30 +761,49 @@ const findUserByUsername = (email) => findUserByEmail(email);
 async function searchUsersByEmail(emailPartial, excludeUserId, limit = 10) {
   const term = String(emailPartial || '').trim().toLowerCase();
   if (term.length < 2) return [];
-  const likePattern = `%${term.replace(/%/g, '\\%')}%`;
+  const likePattern = `%${term.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+  const exactEmail = term;
   try {
     if (usePostgres) {
-      const result = await pool.query(
+      // Prefer exact email match first (full email lookup), then partial ILIKE
+      const excludeSub = `
+        u.id != $2
+        AND u.id NOT IN (
+          SELECT CASE WHEN f.user1_id = $2 THEN f.user2_id ELSE f.user1_id END
+          FROM friendships f WHERE f.user1_id = $2 OR f.user2_id = $2
+        )
+        AND u.id NOT IN (
+          SELECT to_user_id FROM friend_requests WHERE from_user_id = $2 AND status = 'pending'
+        )
+        AND u.id NOT IN (
+          SELECT from_user_id FROM friend_requests WHERE to_user_id = $2 AND status = 'pending'
+        )`;
+      let result;
+      // Exact match (same as toEmailKey normalization)
+      result = await pool.query(
         `SELECT u.id, u.email as username FROM users u
-         WHERE LOWER(u.email) LIKE $1 AND u.id != $2
-         AND u.id NOT IN (
-           SELECT CASE WHEN f.user1_id = $2 THEN f.user2_id ELSE f.user1_id END
-           FROM friendships f WHERE f.user1_id = $2 OR f.user2_id = $2
-         )
-         AND u.id NOT IN (
-           SELECT to_user_id FROM friend_requests WHERE from_user_id = $2 AND status = 'pending'
-         )
-         AND u.id NOT IN (
-           SELECT from_user_id FROM friend_requests WHERE to_user_id = $2 AND status = 'pending'
-         )
-         ORDER BY u.email LIMIT $3`,
-        [likePattern, excludeUserId, limit]
+         WHERE LOWER(TRIM(u.email)) = $1 AND ${excludeSub}
+         LIMIT $3`,
+        [exactEmail, excludeUserId, limit]
       );
+      if (result.rows.length === 0) {
+        result = await pool.query(
+          `SELECT u.id, u.email as username FROM users u
+           WHERE u.email ILIKE $1 AND ${excludeSub}
+           ORDER BY u.email LIMIT $3`,
+          [likePattern, excludeUserId, limit]
+        );
+      }
       return result.rows.map(r => ({ id: String(r.id), username: r.username || r.email || '' }));
     } else {
-      const all = db.prepare(
-        'SELECT id, email FROM users WHERE LOWER(email) LIKE ? AND id != ? LIMIT ?'
-      ).all(likePattern, excludeUserId, limit * 2);
+      let all = db.prepare(
+        'SELECT id, email FROM users WHERE LOWER(TRIM(email)) = ? AND id != ? LIMIT ?'
+      ).all(exactEmail, excludeUserId, limit);
+      if (all.length === 0) {
+        all = db.prepare(
+          'SELECT id, email FROM users WHERE LOWER(email) LIKE ? AND id != ? LIMIT ?'
+        ).all(likePattern, excludeUserId, limit * 2);
+      }
       const friendships = db.prepare(
         'SELECT user1_id, user2_id FROM friendships WHERE user1_id = ? OR user2_id = ?'
       ).all(excludeUserId, excludeUserId);
@@ -742,7 +833,7 @@ async function searchUsersByEmail(emailPartial, excludeUserId, limit = 10) {
 async function findUserById(id) {
   if (usePostgres) {
     const result = await pool.query(
-      'SELECT id, email, password, role, dark_mode FROM users WHERE id = $1',
+      'SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE id = $1',
       [id]
     );
     const user = result.rows[0] || null;
@@ -757,7 +848,7 @@ async function findUserById(id) {
     return user;
   } else {
     const user = db
-      .prepare('SELECT id, email, password, role, dark_mode FROM users WHERE id = ?')
+      .prepare('SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?')
       .get(id) || null;
     if (user) {
       user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
@@ -854,6 +945,55 @@ async function updateUserRole(userId, role) {
     return { changes: result.rowCount };
   } else {
     return db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  }
+}
+
+async function updateUserAccessLevel(userId, accessLevel) {
+  const level = accessLevel && ['pro', 'free_trial', 'none'].includes(accessLevel) ? accessLevel : 'none';
+  if (usePostgres) {
+    const result = await pool.query('UPDATE users SET access_level = $1 WHERE id = $2', [level, userId]);
+    return { changes: result.rowCount };
+  } else {
+    return db.prepare('UPDATE users SET access_level = ? WHERE id = ?').run(level, userId);
+  }
+}
+
+async function findUserByStripeCustomerId(stripeCustomerId) {
+  if (!stripeCustomerId) return null;
+  if (usePostgres) {
+    const result = await pool.query(
+      'SELECT id, email, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE stripe_customer_id = $1',
+      [stripeCustomerId]
+    );
+    return result.rows[0] || null;
+  } else {
+    return db.prepare(
+      'SELECT id, email, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE stripe_customer_id = ?'
+    ).get(stripeCustomerId) || null;
+  }
+}
+
+async function updateUserStripeIds(userId, { stripeCustomerId, stripeSubscriptionId }) {
+  const updates = [];
+  const args = [];
+  let pi = 1;
+  if (stripeCustomerId !== undefined) {
+    updates.push(usePostgres ? `stripe_customer_id = $${pi++}` : 'stripe_customer_id = ?');
+    args.push(stripeCustomerId || null);
+  }
+  if (stripeSubscriptionId !== undefined) {
+    updates.push(usePostgres ? `stripe_subscription_id = $${pi++}` : 'stripe_subscription_id = ?');
+    args.push(stripeSubscriptionId || null);
+  }
+  if (updates.length === 0) return { changes: 0 };
+  args.push(userId);
+  if (usePostgres) {
+    const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = $${pi}`;
+    const result = await pool.query(sql, args);
+    return { changes: result.rowCount };
+  } else {
+    const sql = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+    return db.prepare(sql).run(...args);
   }
 }
 
@@ -1247,6 +1387,9 @@ module.exports = {
   countUsers,
   getUserRole,
   updateUserRole,
+  updateUserAccessLevel,
+  findUserByStripeCustomerId,
+  updateUserStripeIds,
   createOrganization,
   findOrganizationById,
   findOrganizationsByUserId,

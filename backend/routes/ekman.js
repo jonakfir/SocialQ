@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
         return res.json([]);
       }
 
-      // Support both schemas (with/without photoType column)
+      // Support both schemas (with/without photoType, folder columns)
       const hasPhotoType = await pool
         .query(
           `SELECT column_name FROM information_schema.columns
@@ -53,14 +53,30 @@ router.get('/', async (req, res) => {
         )
         .then((r) => r.rows.length > 0)
         .catch(() => false);
+      const hasFolder = await pool
+        .query(
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'EkmanImage' AND column_name = 'folder'`
+        )
+        .then((r) => r.rows.length > 0)
+        .catch(() => false);
 
       const diffFilter = diff === 'all' ? 'true' : '"difficulty" = $1';
       const args = diff === 'all' ? [] : [diff];
+      // Mirroring: ?ekmanOnly=1 = only images from web app assets/ekman folder (folder = 'canonical')
+      const q = req.query || {};
+      const ekmanOnly = String(q.ekmanOnly ?? q.photoType ?? '').toLowerCase() === '1' || String(q.photoType ?? '').toLowerCase() === 'ekman';
 
-      const sql = hasPhotoType
-        ? `SELECT "imageData", "label", "difficulty" FROM "EkmanImage"
-           WHERE "photoType" IN ('ekman', 'other') AND (${diffFilter})`
-        : `SELECT "imageData", "label", "difficulty" FROM "EkmanImage" WHERE ${diffFilter}`;
+      let sql;
+      if (ekmanOnly && hasFolder) {
+        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage"
+               WHERE "folder" = 'canonical' AND (${diffFilter})`;
+      } else if (hasPhotoType) {
+        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage"
+               WHERE "photoType" IN ('ekman', 'other') AND (${diffFilter})`;
+      } else {
+        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage" WHERE ${diffFilter}`;
+      }
 
       const result = await pool.query(sql, args);
       rows = result.rows || [];
@@ -85,7 +101,7 @@ router.get('/', async (req, res) => {
     const picked = pool2.slice(0, Math.min(count, pool2.length));
 
     const questions = picked.map((p) => {
-      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 2);
+      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 3);
       const options = shuffle([p.label, ...distractors]);
       return { img: p.img, options, correct: p.label };
     });
