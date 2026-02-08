@@ -1,11 +1,29 @@
 // GET /ekman?difficulty=1|2|3|4|all&count=8
 // Returns Ekman quiz questions from the database (same format as SvelteKit /ekman).
-// Used by the iOS app when API_BASE_URL points to Railway.
+// When FRONTEND_URL + PROXY_SECRET are set and user is authenticated, merges in user + friends collages from frontend.
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 const EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'];
+const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.PUBLIC_WEB_APP_URL || '').replace(/\/$/, '');
+const PROXY_SECRET = process.env.PROXY_SECRET || process.env.BACKEND_PROXY_SECRET || '';
+const JWT_SECRET = process.env.AUTH_SECRET || 'dev-change-this';
+
+function getCurrentUserId(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  if (authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice(7);
+      const payload = jwt.verify(token, JWT_SECRET);
+      if (payload?.uid) return Number(payload.uid);
+    } catch { /* fall through */ }
+  }
+  const idFromUser = req.user?.id || req.session?.user?.id;
+  if (idFromUser) return Number(idFromUser);
+  return Number(req.cookies?.uid) || Number(req.cookies?.userId) || null;
+}
 
 function shuffle(arr) {
   const a = [...arr];
@@ -20,9 +38,11 @@ router.get('/', async (req, res) => {
   try {
     const diff = (req.query.difficulty ?? '1').toString();
     const count = Math.min(Number(req.query.count ?? '12') || 12, 50);
+    const q = req.query || {};
+    const ekmanOnly = String(q.ekmanOnly ?? q.photoType ?? '').toLowerCase() === '1' || String(q.photoType ?? '').toLowerCase() === 'ekman';
 
     const dbModule = require('../db/db');
-    const { pool } = dbModule;
+    const { pool, getFriendships, findUserById } = dbModule;
 
     if (!pool) {
       console.warn('[ekman] No PostgreSQL pool - EkmanImage table lives in Prisma-managed DB');
@@ -63,9 +83,6 @@ router.get('/', async (req, res) => {
 
       const diffFilter = diff === 'all' ? 'true' : '"difficulty" = $1';
       const args = diff === 'all' ? [] : [diff];
-      // Mirroring: ?ekmanOnly=1 = only images from web app assets/ekman folder (folder = 'canonical')
-      const q = req.query || {};
-      const ekmanOnly = String(q.ekmanOnly ?? q.photoType ?? '').toLowerCase() === '1' || String(q.photoType ?? '').toLowerCase() === 'ekman';
 
       let sql;
       if (ekmanOnly && hasFolder) {
@@ -85,13 +102,48 @@ router.get('/', async (req, res) => {
       return res.json([]);
     }
 
-    const pool2 = rows
+    let pool2 = rows
       .map((r) => ({
         img: r.imageData,
         label: r.label,
         difficulty: r.difficulty
       }))
       .filter((r) => EMOTIONS.includes(r.label));
+
+    // When not ekmanOnly, add user + friends collages from frontend (so iOS recognition includes them like web)
+    if (!ekmanOnly && FRONTEND_URL && PROXY_SECRET && getFriendships && findUserById) {
+      const currentUserId = getCurrentUserId(req);
+      if (currentUserId) {
+        try {
+          const currentUser = await findUserById(currentUserId);
+          const userEmail = currentUser?.email?.trim();
+          const friendships = await getFriendships(currentUserId);
+          const friendEmails = (friendships || [])
+            .map((f) => f.friend_email)
+            .filter(Boolean)
+            .map((e) => String(e).trim())
+            .filter((e) => e && e !== userEmail);
+          const friendEmailsUniq = [...new Set(friendEmails)];
+          if (userEmail || friendEmailsUniq.length > 0) {
+            const fetch = (await import('node-fetch')).default;
+            const params = new URLSearchParams();
+            if (userEmail) params.set('userEmail', userEmail);
+            if (friendEmailsUniq.length) params.set('friendEmails', friendEmailsUniq.join(','));
+            const url = `${FRONTEND_URL}/api/ekman-collages?${params.toString()}`;
+            const collagesRes = await fetch(url, { headers: { 'X-Proxy-Secret': PROXY_SECRET } });
+            if (collagesRes.ok) {
+              const data = await collagesRes.json();
+              const extra = data.images || [];
+              const valid = extra.filter((x) => x.img && x.label && EMOTIONS.includes(x.label));
+              pool2 = pool2.concat(valid);
+              if (valid.length) console.log('[ekman] Merged', valid.length, 'user/friend collage(s)');
+            }
+          }
+        } catch (err) {
+          console.warn('[ekman] Frontend collages merge failed:', err?.message || err);
+        }
+      }
+    }
 
     if (pool2.length === 0) {
       return res.json([]);
