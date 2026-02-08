@@ -288,6 +288,74 @@ async function initializeSchema(retries = 5) {
         await pool.query(`
           CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id);
         `);
+
+        // User profiles - stores onboarding data per user (age, verbal, literate, goals, etc.)
+        await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_profiles (
+          id                SERIAL PRIMARY KEY,
+          user_id           INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+          user_type         TEXT NOT NULL CHECK (user_type IN ('myself', 'my_child', 'my_student', 'someone_else')),
+          beneficiary_name  TEXT,
+          is_over_18        BOOLEAN,
+          birthday          DATE,
+          is_verbal         BOOLEAN,
+          is_literate       BOOLEAN,
+          goal              TEXT CHECK (goal IN ('just_try', 'learn_emotions', 'join_pro')),
+          teacher_email     TEXT,
+          doctor_email      TEXT,
+          doctor_name       TEXT,
+          parent_name       TEXT,
+          parent_email      TEXT,
+          created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        `);
+        console.log('[DB] User profiles table created/verified');
+
+        await pool.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);
+        `);
+
+        // EkmanImage table (for Recognition Quiz images)
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS "EkmanImage" (
+            "id" TEXT NOT NULL,
+            "imageData" TEXT NOT NULL,
+            "label" TEXT NOT NULL,
+            "difficulty" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "EkmanImage_pkey" PRIMARY KEY ("id")
+          );
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "EkmanImage_label_idx" ON "EkmanImage"("label");`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "EkmanImage_difficulty_idx" ON "EkmanImage"("difficulty");`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "EkmanImage_label_difficulty_idx" ON "EkmanImage"("label", "difficulty");`);
+        try {
+          const pc = await pool.query(`
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'EkmanImage' AND column_name = 'photoType'
+          `);
+          if (pc.rows.length === 0) {
+            await pool.query(`ALTER TABLE "EkmanImage" ADD COLUMN "photoType" TEXT DEFAULT 'ekman';`);
+          }
+        } catch (e) { /* ignore */ }
+        console.log('[DB] EkmanImage table created/verified');
+
+        // TransitionVideo table (for Transition Recognition clips)
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS "TransitionVideo" (
+            "id" TEXT NOT NULL,
+            "videoData" TEXT NOT NULL,
+            "from" TEXT NOT NULL,
+            "to" TEXT NOT NULL,
+            "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "TransitionVideo_pkey" PRIMARY KEY ("id")
+          );
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_from_idx" ON "TransitionVideo"("from");`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_to_idx" ON "TransitionVideo"("to");`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_from_to_idx" ON "TransitionVideo"("from", "to");`);
+        console.log('[DB] TransitionVideo table created/verified');
         
         console.log('[DB] ✅ Schema initialization complete');
         
@@ -490,6 +558,29 @@ async function initializeSchema(retries = 5) {
     
     db.exec(`CREATE INDEX IF NOT EXISTS idx_friendships_user1 ON friendships(user1_id);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id);`);
+
+    // User profiles - stores onboarding data per user (age, verbal, literate, goals, etc.)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id           INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        user_type         TEXT NOT NULL CHECK (user_type IN ('myself', 'my_child', 'my_student', 'someone_else')),
+        beneficiary_name  TEXT,
+        is_over_18        INTEGER,
+        birthday          TEXT,
+        is_verbal         INTEGER,
+        is_literate       INTEGER,
+        goal              TEXT CHECK (goal IN ('just_try', 'learn_emotions', 'join_pro')),
+        teacher_email     TEXT,
+        doctor_email      TEXT,
+        doctor_name       TEXT,
+        parent_name       TEXT,
+        parent_email      TEXT,
+        created_at        TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at        TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_user_profiles_user_id ON user_profiles(user_id);`);
   }
 }
 
@@ -594,6 +685,59 @@ async function findUserByEmail(email) {
 
 // Back-compat: treat "username" as email
 const findUserByUsername = (email) => findUserByEmail(email);
+
+async function searchUsersByEmail(emailPartial, excludeUserId, limit = 10) {
+  const term = String(emailPartial || '').trim().toLowerCase();
+  if (term.length < 2) return [];
+  const likePattern = `%${term.replace(/%/g, '\\%')}%`;
+  try {
+    if (usePostgres) {
+      const result = await pool.query(
+        `SELECT u.id, u.email as username FROM users u
+         WHERE LOWER(u.email) LIKE $1 AND u.id != $2
+         AND u.id NOT IN (
+           SELECT CASE WHEN f.user1_id = $2 THEN f.user2_id ELSE f.user1_id END
+           FROM friendships f WHERE f.user1_id = $2 OR f.user2_id = $2
+         )
+         AND u.id NOT IN (
+           SELECT to_user_id FROM friend_requests WHERE from_user_id = $2 AND status = 'pending'
+         )
+         AND u.id NOT IN (
+           SELECT from_user_id FROM friend_requests WHERE to_user_id = $2 AND status = 'pending'
+         )
+         ORDER BY u.email LIMIT $3`,
+        [likePattern, excludeUserId, limit]
+      );
+      return result.rows.map(r => ({ id: String(r.id), username: r.username || r.email || '' }));
+    } else {
+      const all = db.prepare(
+        'SELECT id, email FROM users WHERE LOWER(email) LIKE ? AND id != ? LIMIT ?'
+      ).all(likePattern, excludeUserId, limit * 2);
+      const friendships = db.prepare(
+        'SELECT user1_id, user2_id FROM friendships WHERE user1_id = ? OR user2_id = ?'
+      ).all(excludeUserId, excludeUserId);
+      const excludeIds = new Set([excludeUserId]);
+      friendships.forEach(f => {
+        excludeIds.add(f.user1_id === excludeUserId ? f.user2_id : f.user1_id);
+      });
+      const sent = db.prepare(
+        'SELECT to_user_id FROM friend_requests WHERE from_user_id = ? AND status = ?'
+      ).all(excludeUserId, 'pending');
+      sent.forEach(r => excludeIds.add(r.to_user_id));
+      const received = db.prepare(
+        'SELECT from_user_id FROM friend_requests WHERE to_user_id = ? AND status = ?'
+      ).all(excludeUserId, 'pending');
+      received.forEach(r => excludeIds.add(r.from_user_id));
+      return all
+        .filter(u => !excludeIds.has(u.id))
+        .slice(0, limit)
+        .map(u => ({ id: String(u.id), username: u.email || '' }));
+    }
+  } catch (err) {
+    console.error('[searchUsersByEmail] Error:', err.message);
+    return [];
+  }
+}
 
 async function findUserById(id) {
   if (usePostgres) {
@@ -998,6 +1142,98 @@ async function findFriendshipByUsers(user1Id, user2Id) {
   }
 }
 
+// -------------------------
+// User Profile Functions (onboarding data: age, verbal, literate, goals - tied to each user)
+// -------------------------
+async function createUserProfile(userId, profile) {
+  const {
+    user_type,
+    beneficiary_name,
+    is_over_18,
+    birthday,
+    is_verbal,
+    is_literate,
+    goal,
+    teacher_email,
+    doctor_email,
+    doctor_name,
+    parent_name,
+    parent_email
+  } = profile;
+
+  if (usePostgres) {
+    const result = await pool.query(
+      `INSERT INTO user_profiles (
+        user_id, user_type, beneficiary_name, is_over_18, birthday,
+        is_verbal, is_literate, goal, teacher_email, doctor_email, doctor_name,
+        parent_name, parent_email
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ON CONFLICT (user_id) DO UPDATE SET
+        user_type = EXCLUDED.user_type,
+        beneficiary_name = EXCLUDED.beneficiary_name,
+        is_over_18 = EXCLUDED.is_over_18,
+        birthday = EXCLUDED.birthday,
+        is_verbal = EXCLUDED.is_verbal,
+        is_literate = EXCLUDED.is_literate,
+        goal = EXCLUDED.goal,
+        teacher_email = EXCLUDED.teacher_email,
+        doctor_email = EXCLUDED.doctor_email,
+        doctor_name = EXCLUDED.doctor_name,
+        parent_name = EXCLUDED.parent_name,
+        parent_email = EXCLUDED.parent_email,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING *`,
+      [userId, user_type || 'myself', beneficiary_name || null, is_over_18 ?? null, birthday || null,
+       is_verbal ?? null, is_literate ?? null, goal || null, teacher_email || null, doctor_email || null,
+       doctor_name || null, parent_name || null, parent_email || null]
+    );
+    return result.rows[0];
+  } else {
+    const stmt = db.prepare(`
+      INSERT INTO user_profiles (
+        user_id, user_type, beneficiary_name, is_over_18, birthday,
+        is_verbal, is_literate, goal, teacher_email, doctor_email, doctor_name,
+        parent_name, parent_email
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (user_id) DO UPDATE SET
+        user_type = excluded.user_type,
+        beneficiary_name = excluded.beneficiary_name,
+        is_over_18 = excluded.is_over_18,
+        birthday = excluded.birthday,
+        is_verbal = excluded.is_verbal,
+        is_literate = excluded.is_literate,
+        goal = excluded.goal,
+        teacher_email = excluded.teacher_email,
+        doctor_email = excluded.doctor_email,
+        doctor_name = excluded.doctor_name,
+        parent_name = excluded.parent_name,
+        parent_email = excluded.parent_email,
+        updated_at = datetime('now')
+    `);
+    stmt.run(userId, user_type || 'myself', beneficiary_name || null, is_over_18 != null ? (is_over_18 ? 1 : 0) : null,
+      birthday || null, is_verbal != null ? (is_verbal ? 1 : 0) : null, is_literate != null ? (is_literate ? 1 : 0) : null,
+      goal || null, teacher_email || null, doctor_email || null, doctor_name || null, parent_name || null, parent_email || null);
+    return findUserProfileByUserId(userId);
+  }
+}
+
+async function findUserProfileByUserId(userId) {
+  if (usePostgres) {
+    const result = await pool.query('SELECT * FROM user_profiles WHERE user_id = $1', [userId]);
+    const row = result.rows[0] || null;
+    if (row && row.is_over_18 !== null) row.is_over_18 = Boolean(row.is_over_18);
+    if (row && row.is_verbal !== null) row.is_verbal = Boolean(row.is_verbal);
+    if (row && row.is_literate !== null) row.is_literate = Boolean(row.is_literate);
+    return row;
+  } else {
+    const row = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId) || null;
+    if (row && row.is_over_18 != null) row.is_over_18 = Boolean(row.is_over_18);
+    if (row && row.is_verbal != null) row.is_verbal = Boolean(row.is_verbal);
+    if (row && row.is_literate != null) row.is_literate = Boolean(row.is_literate);
+    return row;
+  }
+}
+
 module.exports = {
   db: usePostgres ? pool : db,
   pool: usePostgres ? pool : null,
@@ -1024,6 +1260,9 @@ module.exports = {
   getFriendRequests,
   findFriendRequestById,
   findFriendshipByUsers,
+  searchUsersByEmail,
+  createUserProfile,
+  findUserProfileByUserId,
   initializeSchema, // Export for emergency initialization
   schemaInitPromise // Export so server can wait for it
 };
