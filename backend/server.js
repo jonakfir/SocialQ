@@ -358,6 +358,14 @@ try {
   // ok if you don't have it locally
 }
 
+// Ekman images for recognition quiz (no auth required)
+try {
+  app.use('/ekman', require('./routes/ekman'));
+  console.log('[Server] ✅ Ekman route mounted at /ekman');
+} catch (err) {
+  console.warn('[Server] Ekman route not available:', err.message);
+}
+
 // Mount organization and relationship routes
 try {
   app.use('/organizations', require('./routes/organizations'));

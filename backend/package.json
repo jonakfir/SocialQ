@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "main": "server.js",
   "type": "commonjs",
-  "engines": {
-    "node": "20.x"
-  },
+  "engines": { "node": "20.x" },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "populate-ekman": "node scripts/populate-ekman.js"
   },
   "dependencies": {
     "axios": "^1.12.2",
