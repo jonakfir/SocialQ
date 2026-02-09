@@ -28,6 +28,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 export const GET: RequestHandler = async (event) => {
   if (!checkProxySecret(event.request)) {
+    console.warn('[ekman-quiz] Rejected: missing or invalid X-Proxy-Secret (check BACKEND_PROXY_SECRET matches backend PROXY_SECRET)');
     return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -41,12 +42,13 @@ export const GET: RequestHandler = async (event) => {
   }
 
   try {
-    const where: { photoType: string; label: { in: string[] }; difficulty?: string } = {
+    // Generated photos often have difficulty 'all'; include them for any requested difficulty
+    const where: { photoType: string; label: { in: string[] }; difficulty?: object } = {
       photoType: 'synthetic',
       label: { in: EMOTIONS }
     };
     if (difficulty !== 'all' && ['1', '2', '3', '4'].includes(difficulty)) {
-      where.difficulty = difficulty;
+      where.difficulty = { in: [difficulty, 'all'] };
     }
 
     const rows = await prisma.ekmanImage.findMany({
@@ -59,9 +61,11 @@ export const GET: RequestHandler = async (event) => {
       .map((r) => ({ img: r.imageData, label: r.label, difficulty: r.difficulty }));
 
     if (pool.length === 0) {
+      console.warn('[ekman-quiz] No synthetic images in DB for difficulty=', difficulty, '- add Generated Photos in admin');
       return json([]);
     }
 
+    console.log('[ekman-quiz] Returning', Math.min(count, pool.length), 'questions from pool of', pool.length);
     const shuffled = shuffle(pool);
     const picked = shuffled.slice(0, Math.min(count, shuffled.length));
 

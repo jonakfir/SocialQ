@@ -395,8 +395,10 @@ function shuffle<T>(a: T[]) {
 export const GET: RequestHandler = async (event) => {
   try {
     const diff = (event.url.searchParams.get('difficulty') ?? '1').toString();
-    const ekmanOnly = (event.url.searchParams.get('ekmanOnly') ?? event.url.searchParams.get('photoType') ?? '').toLowerCase() === '1' || (event.url.searchParams.get('photoType') ?? '').toLowerCase() === 'ekman';
-    console.log(`[ekman] Fetching images for difficulty: ${diff}, ekmanOnly (canonical only): ${ekmanOnly}`);
+    const photoTypeParam = (event.url.searchParams.get('photoType') ?? '').toLowerCase();
+    const ekmanOnly = (event.url.searchParams.get('ekmanOnly') ?? '').toLowerCase() === '1' || photoTypeParam === 'ekman';
+    const generatedOnly = photoTypeParam === 'synthetic' || photoTypeParam === 'generated';
+    console.log(`[ekman] Fetching images for difficulty: ${diff}, ekmanOnly: ${ekmanOnly}, generatedOnly: ${generatedOnly}`);
     const count = Number(event.url.searchParams.get('count') ?? '12');
 
     let pool: Array<{ img: string; label: string; difficulty: string }> = [];
@@ -406,6 +408,13 @@ export const GET: RequestHandler = async (event) => {
       const canonicalImages = await getAllImages([], 'canonical');
       pool = [...canonicalImages];
       console.log(`[ekman] Canonical only: ${pool.length} images from assets/ekman`);
+    } else if (generatedOnly) {
+      // Facial recognition quiz: only generated (synthetic) photos from admin "Generated Photos"
+      const user = await getCurrentUser(event);
+      const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
+      const syntheticImages = await getAllImages(userOrganizationIds, 'synthetic');
+      pool = [...syntheticImages];
+      console.log(`[ekman] Generated only: ${pool.length} synthetic images`);
     } else {
       const user = await getCurrentUser(event);
       const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
@@ -430,8 +439,9 @@ export const GET: RequestHandler = async (event) => {
       }
     }
 
+    // Include images that match the requested difficulty OR have difficulty 'all' (e.g. generated photos)
     pool = pool
-      .filter((row) => (diff === 'all' ? true : row.difficulty === diff))
+      .filter((row) => (diff === 'all' ? true : row.difficulty === diff || row.difficulty === 'all'))
       .map((row) => ({ img: row.img, label: row.label, difficulty: row.difficulty }));
 
     console.log(`[ekman] Pool size for difficulty ${diff}: ${pool.length}`);
