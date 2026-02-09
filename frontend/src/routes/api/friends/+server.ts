@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 import { generateUserId } from '$lib/userId';
 import { env as publicEnv } from '$env/dynamic/public';
 // Lazy load env
@@ -150,8 +151,9 @@ function generateInvitationCode(): string {
  * Ensure user has an invitation code
  */
 async function ensureInvitationCode(userId: string): Promise<string> {
+  const uidNum = toPrismaUserId(userId);
   let user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: uidNum },
     select: { invitationCode: true }
   });
   
@@ -167,7 +169,7 @@ async function ensureInvitationCode(userId: string): Promise<string> {
     } while (await prisma.user.findUnique({ where: { invitationCode: code } }));
     
     user = await prisma.user.update({
-      where: { id: userId },
+      where: { id: uidNum },
       data: { invitationCode: code },
       select: { invitationCode: true }
     });
@@ -204,12 +206,13 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const uidNum = toPrismaUserId(user.id);
     // Get friendships where user is either userId1 or userId2
     const friendships = await prisma.friendship.findMany({
       where: {
         OR: [
-          { userId1: user.id },
-          { userId2: user.id }
+          { userId1: uidNum },
+          { userId2: uidNum }
         ]
       },
       include: {
@@ -225,9 +228,9 @@ export const GET: RequestHandler = async (event) => {
 
     // Map to friend objects
     const friends = friendships.map(f => {
-      const friend = f.userId1 === user.id ? f.user2 : f.user1;
+      const friend = f.userId1 === uidNum ? f.user2 : f.user1;
       return {
-        id: friend.id,
+        id: String(friend.id),
         username: friend.username,
         friendshipId: f.id,
         createdAt: f.createdAt

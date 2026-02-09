@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
   try {
@@ -11,7 +12,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      return user || null;
+      return user ? { id: String(user.id), role: user.role } : null;
     }
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -66,7 +67,7 @@ export const GET: RequestHandler = async (event) => {
     let where: any = { status: 'approved' };
     // If admin requests all, do not constrain by status
     if (all && current) {
-      const me = await prisma.user.findUnique({ where: { id: current.id }, select: { role: true } });
+      const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(current.id) }, select: { role: true } });
       if (me?.role === 'admin') {
         where = {};
       }
@@ -74,7 +75,7 @@ export const GET: RequestHandler = async (event) => {
     if (mine && current) {
       try {
         const memberships = await prisma.organizationMembership.findMany({
-          where: { userId: current.id },
+          where: { userId: toPrismaUserId(current.id) },
           select: { organizationId: true }
         });
         const ids = memberships.map(m => m.organizationId);
@@ -141,11 +142,11 @@ export const POST: RequestHandler = async (event) => {
       data: {
         name,
         description,
-        createdByUserId: user.id,
+        createdByUserId: toPrismaUserId(user.id),
         status: 'pending',
         memberships: {
           create: {
-            userId: user.id,
+            userId: toPrismaUserId(user.id),
             role: 'org_admin',
             status: 'pending'
           }

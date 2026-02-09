@@ -11,7 +11,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
 
@@ -48,16 +48,14 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const DELETE: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    const userId = event.params.userId;
-    if (!userId) return json({ ok: false, error: 'User ID required' }, { status: 400 });
+    const userIdParam = event.params.userId;
+    if (!userIdParam) return json({ ok: false, error: 'User ID required' }, { status: 400 });
+    const userIdNum = toPrismaUserId(userIdParam);
 
-    // Prevent self-delete casually (optional)
-    // if (admin.id === userId) return json({ ok: false, error: "Admins can't delete themselves" }, { status: 400 });
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({ where: { id: userIdNum } });
     if (!user) return json({ ok: false, error: 'User not found' }, { status: 404 });
 
-    await prisma.user.delete({ where: { id: userId } });
+    await prisma.user.delete({ where: { id: userIdNum } });
 
     return json({ ok: true });
   } catch (error: any) {

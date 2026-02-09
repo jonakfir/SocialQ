@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
   try {
@@ -10,7 +11,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true }
       });
-      return user || null;
+      return user ? { id: String(user.id) } : null;
     }
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -28,7 +29,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       where: { username: backendUser.email },
       select: { id: true }
     });
-    return prismaUser || null;
+    return prismaUser ? { id: String(prismaUser.id) } : null;
   } catch {
     return null;
   }
@@ -45,7 +46,7 @@ export const GET: RequestHandler = async (event) => {
     // Find all approved org_admin memberships for this user
     const memberships = await prisma.organizationMembership.findMany({
       where: {
-        userId: user.id,
+        userId: toPrismaUserId(user.id),
         role: 'org_admin',
         status: 'approved'
       },

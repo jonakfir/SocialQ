@@ -15,7 +15,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     
@@ -42,7 +42,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
       select: { id: true, role: true }
     });
     
-    if (prismaUser && prismaUser.role === 'admin') return { id: prismaUser.id };
+    if (prismaUser && prismaUser.role === 'admin') return { id: String(prismaUser.id) };
     return null;
   } catch {
     return null;
@@ -107,10 +107,12 @@ export const GET: RequestHandler = async (event) => {
     
     const where: any = {};
     if (search) {
-      where.OR = [
-        { username: { contains: search } },
-        { id: { contains: search } }
-      ];
+      const numericId = /^\d+$/.test(search) ? parseInt(search, 10) : null;
+      if (numericId !== null) {
+        where.id = numericId;
+      } else {
+        where.username = { contains: search };
+      }
     }
     if (dateFrom || dateTo) {
       where.createdAt = {};

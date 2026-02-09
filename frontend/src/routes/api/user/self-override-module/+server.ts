@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 type UserWithRole = { id: string; role: string };
 type DbError = { _dbError: true };
@@ -13,7 +14,7 @@ async function getCurrentUserWithRole(event: { request: Request }): Promise<User
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user) return user;
+      if (user) return { id: String(user.id), role: user.role };
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -35,7 +36,7 @@ async function getCurrentUserWithRole(event: { request: Request }): Promise<User
     if (!prismaUser) return null;
     // Use backend role for admin check (backend is source of truth for auth)
     const role = (backendUser.role || prismaUser.role || 'personal').toString().trim();
-    return { id: prismaUser.id, role };
+    return { id: String(prismaUser.id), role };
   } catch (e: any) {
     const msg = (e?.message || '').toLowerCase();
     if (msg.includes("can't reach") || msg.includes('database server') || msg.includes('connection')) {
@@ -61,20 +62,21 @@ export const POST: RequestHandler = async (event) => {
     const moduleId = String(body?.moduleId || '').trim();
     if (!moduleId) return json({ ok: false, error: 'moduleId required (e.g. "7" for mirroring)' }, { status: 400 });
 
+    const uid = toPrismaUserId(user.id);
     await prisma.verifiedModuleCompletion.upsert({
       where: {
-        userId_moduleId: { userId: user.id, moduleId }
+        userId_moduleId: { userId: uid, moduleId }
       },
       create: {
-        userId: user.id,
+        userId: uid,
         moduleId,
         source: 'admin_override',
-        verifiedByUserId: user.id,
+        verifiedByUserId: uid,
         photoDataUrl: undefined
       },
       update: {
         source: 'admin_override',
-        verifiedByUserId: user.id,
+        verifiedByUserId: uid,
         photoDataUrl: undefined
       }
     });

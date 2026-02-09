@@ -14,7 +14,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     
@@ -71,7 +71,7 @@ export const PATCH: RequestHandler = async (event) => {
     // Check if this is the last admin being downgraded
     if (role === 'personal') {
       const currentUser = await prisma.user.findUnique({
-        where: { id: userId },
+        where: { id: toPrismaUserId(userId) },
         select: { role: true }
       });
       
@@ -95,7 +95,7 @@ export const PATCH: RequestHandler = async (event) => {
       
       // Get user email from Prisma to find in backend
       const prismaUser = await prisma.user.findUnique({
-        where: { id: userId },
+        where: { id: toPrismaUserId(userId) },
         select: { username: true }
       });
       
@@ -157,7 +157,7 @@ export const PATCH: RequestHandler = async (event) => {
     
     // SECOND: Update Prisma database (for frontend features)
     const updatedUser = await prisma.user.update({
-      where: { id: userId },
+      where: { id: toPrismaUserId(userId) },
       data: { role },
       select: {
         id: true,

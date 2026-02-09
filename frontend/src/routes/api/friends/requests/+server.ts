@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { env as publicEnv } from '$env/dynamic/public';
 
 async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
@@ -136,7 +136,7 @@ export const GET: RequestHandler = async (event) => {
       // Received requests (pending)
       prisma.friendRequest.findMany({
         where: {
-          toUserId: user.id,
+          toUserId: uid,
           status: 'pending'
         },
         include: {
@@ -239,12 +239,14 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Cannot send request to yourself' }, { status: 400 });
     }
 
+    const uidNum = toPrismaUserId(user.id);
+    const targetIdNum = toPrismaUserId(targetUser.id);
     // Check if friendship already exists
     const existingFriendship = await prisma.friendship.findFirst({
       where: {
         OR: [
-          { userId1: user.id, userId2: targetUser.id },
-          { userId1: targetUser.id, userId2: user.id }
+          { userId1: uidNum, userId2: targetIdNum },
+          { userId1: targetIdNum, userId2: uidNum }
         ]
       }
     });
@@ -289,8 +291,8 @@ export const POST: RequestHandler = async (event) => {
     // Check if request already exists
     const existingRequest = await prisma.friendRequest.findFirst({
       where: {
-        fromUserId: user.id,
-        toUserId: targetUser.id,
+        fromUserId: uidNum,
+        toUserId: targetIdNum,
         status: 'pending'
       }
     });
@@ -302,8 +304,8 @@ export const POST: RequestHandler = async (event) => {
     // Create new request
     const request = await prisma.friendRequest.create({
       data: {
-        fromUserId: user.id,
-        toUserId: targetUser.id,
+        fromUserId: uidNum,
+        toUserId: targetIdNum,
         status: 'pending'
       }
     });

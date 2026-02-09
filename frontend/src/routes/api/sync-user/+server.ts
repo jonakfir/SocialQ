@@ -76,7 +76,7 @@ export const POST: RequestHandler = async (event) => {
     return json({
       ok: true,
       user: {
-        id: prismaUser.id,
+        id: String(prismaUser.id),
         username: prismaUser.username,
         invitationCode: prismaUser.invitationCode
       }

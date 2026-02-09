@@ -15,13 +15,13 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       // HARDCODE: jonakfir@gmail.com is ALWAYS admin
       if (email === 'jonakfir@gmail.com') {
         const user = await ensurePrismaUser(email);
-        return user ? { id: user.id, role: 'admin' } : null;
+        return user ? { id: String(user.id), role: 'admin' } : null;
       }
       const user = await prisma.user.findFirst({
         where: { username: email },
         select: { id: true, role: true }
       });
-      if (user) return { id: user.id, role: user.role || 'personal' };
+      if (user) return { id: String(user.id), role: user.role || 'personal' };
       return null;
     }
     
@@ -46,7 +46,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
     if (email === 'jonakfir@gmail.com') {
       const user = await ensurePrismaUser(email);
-      return user ? { id: user.id, role: 'admin' } : null;
+      return user ? { id: String(user.id), role: 'admin' } : null;
     }
     
     // For other users, ensure they exist in Prisma

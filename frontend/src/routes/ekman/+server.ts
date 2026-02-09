@@ -1,7 +1,7 @@
 // src/routes/ekman/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { PUBLIC_API_URL } from '$env/static/public';
 
 const EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'];
@@ -22,7 +22,7 @@ async function getUserCollages(userId: string | null): Promise<Array<{ img: stri
   
   try {
     const collages = await prisma.collage.findMany({
-      where: { userId },
+      where: { userId: toPrismaUserId(userId) },
       select: {
         imageUrl: true,
         emotions: true
@@ -270,7 +270,7 @@ async function getEffectivePhotoSourceSettings(userId: string | null): Promise<{
   if (!userId) return defaults;
   try {
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: toPrismaUserId(userId) },
       select: { photoSourceSettings: true }
     });
     let effective = parsePhotoSourceSettings(user?.photoSourceSettings ?? null);

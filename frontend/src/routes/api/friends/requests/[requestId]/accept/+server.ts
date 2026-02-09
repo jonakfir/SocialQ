@@ -118,8 +118,9 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Request not found' }, { status: 404 });
     }
 
-    // Verify user is the recipient
-    if (request.toUserId !== user.id) {
+    // Verify user is the recipient (request.toUserId is Int, user.id is string)
+    const { toPrismaUserId } = await import('$lib/userId');
+    if (request.toUserId !== toPrismaUserId(user.id)) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -128,7 +129,7 @@ export const POST: RequestHandler = async (event) => {
     }
 
     // Create friendship (userId1 < userId2)
-    const [userId1, userId2] = [request.fromUserId, request.toUserId].sort();
+    const [userId1, userId2] = [request.fromUserId, request.toUserId].sort((a, b) => a - b);
 
     await prisma.$transaction([
       prisma.friendship.create({
