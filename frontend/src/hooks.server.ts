@@ -20,28 +20,23 @@ export const handle: Handle = async ({ event, resolve }) => {
   const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') ?? '';
 
   // Intercept server-side `fetch` calls that start with `/api/...`
+  // Do NOT forward /api/admin/* — those are SvelteKit routes (Prisma, DATABASE_URL on Vercel)
   const orig = event.fetch;
   event.fetch = (info: RequestInfo | URL, init: RequestInit = {}) => {
     const url = typeof info === 'string' ? info : (info instanceof URL ? info.href : info.url);
 
-    if (url.startsWith('/api/')) {
+    if (url.startsWith('/api/') && !url.startsWith('/api/admin/')) {
       const target = base + url.replace(/^\/api/, '');
 
       const headers = new Headers(init.headers ?? {});
-      // forward incoming cookies to the API
       const cookie = event.request.headers.get('cookie');
       if (cookie) headers.set('cookie', cookie);
-      
-      // forward Authorization header if present (for JWT tokens)
-      // Check both the incoming request AND the fetch call's headers
       const authFromRequest = event.request.headers.get('authorization');
       const authFromInit = headers.get('authorization');
       const auth = authFromInit || authFromRequest;
       if (auth && !headers.has('authorization')) {
         headers.set('authorization', auth);
-        console.log('[hooks.server] Forwarding Authorization header to backend');
       }
-
       return orig(target, { ...init, headers, credentials: 'include' });
     }
 
