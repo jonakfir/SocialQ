@@ -59,13 +59,23 @@ export async function ensurePrismaUserForUpload(
     console.log('[ensurePrismaUserForUpload] Created user in frontend DB:', created.id, normalizedEmail);
     return { id: String(created.id), role: created.role };
   } catch (error: any) {
-    // If user already exists (e.g. same DB, created by backend), find by id
+    // If user already exists (e.g. same DB, created by backend), find by id or by email
+    const idNum = typeof backendUserId === 'string' ? parseInt(backendUserId, 10) : backendUserId;
     if (error?.code === 'P2002' || error?.message?.includes('Unique constraint')) {
       const byId = await prisma.user.findUnique({
-        where: { id: typeof backendUserId === 'string' ? parseInt(backendUserId, 10) : backendUserId },
+        where: { id: idNum },
         select: { id: true, role: true }
       });
       if (byId) return { id: String(byId.id), role: byId.role };
+    }
+    // Also try find by email in case create failed for another reason
+    const emailNorm = email?.trim?.()?.toLowerCase?.() || '';
+    if (emailNorm) {
+      const byEmail = await prisma.user.findFirst({
+        where: { username: emailNorm },
+        select: { id: true, role: true }
+      });
+      if (byEmail) return { id: String(byEmail.id), role: byEmail.role };
     }
     console.error('[ensurePrismaUserForUpload] Error:', error);
     return null;
