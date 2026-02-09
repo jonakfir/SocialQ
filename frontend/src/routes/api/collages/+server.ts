@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId, toPrismaUserId } from '$lib/userId';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { ensurePrismaUser, ensurePrismaUserForUpload } from '$lib/utils/syncUser';
 
 /**
  * Get current user from backend API
@@ -192,8 +192,8 @@ export const POST: RequestHandler = async (event) => {
     if (formDataUserId && formDataUserEmail) {
       console.log('[POST /api/collages] Using FormData auth - ID:', formDataUserId, 'Email:', formDataUserEmail);
       
-      // Use ensurePrismaUser to find or create user (same as GET endpoint)
-      const prismaUser = await ensurePrismaUser(formDataUserEmail);
+      // Find or create user in frontend DB so collage create always has valid userId (photo booth + Unverified Photos)
+      const prismaUser = await ensurePrismaUserForUpload(formDataUserId, formDataUserEmail);
       if (prismaUser) {
         user = {
           id: prismaUser.id,

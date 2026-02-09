@@ -19,14 +19,18 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       if (user) return { id: String(user.id) };
     }
     
-    // Try real backend auth
+    // Try real backend auth (cookies for web, Bearer for mobile)
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
     const cookieHeader = event.request.headers.get('cookie') || '';
-    
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization') || '';
+    const headers: Record<string, string> = {};
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    if (authHeader) headers['Authorization'] = authHeader;
+
     const response = await fetch(`${base}/auth/me`, {
       method: 'GET',
-      headers: { 'Cookie': cookieHeader },
+      headers,
       credentials: 'include'
     });
     

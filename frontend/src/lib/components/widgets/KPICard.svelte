@@ -113,13 +113,13 @@
     font-weight: 600;
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(254, 202, 202, 0.25);
+    color: #fca5a5;
   }
   
   .kpi-trend.positive {
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
+    background: rgba(187, 247, 208, 0.25);
+    color: #86efac;
   }
   
   .kpi-content {
@@ -130,7 +130,7 @@
   
   .kpi-title {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.85);
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -139,7 +139,7 @@
   .kpi-value {
     font-size: 1.75rem;
     font-weight: 800;
-    background: linear-gradient(135deg, #4f46e5, #22d3ee);
+    background: linear-gradient(135deg, #c7d2fe, #a5f3fc);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
