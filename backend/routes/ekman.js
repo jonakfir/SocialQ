@@ -40,8 +40,12 @@ router.get('/', async (req, res) => {
     const count = Math.min(Number(req.query.count ?? '12') || 12, 50);
     const q = req.query || {};
     const photoTypeParam = String(q.photoType ?? '').trim().toLowerCase();
-    const useGeneratedOnly = photoTypeParam === 'synthetic' || photoTypeParam === 'generated';
     const ekmanOnly = String(q.ekmanOnly ?? '').toLowerCase() === '1' || (photoTypeParam === 'ekman');
+    // Quiz uses generated only. Default to generated when no photoType so we never return Ekman by mistake.
+    const useGeneratedOnly =
+      photoTypeParam === 'synthetic' ||
+      photoTypeParam === 'generated' ||
+      (!ekmanOnly && !photoTypeParam);
 
     // When photoType=synthetic, use ONLY generated photos from frontend DB — never fall back to local Ekman
     if (useGeneratedOnly) {

@@ -2,7 +2,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { getUserKey } from '$lib/userKey';
-  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   // ---------- NATIVE APP BRIDGE ----------
   const isNative =
@@ -444,8 +443,6 @@
 <svelte:head>
   <title>Mirroring Game – SocialQ</title>
 </svelte:head>
-
-<LoadingAnimation show={loading} loop={true} />
 
 <!-- background blobs already on page -->
 <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
