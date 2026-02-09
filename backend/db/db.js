@@ -1076,6 +1076,43 @@ async function findOrganizationsByUserId(userId) {
   }
 }
 
+/** Admin only: return all organizations with creator email and member counts */
+async function findAllOrganizationsForAdmin() {
+  if (usePostgres) {
+    const result = await pool.query(`
+      SELECT o.id, o.name, o.description, o.status, o.created_by_user_id, o.created_at,
+        u.email AS creator_email,
+        (SELECT COUNT(*) FROM organization_memberships om WHERE om.organization_id = o.id AND om.status = 'approved') AS member_count,
+        (SELECT COUNT(*) FROM organization_memberships om WHERE om.organization_id = o.id AND om.status = 'pending') AS pending_count
+      FROM organizations o
+      LEFT JOIN users u ON u.id = o.created_by_user_id
+      ORDER BY o.created_at DESC
+    `);
+    return result.rows;
+  } else {
+    const orgs = db.prepare('SELECT * FROM organizations ORDER BY created_at DESC').all();
+    return orgs.map(o => {
+      const creator = db.prepare('SELECT email FROM users WHERE id = ?').get(o.created_by_user_id);
+      const counts = db.prepare(`
+        SELECT status, COUNT(*) AS c FROM organization_memberships WHERE organization_id = ? GROUP BY status
+      `).all(o.id);
+      const memberCount = counts.find(r => r.status === 'approved')?.c ?? 0;
+      const pendingCount = counts.find(r => r.status === 'pending')?.c ?? 0;
+      return {
+        id: o.id,
+        name: o.name,
+        description: o.description,
+        status: o.status,
+        created_by_user_id: o.created_by_user_id,
+        created_at: o.created_at,
+        creator_email: creator?.email ?? null,
+        member_count: Number(memberCount),
+        pending_count: Number(pendingCount)
+      };
+    });
+  }
+}
+
 async function addUserToOrganization({ organizationId, userId, role = 'member' }) {
   if (usePostgres) {
     const result = await pool.query(
@@ -1425,6 +1462,7 @@ module.exports = {
   createOrganization,
   findOrganizationById,
   findOrganizationsByUserId,
+  findAllOrganizationsForAdmin,
   addUserToOrganization,
   removeUserFromOrganization,
   getOrganizationMembers,

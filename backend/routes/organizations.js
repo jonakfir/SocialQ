@@ -5,6 +5,7 @@ const {
   createOrganization,
   findOrganizationById,
   findOrganizationsByUserId,
+  findAllOrganizationsForAdmin,
   addUserToOrganization,
   removeUserFromOrganization,
   getOrganizationMembers,
@@ -108,10 +109,17 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// GET /organizations - Get all organizations for current user
+// GET /organizations - Get all organizations for current user (or all orgs if admin and ?all=1)
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.currentUserId;
+    const all = req.query.all === '1' || req.query.all === 'true';
+    if (all) {
+      const admin = await isAdmin(userId);
+      if (!admin) return res.status(403).json({ error: 'Only admins can list all organizations' });
+      const organizations = await findAllOrganizationsForAdmin();
+      return res.json({ ok: true, organizations });
+    }
     const organizations = await findOrganizationsByUserId(userId);
     return res.json({ ok: true, organizations });
   } catch (e) {
