@@ -40,6 +40,11 @@ html {
   -webkit-text-size-adjust: 100%;
   color-scheme: light;
   background: var(--bg-primary);
+  /* Keep art background on html too so it never disappears when body is transformed/fixed */
+  background-image: url('/web.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   transition: background-color 0.3s ease;
 }
 body {
@@ -47,8 +52,12 @@ body {
   min-height: 100svh;
   /* Never show page scroll on your full-screen sections */
   overflow: hidden;
-  /* Keep your existing background (blobs etc.) visible */
-  background: var(--bg-primary);
+  /* Art background – !important so layout/JS never overwrites it */
+  background-image: url('/web.png') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-color: var(--bg-primary);
   color: var(--text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
 }

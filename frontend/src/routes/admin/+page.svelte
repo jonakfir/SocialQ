@@ -705,7 +705,7 @@
       icon="📊"
       color="#f59e0b"
       trend={sessionsSparkline.length > 1 ? {
-        value: Math.abs(((sessionsSparkline[sessionsSparkline.length - 1] - sessionsSparkline[0]) / Math.max(sessionsSparkline[0], 1)) * 100).toFixed(0),
+        value: Number(Math.abs(((sessionsSparkline[sessionsSparkline.length - 1] - sessionsSparkline[0]) / Math.max(sessionsSparkline[0], 1)) * 100).toFixed(0)),
         label: 'vs last week',
         isPositive: sessionsSparkline[sessionsSparkline.length - 1] >= sessionsSparkline[0]
       } : undefined}
@@ -734,7 +734,15 @@
                 tooltip: { mode: 'index' }
               },
               scales: {
-                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                y: {
+                  beginAtZero: true,
+                  ticks: { stepSize: 1, color: 'rgba(255,255,255,0.85)' },
+                  grid: { color: 'rgba(255,255,255,0.15)' }
+                },
+                x: {
+                  ticks: { color: 'rgba(255,255,255,0.85)' },
+                  grid: { color: 'rgba(255,255,255,0.15)' }
+                }
               },
               maintainAspectRatio: false
             }}
@@ -759,7 +767,7 @@
                 legend: {
                   display: true,
                   position: 'right',
-                  labels: { boxWidth: 14, padding: 12 }
+                  labels: { boxWidth: 14, padding: 12, color: 'rgba(255,255,255,0.9)' }
                 },
                 tooltip: { mode: 'index' }
               }
@@ -780,7 +788,8 @@
             label="Avg Score"
             size={140}
             strokeWidth={12}
-            color="#4f46e5"
+            color="#818cf8"
+            darkBackground={true}
           />
           <div class="gauge-footer">
             <span>{gameStats.count || 0} sessions</span>
@@ -979,7 +988,7 @@
   .gauge-widget h3 {
     font-size: 0.875rem;
     font-weight: 600;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.9);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin: 0 0 1rem 0;
@@ -1003,7 +1012,7 @@
   .gauge-footer {
     margin-top: 1rem;
     font-size: 0.875rem;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.85);
     font-weight: 500;
   }
   
@@ -1021,7 +1030,7 @@
   .quick-actions h2 {
     font-size: 0.875rem;
     font-weight: 600;
-    color: #6b7280;
+    color: rgba(255, 255, 255, 0.9);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin: 0 0 0.75rem 0;

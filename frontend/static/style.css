@@ -2,31 +2,18 @@ body {
     margin: 0;
     padding: 0;
     font-family: 'Arial', sans-serif;
-    background-color: #f9f9f9;
     overflow: hidden;
 }
 
 
-/* Common Blob Styles */
+/* Blob elements hidden – background is now /web.png (see app.css body) */
 .blob {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(80px);
-    opacity: 0.75;
-    z-index: 0;
+    display: none !important;
 }
-.blob1 { width: 600px; height: 600px; background: #FF6F91; top: -100px; left: -120px; }
-.blob2 { width: 600px; height: 600px; background: #FF9671; bottom: -150px; right: -150px; }
-.blob3 { width: 500px; height: 500px; background: #FFC75F; top: 200px; right: 100px; }
-.blob4 { width: 500px; height: 500px; background: #F9F871; bottom: 50px; left: 150px; }
-.blob5 { width: 450px; height: 450px; background: #A3A1FB; top: -80px; right: 250px; }
-.blob6 { width: 500px; height: 500px; background: #FF61A6; bottom: 200px; left: 50px; }
-.blob7 { width: 550px; height: 550px; background: #6FFFE9; top: 400px; right: -200px; }
-.blob8 { width: 400px; height: 400px; background: #CBAACB; bottom: -100px; right: 300px; }
-.blob9 { width: 500px; height: 500px; background: #84DCC6; top: -200px; left: 47%; transform: translateX(-50%); }
-.blob10 { width: 500px; height: 500px; background: #FFA69E; bottom: -200px; left: 53%; transform: translateX(-50%); }
-.blob11 { width: 500px; height: 500px; background: #84DCf6; top: -200px; left: 41%; transform: translateX(-50%); }
-.blob12 { width: 500px; height: 500px; background: #1Fc69E; bottom: -200px; left: 58%; transform: translateX(-50%); }
+.blob1, .blob2, .blob3, .blob4, .blob5, .blob6,
+.blob7, .blob8, .blob9, .blob10, .blob11, .blob12 {
+    display: none !important;
+}
 
 h1, h2, h3 {
     text-align: center;

@@ -52,7 +52,10 @@
       if (searchQuery) params.set('search', searchQuery);
       const res = await apiFetch(`/api/admin/organizations?${params.toString()}`);
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || 'Failed to load organizations');
+      if (!data.ok) {
+        const msg = data.details ? `${data.error}: ${data.details}` : (data.error || 'Failed to load organizations');
+        throw new Error(msg);
+      }
       organizations = data.organizations || [];
     } catch (e: any) {
       error = e?.message || 'Failed to load organizations';
@@ -423,7 +426,10 @@
     {:else if error}
       <div class="empty-state error"><p>{error}</p></div>
     {:else if organizations.length === 0}
-      <div class="empty-state"><p>No organizations found.</p></div>
+      <div class="empty-state">
+        <p>No organizations found.</p>
+        <p class="empty-hint">Organizations created here are stored in the app database (DATABASE_URL). If you created orgs via the backend API or another app, they may be in a different database and won’t appear here.</p>
+      </div>
     {:else}
       <table class="orgs-table">
         <thead>
@@ -1041,6 +1047,15 @@
   
   .empty-state.error {
     color: #ef4444;
+  }
+
+  .empty-hint {
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    color: #6b7280;
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   /* ===== Manage Members Modal ===== */

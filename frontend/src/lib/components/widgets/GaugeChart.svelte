@@ -6,6 +6,8 @@
   export let size: number = 200;
   export let strokeWidth: number = 20;
   export let color: string = '#4f46e5';
+  /** When true, use light text/arc for dark card backgrounds */
+  export let darkBackground: boolean = false;
   
   let canvas: HTMLCanvasElement;
   
@@ -27,10 +29,14 @@
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
+    const bgStroke = darkBackground ? 'rgba(255,255,255,0.25)' : '#e5e7eb';
+    const valueFill = darkBackground ? '#f1f5f9' : '#111';
+    const labelFill = darkBackground ? 'rgba(255,255,255,0.85)' : '#6b7280';
+
     // Draw background arc
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, Math.PI, 0, false);
-    ctx.strokeStyle = '#e5e7eb';
+    ctx.strokeStyle = bgStroke;
     ctx.lineWidth = strokeWidth;
     ctx.lineCap = 'round';
     ctx.stroke();
@@ -47,7 +53,7 @@
     ctx.stroke();
     
     // Draw value text
-    ctx.fillStyle = '#111';
+    ctx.fillStyle = valueFill;
     ctx.font = 'bold 32px ui-sans-serif, system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -55,7 +61,7 @@
     
     // Draw label
     if (label) {
-      ctx.fillStyle = '#6b7280';
+      ctx.fillStyle = labelFill;
       ctx.font = '12px ui-sans-serif, system-ui';
       ctx.fillText(label, centerX, centerY + 25);
     }
