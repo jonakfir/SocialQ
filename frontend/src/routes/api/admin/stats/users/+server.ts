@@ -49,26 +49,30 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
   }
 }
 
-/** Return empty user list so UI doesn't 500; hint for fixing DB connection (Vercel DATABASE_URL). */
-function emptyUserListResponse(url: URL): ReturnType<typeof json> {
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+/** Return empty user list so UI never gets 500. */
+function emptyUserListResponse(url?: URL | null): ReturnType<typeof json> {
+  const limit = url ? Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100) : 50;
+  const offset = url ? parseInt(url.searchParams.get('offset') || '0', 10) : 0;
   return json({
     ok: true,
     users: [],
     total: 0,
     limit,
-    offset,
-    _hint: 'Set DATABASE_URL on Vercel to your Railway Postgres public URL (ballast.proxy.rlwy.net:25477). See web/frontend/VERCEL_DATABASE.md'
+    offset
   });
 }
 
 /**
- * GET /api/admin/stats/users - List all users with summary statistics
- * Admin only, paginated. Never returns 500: on DB/Prisma errors returns empty list + hint.
+ * GET /api/admin/stats/users - List all users with summary statistics.
+ * Never returns 500: any error returns 200 with empty users list.
  */
 export const GET: RequestHandler = async (event) => {
-  const url = new URL(event.request.url);
+  let url: URL;
+  try {
+    url = new URL(event.request.url);
+  } catch {
+    return emptyUserListResponse(null);
+  }
   try {
     // Sync users from backend to Prisma first (same as dashboard stats) so list matches total
     try {
