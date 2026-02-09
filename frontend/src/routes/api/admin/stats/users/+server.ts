@@ -215,7 +215,14 @@ export const GET: RequestHandler = async (event) => {
       usersWithStats.forEach((u: any) => { u.accessLevel = u.accessLevel ?? 'none'; });
     }
     
-    return json({ ok: true, users: usersWithStats, total, limit, offset });
+    return json({
+      ok: true,
+      users: usersWithStats,
+      total,
+      limit,
+      offset,
+      ...(total === 0 && { _dbHint: 'No users in database. On Vercel set DATABASE_URL to your Railway Postgres URL (no space after postgres:). See VERCEL_DATABASE.md' })
+    });
   } catch (error: any) {
     console.error('[GET /api/admin/stats/users] error:', error);
     return emptyUserListResponse(url, true);
