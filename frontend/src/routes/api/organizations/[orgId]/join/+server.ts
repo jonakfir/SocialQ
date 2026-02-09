@@ -28,17 +28,20 @@ export const POST: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    const orgId = event.params.orgId!;
+    const orgIdParam = event.params.orgId!;
+    const orgId = parseInt(orgIdParam, 10);
+    if (Number.isNaN(orgId)) return json({ ok: false, error: 'Invalid organization id' }, { status: 400 });
 
     const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { status: true } });
     if (!org || org.status !== 'approved') {
       return json({ ok: false, error: 'Organization is not available for joining' }, { status: 400 });
     }
 
+    const uid = toPrismaUserId(user.id);
     const membership = await prisma.organizationMembership.upsert({
-      where: { organizationId_userId: { organizationId: orgId, userId: toPrismaUserId(user.id) } },
+      where: { organizationId_userId: { organizationId: orgId, userId: uid } },
       update: { status: 'pending' },
-      create: { organizationId: orgId, userId: toPrismaUserId(user.id), status: 'pending', role: 'member' },
+      create: { organizationId: orgId, userId: uid, status: 'pending', role: 'member' },
       select: { id: true, status: true }
     });
 

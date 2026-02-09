@@ -115,7 +115,14 @@ export const GET: RequestHandler = async (event) => {
       filteredOrgs = orgs.filter(org => org.name.toLowerCase().includes(searchLower));
     }
     
-    return json({ ok: true, organizations: filteredOrgs });
+    return json({
+      ok: true,
+      organizations: filteredOrgs.map((o) => ({
+        ...o,
+        id: String(o.id),
+        createdBy: o.createdBy ? { ...o.createdBy, id: String(o.createdBy.id) } : o.createdBy
+      }))
+    });
   } catch (error: any) {
     console.error('[GET /api/organizations] error', error);
     return json({ ok: false, error: error?.message || 'Failed to list organizations' }, { status: 500 });
