@@ -127,8 +127,16 @@ export const GET: RequestHandler = async (event) => {
       totalMemberships: number;
     }>;
     if (orgs.length === 0) {
-      const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
-      const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      let base = '';
+      try {
+        const staticEnv = await import('$env/static/public');
+        base = (staticEnv.PUBLIC_API_URL || '').replace(/\/$/, '');
+      } catch (_) {}
+      if (!base) {
+        const dynamicEnv = await import('$env/dynamic/public');
+        base = (dynamicEnv.PUBLIC_API_URL || '').replace(/\/$/, '');
+      }
+      base = base || 'http://localhost:4000';
       const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
       if (base && authHeader) {
         try {
@@ -154,7 +162,15 @@ export const GET: RequestHandler = async (event) => {
               orgAdmins: [] as Array<{ id: number; username: string }>,
               totalMemberships: Number(o.member_count ?? 0) + Number(o.pending_count ?? 0)
             }));
+            if (list.length > 0) {
+              console.log('[GET /api/admin/organizations] backend fallback returned', list.length, 'organizations');
+            }
           } else {
+            const text = await backendRes.text();
+            console.warn('[GET /api/admin/organizations] backend fallback non-ok:', backendRes.status, text.slice(0, 200));
+            if (backendRes.status === 403) {
+              console.warn('[GET /api/admin/organizations] 403 = user not admin in backend DB; ensure backend users.role = "admin" for this user');
+            }
             orgsWithDetails = [];
           }
         } catch (e) {
@@ -162,6 +178,8 @@ export const GET: RequestHandler = async (event) => {
           orgsWithDetails = [];
         }
       } else {
+        if (!base) console.warn('[GET /api/admin/organizations] backend fallback skipped: PUBLIC_API_URL not set');
+        if (!authHeader) console.warn('[GET /api/admin/organizations] backend fallback skipped: no Authorization header');
         orgsWithDetails = [];
       }
     } else {
