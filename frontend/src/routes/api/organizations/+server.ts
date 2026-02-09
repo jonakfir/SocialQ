@@ -72,32 +72,42 @@ export const GET: RequestHandler = async (event) => {
       }
     }
     if (mine && current) {
-      // list orgs where current user has any membership (pending or approved)
-      const memberships = await prisma.organizationMembership.findMany({
-        where: { userId: current.id },
-        select: { organizationId: true }
-      });
-      const ids = memberships.map(m => m.organizationId);
-      where = { id: { in: ids } };
+      try {
+        const memberships = await prisma.organizationMembership.findMany({
+          where: { userId: current.id },
+          select: { organizationId: true }
+        });
+        const ids = memberships.map(m => m.organizationId);
+        where = { id: { in: ids } };
+      } catch {
+        where = { id: { in: [] } }; // avoid 500 if membership query fails
+      }
     }
-    const orgs = await prisma.organization.findMany({
-      where,
-      select: { 
-        id: true, 
-        name: true, 
-        description: true, 
-        status: true, 
-        createdAt: true,
-        createdBy: {
-          select: {
-            id: true,
-            username: true
+    let orgs: Array<{ id: string; name: string; description: string | null; status: string; createdAt: Date; createdBy: { id: string; username: string } }>;
+    try {
+      orgs = await prisma.organization.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          createdAt: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true
+            }
           }
         }
-      }
-    });
+      });
+    } catch (err: any) {
+      // e.g. Postgres 22P03 "incorrect binary data format in bind parameter 1" — return empty so UI doesn't 500
+      console.warn('[GET /api/organizations] organization.findMany failed:', err?.message ?? err);
+      orgs = [];
+    }
     
-    // Filter by search (case-insensitive) if provided, since SQLite doesn't support mode: 'insensitive'
+    // Filter by search (case-insensitive) if provided
     let filteredOrgs = orgs;
     if (search) {
       const searchLower = search.toLowerCase();

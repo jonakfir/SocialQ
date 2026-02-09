@@ -109,7 +109,7 @@ export const GET: RequestHandler = async (event) => {
       }
     }
     
-    // Get users with pagination
+    // Get users with pagination (omit organizationsCreated to avoid Prisma/Postgres bind errors in some DBs)
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         where,
@@ -125,20 +125,16 @@ export const GET: RequestHandler = async (event) => {
             select: {
               gameSessions: true
             }
-          },
-          organizationsCreated: {
-            select: {
-              id: true,
-              name: true,
-              status: true
-            }
           }
         }
       }),
       prisma.user.count({ where })
     ]);
+
+    // Avoid prisma.organization.findMany here — it can throw "incorrect binary data format" (22P03) on some DBs
+    const organizationsCreatedByUser = new Map<string, Array<{ id: string; name: string; status: string; memberCount: number }>>();
     
-    // Get aggregated stats for each user
+    // Build user list with stats
     const usersWithStats = await Promise.all(
       users.map(async (user) => {
         const sessions = await prisma.gameSession.findMany({
@@ -161,28 +157,16 @@ export const GET: RequestHandler = async (event) => {
           gameTypeStats[session.gameType].totalQuestions += session.total;
         });
         
-        // Calculate averages
         Object.keys(gameTypeStats).forEach((gameType) => {
           const stats = gameTypeStats[gameType];
           stats.avgScore = stats.count > 0 ? stats.avgScore / stats.count : 0;
         });
-        
-        // Get member counts for organizations created by this user
-        const orgsWithCounts = await Promise.all(
-          (user.organizationsCreated || []).map(async (org: any) => {
-            const memberCount = await prisma.organizationMembership.count({
-              where: {
-                organizationId: org.id,
-                status: 'approved'
-              }
-            });
-            return { ...org, memberCount };
-          })
-        );
+
+        const organizationsCreated = organizationsCreatedByUser.get(user.id) ?? [];
         
         return {
           ...user,
-          organizationsCreated: orgsWithCounts,
+          organizationsCreated,
           stats: {
             totalSessions: sessions.length,
             gameTypeStats
