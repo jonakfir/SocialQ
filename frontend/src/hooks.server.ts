@@ -1,6 +1,20 @@
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Allow mobile app (no Origin / different origin) to POST to /api/collages without CSRF block
+  const path = event.url.pathname;
+  const method = event.request.method;
+  if (path === '/api/collages' && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    const origin = event.request.headers.get('origin');
+    const appOrigin = event.url.origin;
+    if (!origin || origin !== appOrigin) {
+      const headers = new Headers(event.request.headers);
+      headers.set('Origin', appOrigin);
+      headers.set('Referer', appOrigin + '/');
+      event.request = new Request(event.request, { headers });
+    }
+  }
+
   // Get env dynamically to avoid circular dependency
   const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
   const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') ?? '';
