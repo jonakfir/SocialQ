@@ -153,38 +153,37 @@ export const POST: RequestHandler = async (event) => {
     // Parse form data first to get user info
     const formData = await request.formData();
     
-    // Get user info from FormData FIRST (most reliable with file uploads)
-    const formDataUserId = formData.get('userId') as string | null;
-    const formDataUserEmail = formData.get('userEmail') as string | null;
-    
-    console.log('[POST /api/collages] ========== AUTH CHECK ==========');
-    console.log('[POST /api/collages] FormData userId:', formDataUserId, 'email:', formDataUserEmail);
-    console.log('[POST /api/collages] Headers X-User-Id:', event.request.headers.get('X-User-Id'));
-    console.log('[POST /api/collages] Headers X-User-Email:', event.request.headers.get('X-User-Email'));
-    console.log('[POST /api/collages] All headers:', Object.fromEntries(event.request.headers.entries()));
+    // Get user info from FormData first, then headers (proxy can sometimes drop form fields)
+    const formDataUserId = (formData.get('userId') as string | null)?.trim() || null;
+    const formDataUserEmail = (formData.get('userEmail') as string | null)?.trim() || null;
+    const headerUserId = event.request.headers.get('X-User-Id')?.trim() || null;
+    const headerUserEmail = event.request.headers.get('X-User-Email')?.trim() || null;
+    const effectiveUserId = formDataUserId || headerUserId;
+    const effectiveUserEmail = formDataUserEmail || headerUserEmail;
 
-    // Check authentication - try FormData first, then headers, then backend
+    console.log('[POST /api/collages] ========== AUTH CHECK ==========');
+    console.log('[POST /api/collages] FormData userId:', formDataUserId ?? '(empty)', 'email:', formDataUserEmail ? `${formDataUserEmail.slice(0, 20)}...` : '(empty)');
+    console.log('[POST /api/collages] Headers X-User-Id:', headerUserId ?? '(empty)', 'X-User-Email:', headerUserEmail ? `${headerUserEmail.slice(0, 20)}...` : '(empty)');
+    console.log('[POST /api/collages] Effective id:', effectiveUserId, 'email:', effectiveUserEmail ? 'present' : '(empty)');
+
+    // Check authentication - use FormData or headers, then backend
     let user = null;
     
-    // If we have user info in FormData, use it directly (fast path for mock auth)
-    if (formDataUserId && formDataUserEmail) {
-      console.log('[POST /api/collages] Using FormData auth - ID:', formDataUserId, 'Email:', formDataUserEmail);
-      
-      // Find or create user in frontend DB so collage create always has valid userId (photo booth + Unverified Photos)
-      const prismaUser = await ensurePrismaUserForUpload(formDataUserId, formDataUserEmail);
+    if (effectiveUserId && effectiveUserEmail) {
+      console.log('[POST /api/collages] Using FormData/header auth - ID:', effectiveUserId);
+      const prismaUser = await ensurePrismaUserForUpload(effectiveUserId, effectiveUserEmail);
       if (prismaUser) {
         user = {
           id: prismaUser.id,
-          backendId: Number(formDataUserId)
+          backendId: Number(effectiveUserId)
         };
-        console.log('[POST /api/collages] Authenticated via FormData - user ID:', user.id);
+        console.log('[POST /api/collages] Authenticated - Prisma user ID:', user.id);
       } else {
-        console.error('[POST /api/collages] Failed to ensure Prisma user for:', formDataUserEmail);
+        console.error('[POST /api/collages] ensurePrismaUserForUpload returned null for:', effectiveUserEmail?.slice(0, 30));
       }
     } else {
-      // Fall back to getCurrentUser which checks headers and backend
-      console.log('[POST /api/collages] No FormData user, trying getCurrentUser...');
-      user = await getCurrentUser({ ...event, formDataUserId, formDataUserEmail });
+      console.log('[POST /api/collages] No FormData/header user, trying getCurrentUser...');
+      user = await getCurrentUser({ ...event, formDataUserId: effectiveUserId, formDataUserEmail: effectiveUserEmail });
     }
     
     if (!user) {
@@ -242,16 +241,41 @@ export const POST: RequestHandler = async (event) => {
 
     // Ensure user row exists in frontend DB before create (avoids FK error when frontend/backend DBs differ)
     let userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
-    if (!userRow && formDataUserId && formDataUserEmail) {
-      const reEnsure = await ensurePrismaUserForUpload(formDataUserId, formDataUserEmail);
+    if (!userRow && effectiveUserId && effectiveUserEmail) {
+      const reEnsure = await ensurePrismaUserForUpload(effectiveUserId, effectiveUserEmail);
       if (reEnsure) {
-        user = { id: reEnsure.id, backendId: Number(formDataUserId) };
+        user = { id: reEnsure.id, backendId: Number(effectiveUserId) };
         userIdNum = toPrismaUserId(reEnsure.id);
         userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
       }
     }
+    // Last resort: force-create user with backend id so collage create has valid FK
+    if (!userRow && effectiveUserId && effectiveUserEmail) {
+      const bid = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : effectiveUserId;
+      if (Number.isInteger(bid) && bid > 0) {
+        try {
+          const bcrypt = await import('bcryptjs');
+          await prisma.user.create({
+            data: {
+              id: bid,
+              username: effectiveUserEmail.trim().toLowerCase(),
+              password: await bcrypt.hash('upload-placeholder', 10),
+              role: 'personal'
+            }
+          });
+          userRow = { id: bid };
+          userIdNum = bid;
+          console.log('[POST /api/collages] Force-created user:', bid);
+        } catch (e: any) {
+          if (e?.code === 'P2002') {
+            userRow = await prisma.user.findUnique({ where: { id: bid }, select: { id: true } });
+            if (userRow) userIdNum = bid;
+          }
+        }
+      }
+    }
     if (!userRow) {
-      console.error('[POST /api/collages] No user row for id:', userIdNum, 'formData:', formDataUserId, formDataUserEmail);
+      console.error('[POST /api/collages] No user row for id:', userIdNum, 'effective:', effectiveUserId, effectiveUserEmail ? 'email present' : 'no email');
       return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
     }
 
