@@ -7,23 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Matches backend db/db.js users table (Postgres): id, email, password, role, access_level, created_at, dark_mode, etc.
 model User {
-  id                  Int             @id // Matches backend users.id (SERIAL)
-  username            String          @unique
-  password            String
-  role                String          @default("personal") // "personal" | "admin"
-  invitationCode      String?         @unique
-  photoSourceSettings String?         // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  collages            Collage[]
-  sentRequests     FriendRequest[] @relation("SentRequests")
-  receivedRequests FriendRequest[] @relation("ReceivedRequests")
-  friendships1     Friendship[]    @relation("User1Friendships")
-  friendships2     Friendship[]    @relation("User2Friendships")
-  gameSessions     GameSession[]
-
-  // Organizations
+  id                    Int       @id
+  username              String    @unique @map("email") // backend column is "email"
+  password              String
+  role                  String    @default("personal")
+  accessLevel           String?   @map("access_level")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  darkMode              Boolean?  @map("dark_mode")
+  stripeCustomerId      String?   @map("stripe_customer_id")
+  stripeSubscriptionId  String?   @map("stripe_subscription_id")
+  trialEndsAt           DateTime? @map("trial_ends_at")
+  collages              Collage[]
+  sentRequests          FriendRequest[] @relation("SentRequests")
+  receivedRequests      FriendRequest[] @relation("ReceivedRequests")
+  friendships1          Friendship[]    @relation("User1Friendships")
+  friendships2          Friendship[]    @relation("User2Friendships")
+  gameSessions          GameSession[]
   organizationsCreated   Organization[]
   organizationMemberships OrganizationMembership[]
 
@@ -104,30 +105,31 @@ model GameQuestion {
   @@index([sessionId])
 }
 
-// Organizations enable org-scoped administration and analytics
+// Matches backend organizations table: id SERIAL, name, description, status, created_by_user_id, created_at
 model Organization {
-  id                  String                              @id @default(cuid())
-  name                String                              @unique
-  description         String?
-  status              String                              @default("pending") // 'pending' | 'approved' | 'rejected'
-  photoSourceSettings String?                             // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
-  createdByUserId     Int
-  createdAt           DateTime                            @default(now())
-  memberships         OrganizationMembership[]
-  createdBy       User                                @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  id                Int       @id @default(autoincrement())
+  name              String   @unique
+  description       String?
+  status            String   @default("pending")
+  createdByUserId   Int      @map("created_by_user_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  memberships       OrganizationMembership[]
+  createdBy         User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
   ekmanImageVisibility EkmanImageOrganizationVisibility[]
 
   @@index([status])
   @@index([createdByUserId])
+  @@map("organizations")
 }
 
+// Matches backend organization_memberships: id SERIAL, organization_id, user_id, role, status, joined_at
 model OrganizationMembership {
-  id             String       @id @default(cuid())
-  organizationId String
-  userId         Int
-  role           String       @default("member") // 'member' | 'org_admin'
-  status         String       @default("pending") // 'pending' | 'approved' | 'removed'
-  joinedAt       DateTime     @default(now())
+  id             Int      @id @default(autoincrement())
+  organizationId Int      @map("organization_id")
+  userId         Int      @map("user_id")
+  role           String   @default("member")
+  status         String   @default("pending")
+  joinedAt       DateTime @default(now()) @map("joined_at")
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -136,6 +138,7 @@ model OrganizationMembership {
   @@index([userId])
   @@index([status])
   @@index([role])
+  @@map("organization_memberships")
 }
 
 // Ekman images for facial recognition quiz
@@ -156,14 +159,13 @@ model EkmanImage {
 }
 
 // Junction table for organization visibility of Ekman images
-// If empty, photo is visible to all organizations
 model EkmanImageOrganizationVisibility {
-  id           String      @id @default(cuid())
-  ekmanImageId String
-  organizationId String
-  ekmanImage   EkmanImage  @relation(fields: [ekmanImageId], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdAt    DateTime    @default(now())
+  id             String       @id @default(cuid())
+  ekmanImageId   String
+  organizationId Int
+  ekmanImage     EkmanImage   @relation(fields: [ekmanImageId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
 
   @@unique([ekmanImageId, organizationId])
   @@index([ekmanImageId])
