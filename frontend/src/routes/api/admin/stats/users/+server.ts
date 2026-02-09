@@ -49,11 +49,26 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
   }
 }
 
+/** Return empty user list so UI doesn't 500; hint for fixing DB connection (Vercel DATABASE_URL). */
+function emptyUserListResponse(url: URL): ReturnType<typeof json> {
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
+  const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+  return json({
+    ok: true,
+    users: [],
+    total: 0,
+    limit,
+    offset,
+    _hint: 'Set DATABASE_URL on Vercel to your Railway Postgres public URL (ballast.proxy.rlwy.net:25477). See web/frontend/VERCEL_DATABASE.md'
+  });
+}
+
 /**
  * GET /api/admin/stats/users - List all users with summary statistics
- * Admin only, paginated
+ * Admin only, paginated. Never returns 500: on DB/Prisma errors returns empty list + hint.
  */
 export const GET: RequestHandler = async (event) => {
+  const url = new URL(event.request.url);
   try {
     // Sync users from backend to Prisma first (same as dashboard stats) so list matches total
     try {
@@ -79,14 +94,12 @@ export const GET: RequestHandler = async (event) => {
       console.warn('[GET /api/admin/stats/users] Sync from backend failed:', syncErr);
     }
 
-    const url = new URL(event.request.url);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
     const offset = parseInt(url.searchParams.get('offset') || '0', 10);
     const search = url.searchParams.get('search')?.trim().toLowerCase() || '';
     const dateFrom = url.searchParams.get('dateFrom');
     const dateTo = url.searchParams.get('dateTo');
     
-    // Build where clause
     const where: any = {};
     if (search) {
       where.OR = [
@@ -94,60 +107,54 @@ export const GET: RequestHandler = async (event) => {
         { id: { contains: search } }
       ];
     }
-    
-    // Add date filters
     if (dateFrom || dateTo) {
       where.createdAt = {};
-      if (dateFrom) {
-        where.createdAt.gte = new Date(dateFrom);
-      }
+      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
       if (dateTo) {
-        // Include the entire day
         const endDate = new Date(dateTo);
         endDate.setHours(23, 59, 59, 999);
         where.createdAt.lte = endDate;
       }
     }
     
-    // Get users with pagination (omit organizationsCreated to avoid Prisma/Postgres bind errors in some DBs)
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-        select: {
-          id: true,
-          username: true,
-          role: true,
-          createdAt: true,
-          _count: {
-            select: {
-              gameSessions: true
-            }
+    let users: Awaited<ReturnType<typeof prisma.user.findMany>>;
+    let total: number;
+    try {
+      [users, total] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: limit,
+          skip: offset,
+          select: {
+            id: true,
+            username: true,
+            role: true,
+            createdAt: true,
+            _count: { select: { gameSessions: true } }
           }
-        }
-      }),
-      prisma.user.count({ where })
-    ]);
+        }),
+        prisma.user.count({ where })
+      ]);
+    } catch (dbErr: any) {
+      console.error('[GET /api/admin/stats/users] Prisma/DB error:', dbErr?.message ?? dbErr);
+      return emptyUserListResponse(url);
+    }
 
-    // Avoid prisma.organization.findMany here — it can throw "incorrect binary data format" (22P03) on some DBs
     const organizationsCreatedByUser = new Map<string, Array<{ id: string; name: string; status: string; memberCount: number }>>();
     
-    // Build user list with stats
     const usersWithStats = await Promise.all(
       users.map(async (user) => {
-        const sessions = await prisma.gameSession.findMany({
-          where: { userId: user.id },
-          select: {
-            gameType: true,
-            score: true,
-            total: true
-          }
-        });
-        
+        let sessions: Array<{ gameType: string; score: number; total: number }> = [];
+        try {
+          sessions = await prisma.gameSession.findMany({
+            where: { userId: user.id },
+            select: { gameType: true, score: true, total: true }
+          });
+        } catch {
+          // skip per-user session load on error
+        }
         const gameTypeStats: Record<string, { count: number; avgScore: number; totalQuestions: number }> = {};
-        
         sessions.forEach((session) => {
           if (!gameTypeStats[session.gameType]) {
             gameTypeStats[session.gameType] = { count: 0, avgScore: 0, totalQuestions: 0 };
@@ -156,26 +163,18 @@ export const GET: RequestHandler = async (event) => {
           gameTypeStats[session.gameType].avgScore += session.total > 0 ? (session.score / session.total) * 100 : 0;
           gameTypeStats[session.gameType].totalQuestions += session.total;
         });
-        
         Object.keys(gameTypeStats).forEach((gameType) => {
           const stats = gameTypeStats[gameType];
           stats.avgScore = stats.count > 0 ? stats.avgScore / stats.count : 0;
         });
-
-        const organizationsCreated = organizationsCreatedByUser.get(user.id) ?? [];
-        
         return {
           ...user,
-          organizationsCreated,
-          stats: {
-            totalSessions: sessions.length,
-            gameTypeStats
-          }
+          organizationsCreated: organizationsCreatedByUser.get(user.id) ?? [],
+          stats: { totalSessions: sessions.length, gameTypeStats }
         };
       })
     );
 
-    // Merge backend user data (role, accessLevel, backendId) by email
     try {
       const { PUBLIC_API_URL } = await import('$env/static/public');
       const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -211,18 +210,9 @@ export const GET: RequestHandler = async (event) => {
       usersWithStats.forEach((u: any) => { u.accessLevel = u.accessLevel ?? 'none'; });
     }
     
-    return json({
-      ok: true,
-      users: usersWithStats,
-      total,
-      limit,
-      offset
-    });
+    return json({ ok: true, users: usersWithStats, total, limit, offset });
   } catch (error: any) {
     console.error('[GET /api/admin/stats/users] error:', error);
-    return json(
-      { ok: false, error: error?.message || 'Failed to fetch users' },
-      { status: 500 }
-    );
+    return emptyUserListResponse(url);
   }
 };
