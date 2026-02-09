@@ -536,7 +536,7 @@
         {#if data._dbHint}
           <p class="db-hint">{data._dbHint}</p>
         {:else}
-          <p class="db-hint">Set DATABASE_URL on Vercel to your Railway Postgres public URL (e.g. ballast.proxy.rlwy.net:25477). No space after postgres: Then redeploy.</p>
+          <p class="db-hint">On Vercel set DATABASE_URL to your Railway Postgres public URL and add ?sslmode=require at the end (e.g. …railway?sslmode=require). No space after postgres: Then redeploy.</p>
         {/if}
       </div>
     {/if}

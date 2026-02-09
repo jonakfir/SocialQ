@@ -59,7 +59,7 @@ function emptyUserListResponse(url?: URL | null, dbError?: boolean): ReturnType<
     total: 0,
     limit,
     offset,
-    ...(dbError && { _dbHint: 'Database not connected. On Vercel: set DATABASE_URL to your Railway Postgres URL (no space after postgres:). Redeploy after changing.' })
+    ...(dbError && { _dbHint: 'Database not connected. On Vercel: set DATABASE_URL to Railway Postgres URL and add ?sslmode=require at the end. Redeploy after changing.' })
   });
 }
 
@@ -221,7 +221,7 @@ export const GET: RequestHandler = async (event) => {
       total,
       limit,
       offset,
-      ...(total === 0 && { _dbHint: 'No users in database. On Vercel set DATABASE_URL to your Railway Postgres URL (no space after postgres:). See VERCEL_DATABASE.md' })
+      ...(total === 0 && { _dbHint: 'No users in database. On Vercel set DATABASE_URL to Railway Postgres URL and add ?sslmode=require at the end. See VERCEL_DATABASE.md' })
     });
   } catch (error: any) {
     console.error('[GET /api/admin/stats/users] error:', error);
