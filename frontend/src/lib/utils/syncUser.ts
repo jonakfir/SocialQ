@@ -34,7 +34,7 @@ export async function ensurePrismaUser(email: string): Promise<{ id: string; rol
         invitationCode = undefined;
         break;
       }
-    } while (await prisma.user.findUnique({ where: { invitationCode } }));
+    } while (await prisma.user.findUnique({ where: { invitationCode }, select: { id: true } }));
     const isAdmin = normalizedEmail === 'jonakfir@gmail.com';
     const role = isAdmin ? 'admin' : 'personal';
     prismaUser = await prisma.user.create({

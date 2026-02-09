@@ -137,8 +137,7 @@ export const GET: RequestHandler = async (event) => {
             id: true,
             username: true,
             role: true,
-            createdAt: true,
-            _count: { select: { gameSessions: true } }
+            createdAt: true
           }
         }),
         prisma.user.count({ where })
