@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 // Lazy load env
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
@@ -121,7 +121,7 @@ export const DELETE: RequestHandler = async (event) => {
     }
 
     // Get fresh role from database to ensure it's current
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     console.log('[DELETE /api/collages/[id]] User role from DB:', me?.role, 'Email:', me?.username);
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
@@ -170,7 +170,7 @@ export const PATCH: RequestHandler = async (event) => {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
 

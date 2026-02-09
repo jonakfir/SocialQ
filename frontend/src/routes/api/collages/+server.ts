@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
@@ -62,7 +62,7 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
       }
       
       return {
-        id: prismaUser.id,
+        id: String(prismaUser.id),
         backendId: Number(mockUserId)
       };
     }
@@ -154,7 +154,7 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
     }
     
     return {
-      id: prismaUser.id,
+      id: String(prismaUser.id),
       backendId: Number(backendUser.id)
     };
   } catch (error: any) {
@@ -258,7 +258,7 @@ export const POST: RequestHandler = async (event) => {
     console.log('[POST /api/collages] Saving collage with userId:', user.id, 'imageUrl length:', dataUrl.length);
     const collage = await prisma.collage.create({
       data: {
-        userId: user.id,
+        userId: toPrismaUserId(user.id),
         imageUrl: dataUrl, // Store as base64 data URL instead of file path
         emotions: emotions ? JSON.stringify(emotions) : null,
         approvedAnyway: approvedAnyway || undefined
@@ -377,7 +377,7 @@ export const GET: RequestHandler = async (event) => {
 
     // Fetch user's collages
     const collages = await prisma.collage.findMany({
-      where: { userId: user.id },
+      where: { userId: toPrismaUserId(user.id) },
       orderBy: { createdAt: 'desc' }
     });
 

@@ -113,7 +113,8 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Request not found' }, { status: 404 });
     }
 
-    if (request.toUserId !== user.id) {
+    const { toPrismaUserId } = await import('$lib/userId');
+    if (request.toUserId !== toPrismaUserId(user.id)) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
 

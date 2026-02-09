@@ -32,7 +32,7 @@ export const GET: RequestHandler = async (event) => {
     return json({
       ok: true,
       user: {
-        id: user.id,
+        id: String(user.id),
         username: user.username,
         role: user.role || 'personal'
       }

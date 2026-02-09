@@ -46,7 +46,7 @@ export const POST: RequestHandler = async (event) => {
       exists: true,
       validPassword: password ? true : undefined,
       user: {
-        id: user.id,
+        id: String(user.id),
         username: user.username,
         role: user.role || 'personal'
       }

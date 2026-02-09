@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { env as publicEnv } from '$env/dynamic/public';
 
 async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
@@ -127,12 +127,13 @@ export const GET: RequestHandler = async (event) => {
     console.log(`[friends/search] Searching for email: "${searchTerm}" or userId: "${searchUserId}"`);
 
     // Get current user's friends and pending requests to exclude
+    const uidNum = toPrismaUserId(user.id);
     const [friendships, sentRequests, receivedRequests] = await Promise.all([
       prisma.friendship.findMany({
         where: {
           OR: [
-            { userId1: user.id },
-            { userId2: user.id }
+            { userId1: uidNum },
+            { userId2: uidNum }
           ]
         },
         select: {
@@ -142,27 +143,27 @@ export const GET: RequestHandler = async (event) => {
       }),
       prisma.friendRequest.findMany({
         where: {
-          fromUserId: user.id,
+          fromUserId: uidNum,
           status: 'pending'
         },
         select: { toUserId: true }
       }),
       prisma.friendRequest.findMany({
         where: {
-          toUserId: user.id,
+          toUserId: uidNum,
           status: 'pending'
         },
         select: { fromUserId: true }
       })
     ]);
 
-    // Collect all user IDs to exclude
+    // Collect all user IDs to exclude (as strings for API)
     const excludeIds = new Set<string>([user.id]);
     friendships.forEach(f => {
-      excludeIds.add(f.userId1 === user.id ? f.userId2 : f.userId1);
+      excludeIds.add(String(f.userId1 === uidNum ? f.userId2 : f.userId1));
     });
-    sentRequests.forEach(r => excludeIds.add(r.toUserId));
-    receivedRequests.forEach(r => excludeIds.add(r.fromUserId));
+    sentRequests.forEach(r => excludeIds.add(String(r.toUserId)));
+    receivedRequests.forEach(r => excludeIds.add(String(r.fromUserId)));
     
     console.log(`[friends/search] Excluding ${excludeIds.size} user IDs:`, Array.from(excludeIds));
     

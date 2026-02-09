@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { toPrismaUserId } from '$lib/userId';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
@@ -14,7 +15,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      return user || null;
+      return user ? { id: String(user.id), role: user.role } : null;
     }
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -59,7 +60,7 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     

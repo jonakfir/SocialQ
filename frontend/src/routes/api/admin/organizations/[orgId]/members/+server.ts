@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
   try {
@@ -10,7 +11,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      return user || null;
+      return user ? { id: String(user.id), role: user.role } : null;
     }
 
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -44,7 +45,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       where: { username: backendUser.email },
       select: { id: true, role: true }
     });
-    return prismaUser || null;
+    return prismaUser ? { id: String(prismaUser.id), role: prismaUser.role } : null;
   } catch (error) {
     console.error('[getCurrentUser] Error:', error);
     return null;
@@ -68,6 +69,7 @@ export const POST: RequestHandler = async (event) => {
     if (!['add', 'remove'].includes(action) || !userId) {
       return json({ ok: false, error: 'Invalid request. action must be "add" or "remove", userId required' }, { status: 400 });
     }
+    const userIdNum = toPrismaUserId(userId);
 
     // Verify organization exists
     const org = await prisma.organization.findUnique({
@@ -81,7 +83,7 @@ export const POST: RequestHandler = async (event) => {
 
     // Verify user exists
     const targetUser = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userIdNum },
       select: { id: true, username: true }
     });
 
@@ -92,13 +94,13 @@ export const POST: RequestHandler = async (event) => {
     if (action === 'add') {
       // Check if membership already exists
       const existing = await prisma.organizationMembership.findUnique({
-        where: { organizationId_userId: { organizationId: orgId, userId } }
+        where: { organizationId_userId: { organizationId: orgId, userId: userIdNum } }
       });
 
       if (existing) {
         // Update existing membership to approved
         const updated = await prisma.organizationMembership.update({
-          where: { organizationId_userId: { organizationId: orgId, userId } },
+          where: { organizationId_userId: { organizationId: orgId, userId: userIdNum } },
           data: { status: 'approved' },
           select: {
             id: true,
@@ -129,7 +131,7 @@ export const POST: RequestHandler = async (event) => {
     } else if (action === 'remove') {
       // Remove or mark as removed
       const existing = await prisma.organizationMembership.findUnique({
-        where: { organizationId_userId: { organizationId: orgId, userId } }
+        where: { organizationId_userId: { organizationId: orgId, userId: userIdNum } }
       });
 
       if (!existing) {
@@ -138,7 +140,7 @@ export const POST: RequestHandler = async (event) => {
 
       // Delete the membership
       await prisma.organizationMembership.delete({
-        where: { organizationId_userId: { organizationId: orgId, userId } }
+        where: { organizationId_userId: { organizationId: orgId, userId: userIdNum } }
       });
 
       return json({ ok: true, action: 'removed', userId });

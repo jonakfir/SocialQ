@@ -14,7 +14,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     
@@ -54,14 +54,14 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const GET: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    const userId = event.params.userId;
-    if (!userId) {
+    const userIdParam = event.params.userId;
+    if (!userIdParam) {
       return json({ ok: false, error: 'User ID required' }, { status: 400 });
     }
-    
+    const userIdNum = toPrismaUserId(userIdParam);
     // Verify user exists
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userIdNum },
       select: { id: true, username: true }
     });
     
@@ -73,8 +73,8 @@ export const GET: RequestHandler = async (event) => {
     const friendships = await prisma.friendship.findMany({
       where: {
         OR: [
-          { userId1: userId },
-          { userId2: userId }
+          { userId1: userIdNum },
+          { userId2: userIdNum }
         ]
       },
       include: {
@@ -118,30 +118,30 @@ export const GET: RequestHandler = async (event) => {
 export const POST: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    const userId = event.params.userId;
-    if (!userId) {
+    const userIdParam = event.params.userId;
+    if (!userIdParam) {
       return json({ ok: false, error: 'User ID required' }, { status: 400 });
     }
-    
+    const userIdNum = toPrismaUserId(userIdParam);
     const body = await event.request.json();
     const friendId = body.friendId;
     
     if (!friendId) {
       return json({ ok: false, error: 'Friend ID required' }, { status: 400 });
     }
-    
-    if (userId === friendId) {
+    const friendIdNum = toPrismaUserId(String(friendId));
+    if (userIdNum === friendIdNum) {
       return json({ ok: false, error: 'Cannot add user as their own friend' }, { status: 400 });
     }
     
     // Verify both users exist
     const [user, friend] = await Promise.all([
       prisma.user.findUnique({
-        where: { id: userId },
+        where: { id: userIdNum },
         select: { id: true, username: true }
       }),
       prisma.user.findUnique({
-        where: { id: friendId },
+        where: { id: friendIdNum },
         select: { id: true, username: true }
       })
     ]);
@@ -186,19 +186,19 @@ export const POST: RequestHandler = async (event) => {
     await prisma.friendRequest.deleteMany({
       where: {
         OR: [
-          { fromUserId: userId, toUserId: friendId },
-          { fromUserId: friendId, toUserId: userId }
+          { fromUserId: userIdNum, toUserId: friendIdNum },
+          { fromUserId: friendIdNum, toUserId: userIdNum }
         ]
       }
     });
     
     // Return the friend object (the other user, not the requesting user)
-    const friendUser = friendship.userId1 === userId ? friendship.user2 : friendship.user1;
+    const friendUser = friendship.userId1 === userIdNum ? friendship.user2 : friendship.user1;
     
     return json({
       ok: true,
       friend: {
-        id: friendUser.id,
+        id: String(friendUser.id),
         username: friendUser.username,
         friendshipId: friendship.id,
         createdAt: friendship.createdAt

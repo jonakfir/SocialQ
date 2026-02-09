@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
   try {
@@ -10,7 +11,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true }
       });
-      if (user) return user;
+      if (user) return { id: String(user.id) };
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -29,7 +30,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       where: { username: email },
       select: { id: true }
     });
-    return prismaUser ? { id: prismaUser.id } : null;
+    return prismaUser ? { id: String(prismaUser.id) } : null;
   } catch {
     return null;
   }
@@ -48,12 +49,13 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Invalid or disallowed moduleId. Use 7 for mirroring.' }, { status: 400 });
     }
     const photoDataUrl = body.photoDataUrl != null ? String(body.photoDataUrl) : null;
+    const uid = toPrismaUserId(user.id);
     await prisma.verifiedModuleCompletion.upsert({
       where: {
-        userId_moduleId: { userId: user.id, moduleId }
+        userId_moduleId: { userId: uid, moduleId }
       },
       create: {
-        userId: user.id,
+        userId: uid,
         moduleId,
         source: 'photo',
         photoDataUrl: photoDataUrl || undefined,

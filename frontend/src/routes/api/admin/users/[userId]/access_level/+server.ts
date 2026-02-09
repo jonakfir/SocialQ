@@ -10,7 +10,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -57,7 +57,7 @@ export const PATCH: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Invalid access level. Must be "pro", "free_trial", or "none"' }, { status: 400 });
     }
     const prismaUser = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: toPrismaUserId(userId) },
       select: { username: true }
     });
     if (!prismaUser) {

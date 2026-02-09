@@ -1,12 +1,13 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
   try {
     const mockUserEmail = event.request.headers.get('X-User-Email');
     if (mockUserEmail) {
       const user = await prisma.user.findFirst({ where: { username: mockUserEmail.trim().toLowerCase() }, select: { id: true } });
-      return user || null;
+      return user ? { id: String(user.id) } : null;
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -16,7 +17,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     const email = data?.user?.email;
     if (!email) return null;
     const prismaUser = await prisma.user.findFirst({ where: { username: email }, select: { id: true } });
-    return prismaUser || null;
+    return prismaUser ? { id: String(prismaUser.id) } : null;
   } catch {
     return null;
   }
@@ -35,9 +36,9 @@ export const POST: RequestHandler = async (event) => {
     }
 
     const membership = await prisma.organizationMembership.upsert({
-      where: { organizationId_userId: { organizationId: orgId, userId: user.id } },
+      where: { organizationId_userId: { organizationId: orgId, userId: toPrismaUserId(user.id) } },
       update: { status: 'pending' },
-      create: { organizationId: orgId, userId: user.id, status: 'pending', role: 'member' },
+      create: { organizationId: orgId, userId: toPrismaUserId(user.id), status: 'pending', role: 'member' },
       select: { id: true, status: true }
     });
 

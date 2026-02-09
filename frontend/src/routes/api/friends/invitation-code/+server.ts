@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 // Lazy load env
 import { randomBytes } from 'crypto';
 
@@ -61,7 +61,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
             });
           }
           
-          return { id: prismaUser.id };
+          return { id: String(prismaUser.id) };
         }
       }
     } catch {
@@ -89,7 +89,7 @@ export const GET: RequestHandler = async (event) => {
     }
 
     let prismaUser = await prisma.user.findUnique({
-      where: { id: user.id },
+      where: { id: toPrismaUserId(user.id) },
       select: { invitationCode: true }
     });
 
@@ -105,7 +105,7 @@ export const GET: RequestHandler = async (event) => {
       } while (await prisma.user.findUnique({ where: { invitationCode: code } }));
 
       prismaUser = await prisma.user.update({
-        where: { id: user.id },
+        where: { id: toPrismaUserId(user.id) },
         data: { invitationCode: code },
         select: { invitationCode: true }
       });

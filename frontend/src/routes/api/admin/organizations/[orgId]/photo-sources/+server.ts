@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
   try {
@@ -11,7 +12,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      return user || null;
+      return user ? { id: String(user.id), role: user.role } : null;
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
@@ -51,7 +52,7 @@ export const GET: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
@@ -75,7 +76,7 @@ export const PATCH: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, { status: 403 });

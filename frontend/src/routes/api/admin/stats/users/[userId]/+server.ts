@@ -14,7 +14,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     
@@ -55,15 +55,15 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const GET: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    const userId = event.params.userId;
+    const userIdParam = event.params.userId;
     
-    if (!userId) {
+    if (!userIdParam) {
       return json({ ok: false, error: 'User ID required' }, { status: 400 });
     }
-    
+    const userIdNum = toPrismaUserId(userIdParam);
     // Get user
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: userIdNum },
       select: {
         id: true,
         username: true,
@@ -81,8 +81,8 @@ export const GET: RequestHandler = async (event) => {
     const friendships = await prisma.friendship.findMany({
       where: {
         OR: [
-          { userId1: userId },
-          { userId2: userId }
+          { userId1: userIdNum },
+          { userId2: userIdNum }
         ]
       },
       include: {
@@ -104,9 +104,9 @@ export const GET: RequestHandler = async (event) => {
     
     // Format friends list (exclude current user, include friend info)
     const friends = friendships.map(friendship => {
-      const friend = friendship.userId1 === userId ? friendship.user2 : friendship.user1;
+      const friend = friendship.userId1 === userIdNum ? friendship.user2 : friendship.user1;
       return {
-        id: friend.id,
+        id: String(friend.id),
         username: friend.username,
         connectedAt: friendship.createdAt
       };
@@ -114,7 +114,7 @@ export const GET: RequestHandler = async (event) => {
     
     // Get user's collages/photos
     const collages = await prisma.collage.findMany({
-      where: { userId },
+      where: { userId: userIdNum },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -145,7 +145,7 @@ export const GET: RequestHandler = async (event) => {
     
     // Get all game sessions for this user
     const sessions = await prisma.gameSession.findMany({
-      where: { userId },
+      where: { userId: userIdNum },
       orderBy: { createdAt: 'desc' },
       include: {
         questions: true

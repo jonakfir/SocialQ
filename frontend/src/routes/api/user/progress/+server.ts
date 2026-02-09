@@ -1,18 +1,19 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
-  // Get user from session cookie
   const cookies = event.request.headers.get('cookie') || '';
   const sessionMatch = cookies.match(/session=([^;]+)/);
   if (!sessionMatch) return null;
 
   try {
-    // Lazy load prisma to avoid blocking startup
     const { prisma } = await import('$lib/prisma');
     const userId = sessionMatch[1];
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    return user ? { id: user.id } : null;
+    const numId = /^\d+$/.test(userId) ? parseInt(userId, 10) : NaN;
+    if (Number.isNaN(numId)) return null;
+    const user = await prisma.user.findUnique({ where: { id: numId } });
+    return user ? { id: String(user.id) } : null;
   } catch {
     return null;
   }
@@ -30,7 +31,7 @@ export const GET: RequestHandler = async (event) => {
     
     // Get user's game sessions to calculate progress
     const sessions = await prisma.gameSession.findMany({
-      where: { userId: user.id },
+      where: { userId: toPrismaUserId(user.id) },
       select: { gameType: true, score: true, total: true }
     });
 

@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id                  String          @id // Will be set manually as 9-digit number
+  id                  Int             @id // Matches backend users.id (SERIAL)
   username            String          @unique
   password            String
   role                String          @default("personal") // "personal" | "admin"
@@ -34,7 +34,7 @@ model User {
 
 model Collage {
   id             String   @id @default(cuid())
-  userId         String
+  userId         Int
   imageUrl       String // Path to the saved image file
   emotions       String? // JSON array of emotions: ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise"]
   folder         String?  @default("Me")
@@ -47,8 +47,8 @@ model Collage {
 
 model FriendRequest {
   id         String   @id @default(cuid())
-  fromUserId String
-  toUserId   String
+  fromUserId Int
+  toUserId   Int
   status     String // 'pending', 'accepted', 'declined'
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -62,8 +62,8 @@ model FriendRequest {
 
 model Friendship {
   id        String   @id @default(cuid())
-  userId1   String
-  userId2   String
+  userId1   Int
+  userId2   Int
   createdAt DateTime @default(now())
   user1     User     @relation("User1Friendships", fields: [userId1], references: [id], onDelete: Cascade)
   user2     User     @relation("User2Friendships", fields: [userId2], references: [id], onDelete: Cascade)
@@ -75,7 +75,7 @@ model Friendship {
 
 model GameSession {
   id         String         @id @default(cuid())
-  userId     String
+  userId     Int
   gameType   String // "facial_recognition" | "transition_recognition" | "mirroring"
   difficulty String? // For facial_recognition and mirroring
   level      String? // For transition_recognition
@@ -112,7 +112,7 @@ model Organization {
   description         String?
   status              String                              @default("pending") // 'pending' | 'approved' | 'rejected'
   photoSourceSettings String?                             // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
-  createdByUserId     String
+  createdByUserId     Int
   createdAt           DateTime                            @default(now())
   memberships         OrganizationMembership[]
   createdBy       User                                @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
@@ -125,7 +125,7 @@ model Organization {
 model OrganizationMembership {
   id             String       @id @default(cuid())
   organizationId String
-  userId         String
+  userId         Int
   role           String       @default("member") // 'member' | 'org_admin'
   status         String       @default("pending") // 'pending' | 'approved' | 'removed'
   joinedAt       DateTime     @default(now())

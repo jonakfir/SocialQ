@@ -14,13 +14,13 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
       // HARDCODE: jonakfir@gmail.com is ALWAYS admin
       if (email === 'jonakfir@gmail.com') {
         const user = await ensurePrismaUser(email);
-        return user ? { id: user.id } : null;
+        return user ? { id: String(user.id) } : null;
       }
       const user = await prisma.user.findFirst({
         where: { username: email },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
 
@@ -45,12 +45,12 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
     const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
     if (email === 'jonakfir@gmail.com') {
       const user = await ensurePrismaUser(email);
-      return user ? { id: user.id } : null;
+      return user ? { id: String(user.id) } : null;
     }
 
     // For other users, check Prisma role
     const prismaUser = await ensurePrismaUser(email);
-    if (prismaUser && prismaUser.role === 'admin') return { id: prismaUser.id };
+    if (prismaUser && prismaUser.role === 'admin') return { id: String(prismaUser.id) };
     return null;
   } catch (error) {
     console.error('[getCurrentAdmin] Error:', error);

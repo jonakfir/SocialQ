@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentAdmin(event: { request: Request }): Promise<{ id: string } | null> {
   try {
@@ -10,7 +11,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     const { PUBLIC_API_URL } = await import('$env/static/public');
@@ -47,23 +48,25 @@ export const POST: RequestHandler = async (event) => {
     const moduleId = String(body?.moduleId || '').trim();
     if (!moduleId) return json({ ok: false, error: 'moduleId required (e.g. "7" for mirroring)' }, { status: 400 });
 
-    const target = await prisma.user.findUnique({ where: { id: targetUserId } });
+    const targetNumId = toPrismaUserId(targetUserId);
+    const adminNumId = toPrismaUserId(admin.id);
+    const target = await prisma.user.findUnique({ where: { id: targetNumId } });
     if (!target) return json({ ok: false, error: 'User not found' }, { status: 404 });
 
     await prisma.verifiedModuleCompletion.upsert({
       where: {
-        userId_moduleId: { userId: targetUserId, moduleId }
+        userId_moduleId: { userId: targetNumId, moduleId }
       },
       create: {
-        userId: targetUserId,
+        userId: targetNumId,
         moduleId,
         source: 'admin_override',
-        verifiedByUserId: admin.id,
+        verifiedByUserId: adminNumId,
         photoDataUrl: undefined
       },
       update: {
         source: 'admin_override',
-        verifiedByUserId: admin.id,
+        verifiedByUserId: adminNumId,
         photoDataUrl: undefined
       }
     });

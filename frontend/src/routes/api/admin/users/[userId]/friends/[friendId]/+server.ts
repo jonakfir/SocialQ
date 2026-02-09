@@ -14,7 +14,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: user.id };
+      if (user && user.role === 'admin') return { id: String(user.id) };
       return null;
     }
     

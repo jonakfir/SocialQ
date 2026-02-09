@@ -1,10 +1,10 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
   try {
-    // Check for mock auth headers first (dev mode)
     const mockUserId = event.request.headers.get('X-User-Id');
     const mockUserEmail = event.request.headers.get('X-User-Email');
     if (mockUserId && mockUserEmail) {
@@ -12,7 +12,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      return user || null;
+      return user ? { id: String(user.id), role: user.role } : null;
     }
 
     // Try backend auth with JWT token and cookies
@@ -61,7 +61,7 @@ export const PUT: RequestHandler = async (event) => {
     }
 
     // Get fresh role from database
-    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const me = await prisma.user.findUnique({ where: { id: toPrismaUserId(user.id) }, select: { role: true, username: true } });
     const email = (me?.username || '').trim().toLowerCase();
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
 

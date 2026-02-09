@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 /**
  * Get current user from auth (supports both mock and real auth)
@@ -15,7 +16,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true }
       });
-      if (user) return { id: user.id };
+      if (user) return { id: String(user.id) };
     }
     
     // Try real backend auth
@@ -79,7 +80,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       });
     }
     
-    if (prismaUser) return { id: prismaUser.id };
+    if (prismaUser) return { id: String(prismaUser.id) };
     return null;
   } catch {
     return null;
@@ -123,7 +124,7 @@ export const POST: RequestHandler = async (event) => {
     // Create game session
     const session = await prisma.gameSession.create({
       data: {
-        userId: user.id,
+        userId: toPrismaUserId(user.id),
         gameType,
         difficulty: difficulty || null,
         level: level || null,
@@ -171,7 +172,7 @@ export const GET: RequestHandler = async (event) => {
     const limit = parseInt(url.searchParams.get('limit') || '50', 10);
     const offset = parseInt(url.searchParams.get('offset') || '0', 10);
     
-    const where: any = { userId: user.id };
+    const where: any = { userId: toPrismaUserId(user.id) };
     if (gameType) {
       where.gameType = gameType;
     }
