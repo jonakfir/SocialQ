@@ -91,8 +91,9 @@
       const { apiFetch } = await import('$lib/api');
       console.log('[facial-recognition] Fetching quiz data for difficulty:', serverDiff);
       
+      // Pull only from Generated Photos (synthetic), not Ekman images
       const res = await apiFetch(
-        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}`
+        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}&photoType=synthetic`
       );
       
       console.log('[facial-recognition] Response status:', res.status, res.ok);

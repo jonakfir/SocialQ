@@ -41,12 +41,13 @@ export const GET: RequestHandler = async (event) => {
   }
 
   try {
-    const where: { photoType: string; label: { in: string[] }; difficulty?: string } = {
+    // Generated photos often have difficulty 'all'; include them for any requested difficulty
+    const where: { photoType: string; label: { in: string[] }; difficulty?: object } = {
       photoType: 'synthetic',
       label: { in: EMOTIONS }
     };
     if (difficulty !== 'all' && ['1', '2', '3', '4'].includes(difficulty)) {
-      where.difficulty = difficulty;
+      where.difficulty = { in: [difficulty, 'all'] };
     }
 
     const rows = await prisma.ekmanImage.findMany({
