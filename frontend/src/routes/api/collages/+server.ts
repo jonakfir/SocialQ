@@ -35,28 +35,13 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
         console.log('[getCurrentUser] Creating Prisma user for mock auth');
         const bcrypt = await import('bcryptjs');
         const defaultPassword = await bcrypt.hash('temp', 10);
-        const { randomBytes } = await import('crypto');
-        
-        // Generate unique 9-digit user ID
-        const userId = await generateUserId();
-        
-        // Generate unique invitation code
-        let invitationCode: string;
-        let attempts = 0;
-        do {
-          invitationCode = randomBytes(8).toString('hex').toUpperCase();
-          attempts++;
-          if (attempts > 10) {
-            throw new Error('Failed to generate unique invitation code');
-          }
-        } while (await prisma.user.findUnique({ where: { invitationCode } }));
-        
+        const newId = await generateUserId();
         prismaUser = await prisma.user.create({
           data: {
-            id: userId,
+            id: newId,
             username: mockUserEmail,
             password: defaultPassword,
-            invitationCode
+            role: 'personal'
           }
         });
       }
@@ -118,37 +103,30 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
         }
       });
     
-    // If user doesn't exist in Prisma, create it
+    // If user doesn't exist in Prisma, create it (use backend id so same DB works; otherwise generate)
     if (!prismaUser) {
       console.log('[getCurrentUser] Creating Prisma user for backend ID:', backendUser.id);
-      // Use a simple password hash (users should set real password via profile)
       const bcrypt = await import('bcryptjs');
       const defaultPassword = await bcrypt.hash('temp', 10);
-      const { randomBytes } = await import('crypto');
-      
-      // Generate unique 9-digit user ID
-      const userId = await generateUserId();
-      
-      // Generate unique invitation code
-      let invitationCode: string;
-      let attempts = 0;
-      do {
-        invitationCode = randomBytes(8).toString('hex').toUpperCase();
-        attempts++;
-        if (attempts > 10) {
-          throw new Error('Failed to generate unique invitation code');
+      const backendId = Number(backendUser.id);
+      const useId = Number.isInteger(backendId) && backendId > 0 ? backendId : await generateUserId();
+      try {
+        prismaUser = await prisma.user.create({
+          data: {
+            id: useId,
+            username: email,
+            password: defaultPassword,
+            role: 'personal'
+          }
+        });
+        console.log('[getCurrentUser] Created Prisma user:', prismaUser.id);
+      } catch (createErr: any) {
+        if (createErr?.code === 'P2002') {
+          prismaUser = await prisma.user.findUnique({ where: { id: useId } });
+          if (prismaUser) console.log('[getCurrentUser] Found existing user by id after conflict:', prismaUser.id);
         }
-      } while (await prisma.user.findUnique({ where: { invitationCode } }));
-      
-      prismaUser = await prisma.user.create({
-        data: {
-          id: userId,
-          username: email,
-          password: defaultPassword,
-          invitationCode
-        }
-      });
-      console.log('[getCurrentUser] Created Prisma user:', prismaUser.id, 'with invitation code:', invitationCode);
+        if (!prismaUser) throw createErr;
+      }
     } else {
       console.log('[getCurrentUser] Found existing Prisma user:', prismaUser.id);
     }
@@ -255,11 +233,26 @@ export const POST: RequestHandler = async (event) => {
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     // Resolve Prisma user id (must be an integer that exists in User table)
-    const userIdNum = typeof user.id === 'number' && Number.isInteger(user.id)
+    let userIdNum = typeof user.id === 'number' && Number.isInteger(user.id)
       ? user.id
       : toPrismaUserId(String(user.id));
     if (!Number.isInteger(userIdNum)) {
       return json({ ok: false, error: 'Invalid user id for collage' }, { status: 400 });
+    }
+
+    // Ensure user row exists in frontend DB before create (avoids FK error when frontend/backend DBs differ)
+    let userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
+    if (!userRow && formDataUserId && formDataUserEmail) {
+      const reEnsure = await ensurePrismaUserForUpload(formDataUserId, formDataUserEmail);
+      if (reEnsure) {
+        user = { id: reEnsure.id, backendId: Number(formDataUserId) };
+        userIdNum = toPrismaUserId(reEnsure.id);
+        userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
+      }
+    }
+    if (!userRow) {
+      console.error('[POST /api/collages] No user row for id:', userIdNum, 'formData:', formDataUserId, formDataUserEmail);
+      return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
     }
 
     // When approvedAnyway is sent (Upload flow): true → Unverified Photos, false → Verified Photos (red button + emotion matched)
