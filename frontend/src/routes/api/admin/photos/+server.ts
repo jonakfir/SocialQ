@@ -112,49 +112,45 @@ export const GET: RequestHandler = async (event) => {
       where.approvedAnyway = true;
     }
 
-    // Fetch all collages with user info
+    // Fetch collages without include so we don't fail when userId has no matching User (orphaned/mismatched ids)
     let collages = await prisma.collage.findMany({
       where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true
-          }
-        }
-      },
       orderBy: { createdAt: 'desc' }
     });
 
     // Filter by organization if specified
     if (organizationId) {
-      // Get all users in the organization
       const orgMembers = await prisma.organizationMembership.findMany({
         where: {
           organizationId: organizationId,
           status: 'approved'
         },
-        select: {
-          userId: true
-        }
+        select: { userId: true }
       });
       const orgUserIds = new Set(orgMembers.map(m => m.userId));
       collages = collages.filter(c => orgUserIds.has(c.userId));
     }
 
-    // Format response
-    const formattedCollages = collages.map(c => ({
-      id: c.id,
-      imageUrl: c.imageUrl,
-      emotions: c.emotions ? JSON.parse(c.emotions) : null,
-      folder: c.folder || 'Me',
-      approvedAnyway: c.approvedAnyway ?? false,
-      createdAt: c.createdAt,
-      user: {
-        id: c.user.id,
-        username: c.user.username
-      }
-    }));
+    // Resolve users by id (handle orphaned collages where userId has no User row)
+    const userIds = [...new Set(collages.map(c => c.userId))];
+    const users = await prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, username: true }
+    });
+    const userMap = new Map(users.map(u => [u.id, { id: String(u.id), username: u.username ?? '' }]));
+
+    const formattedCollages = collages.map(c => {
+      const user = userMap.get(c.userId);
+      return {
+        id: c.id,
+        imageUrl: c.imageUrl,
+        emotions: c.emotions ? JSON.parse(c.emotions) : null,
+        folder: c.folder || 'Me',
+        approvedAnyway: c.approvedAnyway ?? false,
+        createdAt: c.createdAt,
+        user: user ?? { id: String(c.userId), username: 'Unknown user' }
+      };
+    });
 
     return json({
       ok: true,

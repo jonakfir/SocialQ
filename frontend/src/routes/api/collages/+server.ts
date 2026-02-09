@@ -254,17 +254,53 @@ export const POST: RequestHandler = async (event) => {
     const mimeType = file.type || 'image/png';
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
-    // Save to database with base64 data URL
-    console.log('[POST /api/collages] Saving collage with userId:', user.id, 'imageUrl length:', dataUrl.length);
-    const collage = await prisma.collage.create({
-      data: {
-        userId: toPrismaUserId(user.id),
-        imageUrl: dataUrl, // Store as base64 data URL instead of file path
-        emotions: emotions ? JSON.stringify(emotions) : null,
-        approvedAnyway: approvedAnyway || undefined
+    // Resolve Prisma user id (must be an integer that exists in User table)
+    const userIdNum = typeof user.id === 'number' && Number.isInteger(user.id)
+      ? user.id
+      : toPrismaUserId(String(user.id));
+    if (!Number.isInteger(userIdNum)) {
+      return json({ ok: false, error: 'Invalid user id for collage' }, { status: 400 });
+    }
+
+    // When approvedAnyway is sent (Upload flow): true → Unverified Photos, false → Verified Photos (red button + emotion matched)
+    const folder =
+      formData.has('approvedAnyway') ?
+        (approvedAnyway ? 'Unverified Photos' : 'Verified Photos') :
+        'Me';
+    const emotionsJson = emotions ? JSON.stringify(emotions) : null;
+    console.log('[POST /api/collages] Saving collage with userId:', userIdNum, 'folder:', folder, 'imageUrl length:', dataUrl.length);
+
+    let collage;
+    const fullData = {
+      userId: userIdNum,
+      imageUrl: dataUrl,
+      emotions: emotionsJson,
+      folder,
+      approvedAnyway: !!approvedAnyway
+    };
+    try {
+      collage = await prisma.collage.create({ data: fullData });
+    } catch (createError: any) {
+      const errMsg = createError?.message ?? String(createError);
+      console.error('[POST /api/collages] create failed:', errMsg);
+      // Retry with minimal fields in case DB or Prisma client is missing folder/approvedAnyway
+      try {
+        collage = await prisma.collage.create({
+          data: {
+            userId: userIdNum,
+            imageUrl: dataUrl,
+            emotions: emotionsJson
+          }
+        });
+        console.log('[POST /api/collages] Created with minimal fields (folder/approvedAnyway may be missing in DB)');
+      } catch (retryError: any) {
+        const retryMsg = retryError?.message ?? String(retryError);
+        console.error('[POST /api/collages] retry create failed:', retryMsg);
+        const msg = retryMsg.includes('Foreign key') ? 'User not found. Please log in again.' : retryMsg;
+        return json({ ok: false, error: msg }, { status: 500 });
       }
-    });
-    
+    }
+
     console.log('[POST /api/collages] Created collage:', {
       id: collage.id,
       userId: collage.userId,
