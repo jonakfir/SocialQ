@@ -68,7 +68,9 @@ export const GET: RequestHandler = async (event) => {
     const url = new URL(event.request.url);
     const search = (url.searchParams.get('search') || '').trim();
 
-    // Fetch all organizations (catch 22P03 / bind format errors and return empty)
+    // Fetch all organizations from the same DB as the rest of the admin panel (Prisma / DATABASE_URL).
+    // If you created orgs via the Node backend (e.g. POST /organizations), they live in the backend DB
+    // and won't appear here unless both use the same database.
     let orgs: Awaited<ReturnType<typeof prisma.organization.findMany>>;
     try {
       orgs = await prisma.organization.findMany({
@@ -103,12 +105,68 @@ export const GET: RequestHandler = async (event) => {
       orderBy: { createdAt: 'desc' }
     });
     } catch (err: any) {
-      console.warn('[GET /api/admin/organizations] organization.findMany failed:', err?.message ?? err);
-      orgs = [];
+      const message = err?.message ?? String(err);
+      console.error('[GET /api/admin/organizations] organization.findMany failed:', message);
+      return json(
+        { ok: false, error: 'Failed to load organizations', details: message },
+        { status: 500 }
+      );
     }
 
-    // Process organizations to include member counts and org admins
-    const orgsWithDetails = orgs.map(org => {
+    // If Prisma returned none, try backend (same app may use backend DB for orgs)
+    let orgsWithDetails: Array<{
+      id: number;
+      name: string;
+      description: string | null;
+      status: string;
+      createdAt: Date;
+      createdBy: { id: number; username: string };
+      memberCount: number;
+      pendingCount: number;
+      orgAdmins: Array<{ id: number; username: string }>;
+      totalMemberships: number;
+    }>;
+    if (orgs.length === 0) {
+      const { env: PUBLIC_ENV } = await import('$env/dynamic/public');
+      const base = (PUBLIC_ENV.PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+      if (base && authHeader) {
+        try {
+          const backendRes = await fetch(`${base}/organizations?all=1`, {
+            method: 'GET',
+            headers: { Authorization: authHeader }
+          });
+          if (backendRes.ok) {
+            const data = await backendRes.json();
+            const list = data.organizations || [];
+            orgsWithDetails = list.map((o: any) => ({
+              id: o.id,
+              name: o.name,
+              description: o.description ?? null,
+              status: o.status ?? 'pending',
+              createdAt: o.created_at ? new Date(o.created_at) : new Date(),
+              createdBy: {
+                id: o.created_by_user_id ?? 0,
+                username: o.creator_email ?? ''
+              },
+              memberCount: Number(o.member_count ?? 0),
+              pendingCount: Number(o.pending_count ?? 0),
+              orgAdmins: [] as Array<{ id: number; username: string }>,
+              totalMemberships: Number(o.member_count ?? 0) + Number(o.pending_count ?? 0)
+            }));
+          } else {
+            orgsWithDetails = [];
+          }
+        } catch (e) {
+          console.warn('[GET /api/admin/organizations] backend fallback failed:', e);
+          orgsWithDetails = [];
+        }
+      } else {
+        orgsWithDetails = [];
+      }
+    } else {
+      // Process organizations to include member counts and org admins
+      orgsWithDetails = orgs.map(org => {
       const approvedMembers = org.memberships.filter(m => m.status === 'approved');
       const orgAdmins = approvedMembers
         .filter(m => m.role === 'org_admin')
@@ -132,6 +190,7 @@ export const GET: RequestHandler = async (event) => {
         totalMemberships: org.memberships.length
       };
     });
+    }
 
     // Filter by search if provided
     let filteredOrgs = orgsWithDetails;
