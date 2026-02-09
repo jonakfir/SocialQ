@@ -12,7 +12,6 @@ model User {
   username            String          @unique
   password            String
   role                String          @default("personal") // "personal" | "admin"
-  darkMode            Boolean         @default(false)
   invitationCode      String?         @unique
   photoSourceSettings String?         // JSON: { "ekman": true, "own": true, "synthetic": true }, null = all enabled
   createdAt           DateTime        @default(now())
