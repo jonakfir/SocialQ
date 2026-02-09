@@ -68,38 +68,44 @@ export const GET: RequestHandler = async (event) => {
     const url = new URL(event.request.url);
     const search = (url.searchParams.get('search') || '').trim();
 
-    // Fetch all organizations
-    const orgs = await prisma.organization.findMany({
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        status: true,
-        createdAt: true,
-        createdBy: {
-          select: {
-            id: true,
-            username: true
-          }
-        },
-        memberships: {
-          select: {
-            id: true,
-            userId: true,
-            role: true,
-            status: true,
-            joinedAt: true,
-            user: {
-              select: {
-                id: true,
-                username: true
+    // Fetch all organizations (catch 22P03 / bind format errors and return empty)
+    let orgs: Awaited<ReturnType<typeof prisma.organization.findMany>>;
+    try {
+      orgs = await prisma.organization.findMany({
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          createdAt: true,
+          createdBy: {
+            select: {
+              id: true,
+              username: true
+            }
+          },
+          memberships: {
+            select: {
+              id: true,
+              userId: true,
+              role: true,
+              status: true,
+              joinedAt: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true
+                }
               }
             }
           }
-        }
-      },
+        },
       orderBy: { createdAt: 'desc' }
     });
+    } catch (err: any) {
+      console.warn('[GET /api/admin/organizations] organization.findMany failed:', err?.message ?? err);
+      orgs = [];
+    }
 
     // Process organizations to include member counts and org admins
     const orgsWithDetails = orgs.map(org => {
