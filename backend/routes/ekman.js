@@ -39,7 +39,33 @@ router.get('/', async (req, res) => {
     const diff = (req.query.difficulty ?? '1').toString();
     const count = Math.min(Number(req.query.count ?? '12') || 12, 50);
     const q = req.query || {};
-    const ekmanOnly = String(q.ekmanOnly ?? q.photoType ?? '').toLowerCase() === '1' || String(q.photoType ?? '').toLowerCase() === 'ekman';
+    const photoTypeParam = String(q.photoType ?? '').trim().toLowerCase();
+    const useGeneratedOnly = photoTypeParam === 'synthetic' || photoTypeParam === 'generated';
+    const ekmanOnly = String(q.ekmanOnly ?? '').toLowerCase() === '1' || (photoTypeParam === 'ekman');
+
+    // When photoType=synthetic, use ONLY generated photos from frontend DB — never fall back to local Ekman
+    if (useGeneratedOnly) {
+      if (FRONTEND_URL && PROXY_SECRET) {
+        try {
+          const fetch = (await import('node-fetch')).default;
+          const params = new URLSearchParams();
+          params.set('photoType', 'synthetic');
+          params.set('difficulty', diff);
+          params.set('count', String(count));
+          const url = `${FRONTEND_URL}/api/ekman-quiz?${params.toString()}`;
+          const proxyRes = await fetch(url, { headers: { 'X-Proxy-Secret': PROXY_SECRET } });
+          if (proxyRes.ok) {
+            const questions = await proxyRes.json();
+            return res.json(Array.isArray(questions) ? questions : []);
+          }
+        } catch (err) {
+          console.warn('[ekman] Generated-only proxy failed:', err?.message || err);
+        }
+      } else {
+        console.warn('[ekman] photoType=synthetic requested but FRONTEND_URL or PROXY_SECRET not set; returning no images.');
+      }
+      return res.json([]);
+    }
 
     const dbModule = require('../db/db');
     const { pool, getFriendships, findUserById } = dbModule;
