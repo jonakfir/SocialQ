@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 /**
  * Get current user and check if admin
@@ -54,8 +55,30 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
  */
 export const GET: RequestHandler = async (event) => {
   try {
-    // TEMPORARY: Always allow
-    
+    // Sync users from backend to Prisma first (same as dashboard stats) so list matches total
+    try {
+      await ensurePrismaUser('jonakfir@gmail.com');
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      const backendRes = await fetch(`${base}/admin/users`, {
+        method: 'GET',
+        headers: { Cookie: cookieHeader },
+        credentials: 'include'
+      });
+      if (backendRes.ok) {
+        const backendData = await backendRes.json();
+        if (backendData.ok && backendData.users) {
+          for (const u of backendData.users) {
+            const email = u.email || u.username;
+            if (email) await ensurePrismaUser(email);
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[GET /api/admin/stats/users] Sync from backend failed:', syncErr);
+    }
+
     const url = new URL(event.request.url);
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
     const offset = parseInt(url.searchParams.get('offset') || '0', 10);

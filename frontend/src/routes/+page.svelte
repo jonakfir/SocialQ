@@ -1,7 +1,6 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
-  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   const SEGMENTS = 8;
 
@@ -56,20 +55,8 @@
     span.addEventListener('animationend', () => span.remove(), { once: true });
   }
 
-  // --- transition: video animation then navigate ------------------------------
-  let showLoadingVideo = false;
-
   function startWithTransition(e) {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      goto('/login');
-      return;
-    }
     ripple(e);
-    showLoadingVideo = true;
-  }
-
-  function onVideoComplete() {
-    showLoadingVideo = false;
     goto('/login');
   }
 </script>
@@ -109,11 +96,6 @@
                 rgba(255,255,255,.18), transparent 60%);
     transition:opacity .2s ease;
   }
-  .hero.leaving{
-    animation: hero-out .45s ease forwards;
-  }
-  @keyframes hero-out { to { opacity:0; transform: translateY(6px) scale(.96); } }
-
   .title{
     font-size: clamp(42px, 7vw, 92px);
     margin-bottom: 22px;
@@ -193,9 +175,7 @@
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
 <div class="stage">
-  <LoadingAnimation show={showLoadingVideo} onComplete={onVideoComplete} loop={false} />
-
-  <div class="hero {showLoadingVideo ? 'leaving' : ''}" bind:this={heroEl}>
+  <div class="hero" bind:this={heroEl}>
     <h1 class="title">Welcome to AboutFace</h1>
 
     <div class="dash" aria-hidden="true">

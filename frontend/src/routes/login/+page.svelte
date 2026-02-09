@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { apiFetch } from '$lib/api';
-  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   let email = '';
   let password = '';
@@ -315,8 +314,6 @@
   :global(html.dark) .btn.primary { color: #fff; }
   :global(html.dark) .muted { color: var(--text-secondary, #94a3b8); }
 </style>
-
-<LoadingAnimation show={loading} loop={true} />
 
 <div class="blobs">
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
