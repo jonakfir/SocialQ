@@ -1,12 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { fly, fade } from 'svelte/transition';
-  import { cubicOut, cubicInOut } from 'svelte/easing';
   import { isViewingAsPersonal, clearViewAs } from '$lib/viewAs';
   import { apiFetch } from '$lib/api';
 
-  let motionOK = true;
   let userRole: string | null = null;
   $: viewAsPersonal = isViewingAsPersonal();
 
@@ -42,83 +39,12 @@
   // Which side panel is open
   let panel: null | 'train' | 'test' = null;
 
-  // animate origin (from clicked button center)
-  let fromX = 0;
-  let fromY = 0;
-
-  // reduce how far to the right the options travel
-  const H_SHIFT_FACTOR = 0.6;
-
-  // ---- Card tilt (parallax) ----
-  let cardEl: HTMLElement | null = null;
-  let raf = 0;
-  const target = { rx: 0, ry: 0 };
-  const current = { rx: 0, ry: 0 };
-
-  function onMouseMove(ev: MouseEvent) {
-    if (!motionOK || !cardEl) return;
-    const r = cardEl.getBoundingClientRect();
-    const px = (ev.clientX - r.left) / r.width;   // 0..1
-    const py = (ev.clientY - r.top)  / r.height;  // 0..1
-    const MAX = 4;                                // max tilt degrees
-    target.ry = (px - 0.5) * 2 * MAX;             // rotateY follows X
-    target.rx = -(py - 0.5) * 2 * MAX;            // rotateX follows Y
-    startTiltLoop();
-  }
-  function onMouseLeave() {
-    target.rx = 0; target.ry = 0;
-    startTiltLoop();
-  }
-  function startTiltLoop() {
-    if (raf) return;
-    const step = () => {
-      const k = 0.12;
-      current.rx += (target.rx - current.rx) * k;
-      current.ry += (target.ry - current.ry) * k;
-      if (cardEl) {
-        cardEl.style.transform =
-          `perspective(900px) rotateX(${current.rx}deg) rotateY(${current.ry}deg) translateZ(0)`;
-      }
-      const done = Math.abs(current.rx - target.rx) < 0.05 && Math.abs(current.ry - target.ry) < 0.05;
-      if (!done) raf = requestAnimationFrame(step);
-      else { raf = 0; }
-    };
-    raf = requestAnimationFrame(step);
-  }
-
-  // quick flash when you click a main button
-  let flash = false;
-  function flashCard() {
-    flash = true;
-    setTimeout(() => (flash = false), 260);
-  }
-
-  function centerOf(el: HTMLElement) {
-    const r = el.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  }
-  const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
-
-  function openPanel(kind: 'train' | 'test', ev: MouseEvent) {
-    const btn = ev.currentTarget as HTMLElement;
-    const c = centerOf(btn);
-
-    // right rail center
-    const rightPx = clamp(Math.round(window.innerWidth * 0.06), 22, 80);
-    const chipMin = 360;
-    const railCx  = window.innerWidth - rightPx - chipMin / 2;
-    const railCy  = window.innerHeight / 2 + (kind === 'train' ? -window.innerHeight * 0.10 : window.innerHeight * 0.10);
-
-    fromX = (c.x - railCx) * H_SHIFT_FACTOR;
-    fromY = c.y - railCy;
-
-    flashCard();
+  function openPanel(kind: 'train' | 'test') {
     panel = kind;
   }
   const closePanel = () => (panel = null);
 
   onMount(() => {
-    motionOK = matchMedia('(prefers-reduced-motion: no-preference)').matches;
     const onEsc = (e: KeyboardEvent) => (e.key === 'Escape') && (panel = null);
     window.addEventListener('keydown', onEsc);
     checkUserRole();
@@ -167,10 +93,6 @@
     text-align:center;
     backdrop-filter: blur(22px) saturate(140%);
     transition: box-shadow .22s ease, filter .22s ease;
-  }
-  .shell.flash{
-    box-shadow: 0 28px 78px rgba(79,70,229,.35);
-    filter: brightness(1.02);
   }
 
   .title{
@@ -419,50 +341,33 @@
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
 <div class="stage">
-  <div
-    class="shell {flash ? 'flash' : ''}"
-    bind:this={cardEl}
-    on:mousemove={onMouseMove}
-    on:mouseenter={onMouseMove}
-    on:mouseleave={onMouseLeave}
-    in:fly={{ y: 10, duration: motionOK ? 300 : 0, easing: cubicOut }}
-    out:fade={{ duration: motionOK ? 140 : 0 }}
-  >
+  <div class="shell">
     <h2 class="title">AboutFace</h2>
     <div class="stack">
-      <button class="big" on:click={(e) => openPanel('train', e)} in:fade={{ duration: motionOK ? 240 : 0 }}>
+      <button class="big" on:click={() => openPanel('train')}>
         <span class="fxtext">Train</span>
       </button>
-      <button class="big" on:click={(e) => openPanel('test', e)} in:fade={{ duration: motionOK ? 260 : 0 }}>
+      <button class="big" on:click={() => openPanel('test')}>
         <span class="fxtext">Test</span>
       </button>
     </div>
   </div>
 
   {#if panel}
-    <div
-      class="scrim"
-      on:click={closePanel}
-      in:fade={{ duration: motionOK ? 240 : 0, easing: cubicInOut }}
-      out:fade={{ duration: motionOK ? 160 : 0, easing: cubicInOut }}
-    ></div>
+    <div class="scrim" on:click={closePanel}></div>
 
     <div
       class="rail"
       style={`--rail-offset: ${panel === 'train' ? '-10vh' : '10vh'}`}
-      in:fly={{ x: fromX, y: fromY, duration: motionOK ? 420 : 0, easing: cubicOut }}
-      out:fade={{ duration: motionOK ? 160 : 0, easing: cubicInOut }}
       aria-live="polite"
     >
-      {#each (panel === 'train' ? trainItems : testItems) as it, i}
+      {#each (panel === 'train' ? trainItems : testItems) as it}
         <div
           class="chip"
           role="button"
           tabindex="0"
           on:click={() => it.action()}
           on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && it.action()}
-          in:fly={{ x: fromX, y: fromY, duration: motionOK ? 420 : 0, delay: motionOK ? i * 80 + 60 : 0, easing: cubicOut }}
-          out:fade={{ duration: motionOK ? 150 : 0, easing: cubicInOut }}
         >
           <span class="fxtext">{it.label}</span>
         </div>
@@ -482,8 +387,7 @@
   <span class="label">Friends</span>
 </button>
 
-<!-- Journey Button (top left, below profile) - not ready for main yet -->
-<!--
+<!-- Journey Button (top left, below profile) -->
 <button
   class="journey-btn"
   aria-label="Journey"
@@ -493,7 +397,6 @@
   🧩
   <span class="label">Journey</span>
 </button>
--->
 
 <!-- Pricing Button (top center) - not ready for main yet -->
 <!--

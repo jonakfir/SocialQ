@@ -1,6 +1,7 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
+  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   const SEGMENTS = 8;
 
@@ -55,29 +56,21 @@
     span.addEventListener('animationend', () => span.remove(), { once: true });
   }
 
-  // --- page wipe transition --------------------------------------------------
-  let wiping = false;
-  let wipeStyle = '';
+  // --- transition: video animation then navigate ------------------------------
+  let showLoadingVideo = false;
 
   function startWithTransition(e) {
-    // Respect reduced-motion users
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       goto('/login');
       return;
     }
-
     ripple(e);
+    showLoadingVideo = true;
+  }
 
-    // compute where to center the wipe (button center)
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = ((rect.left + rect.width / 2) / window.innerWidth)  * 100;
-    const cy = ((rect.top  + rect.height / 2) / window.innerHeight) * 100;
-
-    wipeStyle = `--cx:${cx}%; --cy:${cy}%;`;
-    wiping = true; // triggers CSS animations
-
-    // navigate after the wipe covers screen
-    setTimeout(() => goto('/login'), 620);
+  function onVideoComplete() {
+    showLoadingVideo = false;
+    goto('/login');
   }
 </script>
 
@@ -187,29 +180,10 @@
   @keyframes rip{ to { transform:scale(2.6); opacity:0; } }
 
   /* Fullscreen wipe overlay */
-  .wipe{
-    position: fixed; inset: 0; z-index: 50; pointer-events:none;
-    /* Use CSS vars set from click point */
-    --cx: 50%; --cy: 50%;
-    background:
-      radial-gradient(120px 120px at var(--cx) var(--cy),
-        #4f46e5 0 40%,
-        #6d28d9 60%);
-    clip-path: circle(0% at var(--cx) var(--cy));
-    opacity: 1;
-  }
-  .wipe.show{
-    animation: wipe-expand 2340ms cubic-bezier(.22,.61,.36,1) forwards;
-  }
-  @keyframes wipe-expand{
-    to{ clip-path: circle(160% at var(--cx) var(--cy)); }
-  }
-
   @media (prefers-reduced-motion: reduce){
     .hero{ transform:none !important; }
     .hero::after{ display:none; }
     .dash, .seg, .subtitle, .cta{ animation:none !important; opacity:1; transform:none; }
-    .wipe{ display:none; }
   }
 </style>
 
@@ -219,10 +193,9 @@
 <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
 <div class="stage">
-  <!-- expanding overlay for the page transition -->
-  <div class="wipe {wiping ? 'show' : ''}" style={wipeStyle} aria-hidden="true"></div>
+  <LoadingAnimation show={showLoadingVideo} onComplete={onVideoComplete} loop={false} />
 
-  <div class="hero {wiping ? 'leaving' : ''}" bind:this={heroEl}>
+  <div class="hero {showLoadingVideo ? 'leaving' : ''}" bind:this={heroEl}>
     <h1 class="title">Welcome to AboutFace</h1>
 
     <div class="dash" aria-hidden="true">

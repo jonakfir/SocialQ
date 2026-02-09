@@ -1,11 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { apiFetch } from '$lib/api';
+  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   let email = '';
   let password = '';
   let error = '';
   let showPassword = false;
+  let loading = false;
 
   function goCreate(){ goto('/create-account'); }
   function goHome(){ goto('/'); }
@@ -49,7 +51,7 @@
   async function handleLogin(e: Event) {
     e.preventDefault();
     error = '';
-
+    loading = true;
     try {
       const emailTrimmed = email.trim().toLowerCase();
       console.log('[Login] Attempting login for:', emailTrimmed);
@@ -171,6 +173,8 @@
     } catch (err) {
       console.error('[Login] Error:', err);
       error = 'Network error: ' + (err.message || 'Unknown error');
+    } finally {
+      loading = false;
     }
   }
 </script>
@@ -312,6 +316,8 @@
   :global(html.dark) .muted { color: var(--text-secondary, #94a3b8); }
 </style>
 
+<LoadingAnimation show={loading} loop={true} />
+
 <div class="blobs">
   <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
   <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
@@ -349,7 +355,9 @@
           {showPassword ? '👁️' : '👁️‍🗨️'}
         </button>
       </div>
-      <button type="submit" class="btn primary">Log In</button>
+      <button type="submit" class="btn primary" disabled={loading}>
+        {loading ? 'Logging in…' : 'Log In'}
+      </button>
     </form>
 
     {#if error}<div class="error">{error}</div>{/if}

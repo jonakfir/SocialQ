@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { getUserKey } from '$lib/userKey';
+  import LoadingAnimation from '$lib/components/LoadingAnimation.svelte';
 
   // ---------- NATIVE APP BRIDGE ----------
   const isNative =
@@ -30,6 +31,7 @@
   let showOverlay = true;
   let evaluating = false;
   let lastResult: any = null;
+  let loading = true;
 
   // instructions modal
   let instructionsOpen = true;
@@ -171,29 +173,30 @@
   }
 
   onMount(async () => {
-    // mark body so CSS can change layout when embedded in the native app
-    if (isNative) {
-      document.body.classList.add('native');
-    }
-
-    // 1) load targets
     try {
-      const { apiFetch } = await import('$lib/api');
-      const res = await apiFetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=8`);
-      const rows = await res.json();
-      if (!Array.isArray(rows) || rows.length === 0) throw new Error('No images');
-      targets = rows;
-    } catch (e) {
-      console.error('Failed to load ekman targets:', e);
-      targets = [
-        { img: '/target1.png', label: 'happy' },
-        { img: '/target2.png', label: 'angry' },
-        { img: '/target3.png', label: 'surprise' }
-      ];
-    }
+      // mark body so CSS can change layout when embedded in the native app
+      if (isNative) {
+        document.body.classList.add('native');
+      }
 
-    // 2) load Human only once
-    await new Promise<void>((res, rej) => {
+      // 1) load targets
+      try {
+        const { apiFetch } = await import('$lib/api');
+        const res = await apiFetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=8`);
+        const rows = await res.json();
+        if (!Array.isArray(rows) || rows.length === 0) throw new Error('No images');
+        targets = rows;
+      } catch (e) {
+        console.error('Failed to load ekman targets:', e);
+        targets = [
+          { img: '/target1.png', label: 'happy' },
+          { img: '/target2.png', label: 'angry' },
+          { img: '/target3.png', label: 'surprise' }
+        ];
+      }
+
+      // 2) load Human only once
+      await new Promise<void>((res, rej) => {
       // @ts-ignore
       if ((window as any).Human) return res();
       const s = document.createElement('script');
@@ -201,20 +204,20 @@
       s.onload = () => res();
       s.onerror = rej;
       document.head.append(s);
-    });
+      });
 
-    // 3) webcam
-    await ensureCamera();
+      // 3) webcam
+      await ensureCamera();
 
-    // 4) canvas and resize handling
-    sizeCanvasToArea();
-    ctx = canvas.getContext('2d')!;
-    const onResize = () => sizeCanvasToArea();
-    window.addEventListener('resize', onResize);
+      // 4) canvas and resize handling
+      sizeCanvasToArea();
+      ctx = canvas.getContext('2d')!;
+      const onResize = () => sizeCanvasToArea();
+      window.addEventListener('resize', onResize);
 
-    // 5) Human init
-    // @ts-ignore
-    human = new (window as any).Human.Human({
+      // 5) Human init
+      // @ts-ignore
+      human = new (window as any).Human.Human({
       backend: 'webgl',
       modelBasePath: 'https://vladmandic.github.io/human/models',
       face: {
@@ -226,19 +229,20 @@
         emotion: { enabled: true }
       },
       body: false, hand: false, object: false, gesture: false
-    });
-    await human.load();
-    await human.warmup();
+      });
+      await human.load();
+      await human.warmup();
 
-    // 6) UI bits
-    renderDots();
-    setTargetImage(0);
+      // 6) UI bits
+      renderDots();
+      setTargetImage(0);
 
-    // 7) let native app know the page is ready
-    postToApp({ type: 'ready' });
+      // 7) let native app know the page is ready; hide loading animation
+      loading = false;
+      postToApp({ type: 'ready' });
 
-    // 8) main loop
-    (async function drawLoop() {
+      // 8) main loop
+      (async function drawLoop() {
       try { lastResult = await human.detect(video); } catch {}
 
       const face = lastResult?.face?.[0];
@@ -271,13 +275,17 @@
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
 
-      requestAnimationFrame(drawLoop);
-    })();
+        requestAnimationFrame(drawLoop);
+      })();
 
-    onDestroy(() => {
-      window.removeEventListener('resize', onResize);
-      try { (video.srcObject as MediaStream)?.getTracks()?.forEach(t => t.stop()); } catch {}
-    });
+      onDestroy(() => {
+        window.removeEventListener('resize', onResize);
+        try { (video.srcObject as MediaStream)?.getTracks()?.forEach(t => t.stop()); } catch {}
+      });
+    } catch (e) {
+      console.error('[mirroring] init error:', e);
+      loading = false;
+    }
   });
 
   // ---------- UI helpers ----------
@@ -436,6 +444,8 @@
 <svelte:head>
   <title>Mirroring Game – SocialQ</title>
 </svelte:head>
+
+<LoadingAnimation show={loading} loop={true} />
 
 <!-- background blobs already on page -->
 <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>

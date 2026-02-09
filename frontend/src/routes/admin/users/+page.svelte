@@ -17,6 +17,7 @@
   let dateRange = data.dateRange || $page.url.searchParams.get('dateRange') || 'all';
   let loading = false;
   let updatingRole: Record<string, boolean> = {};
+  let updatingAccessLevel: Record<string, boolean> = {};
   let managingFriendsFor: string | null = null;
   let friendsList: Array<{ id: string; username: string; friendshipId: string; createdAt: Date }> = [];
   let loadingFriends = false;
@@ -169,6 +170,37 @@
   
   function handleDateRangeChange() { handleSearch(); }
   
+  async function updateUserAccessLevel(userId: string, newAccessLevel: 'pro' | 'free_trial' | 'none') {
+    if (updatingAccessLevel[userId]) return;
+    const user = users.find(u => u.id === userId);
+    const original = user?.accessLevel || 'none';
+    updatingAccessLevel[userId] = true;
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}/access_level`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessLevel: newAccessLevel })
+      });
+      const result = await response.json();
+      if (result.ok) {
+        const userIndex = users.findIndex(u => u.id === userId);
+        if (userIndex !== -1) { users[userIndex].accessLevel = newAccessLevel; users = [...users]; }
+        await invalidate('/admin/users');
+      } else {
+        alert(result.error || 'Failed to update access level');
+        const select = document.querySelector(`[data-access-level-user-id="${userId}"]`) as HTMLSelectElement;
+        if (select) select.value = original;
+      }
+    } catch (error) {
+      console.error('Failed to update access level:', error);
+      alert('Failed to update access level. Please try again.');
+      const select = document.querySelector(`[data-access-level-user-id="${userId}"]`) as HTMLSelectElement;
+      if (select) select.value = original;
+    } finally {
+      updatingAccessLevel[userId] = false;
+    }
+  }
+
   async function updateUserRole(userId: string, newRole: 'admin' | 'personal') {
     if (updatingRole[userId]) return;
     const user = users.find(u => u.id === userId);
@@ -508,6 +540,8 @@
             <th>Email/Username</th>
             <th>User ID</th>
             <th>Role</th>
+            <th>Access Level <span class="th-hint" title="You can set this manually or it updates from Stripe payments.">ⓘ</span></th>
+            <th>Stripe</th>
             <th>Games Played</th>
             <th>Created</th>
             <th>Actions</th>
@@ -549,6 +583,39 @@
                 </select>
                 {#if updatingRole[user.id]}
                   <span class="updating-indicator">Updating...</span>
+                {/if}
+              </td>
+              <td class="role-cell">
+                <select
+                  value={user.accessLevel ?? 'none'}
+                  data-access-level-user-id={user.id}
+                  on:change={(e) => {
+                    const value = e.currentTarget.value;
+                    if ((value === 'pro' || value === 'free_trial' || value === 'none') && value !== (user.accessLevel ?? 'none')) {
+                      updateUserAccessLevel(user.id, value);
+                    }
+                  }}
+                  disabled={updatingAccessLevel[user.id]}
+                  class="role-select access-level-select"
+                  class:pro={user.accessLevel === 'pro'}
+                  class:free-trial={user.accessLevel === 'free_trial'}
+                >
+                  <option value="none">Daily Free Play</option>
+                  <option value="free_trial">Free Trial</option>
+                  <option value="pro">Pro Access</option>
+                </select>
+                {#if updatingAccessLevel[user.id]}
+                  <span class="updating-indicator">Updating...</span>
+                {/if}
+              </td>
+              <td class="stripe-cell" title="{user.stripeCustomerId || '—'} {user.stripeSubscriptionId || ''}">
+                {#if user.stripeCustomerId || user.stripeSubscriptionId}
+                  <span class="stripe-id">{user.stripeCustomerId ? (user.stripeCustomerId.slice(0, 12) + '…') : '—'}</span>
+                  {#if user.stripeSubscriptionId}
+                    <span class="stripe-id sub">{user.stripeSubscriptionId.slice(0, 12)}…</span>
+                  {/if}
+                {:else}
+                  —
                 {/if}
               </td>
               <td class="games-cell">{user.stats?.totalSessions || 0}</td>
@@ -693,7 +760,13 @@
   .id-cell { font-family: monospace; color: #6b7280; font-size: 0.9rem; }
   .role-select { padding: 0.375rem 0.625rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; font-weight: 500; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .role-select.admin { background: linear-gradient(135deg, #fef3c7, #fde68a); border-color: #f59e0b; color: #92400e; font-weight: 700; }
+  .access-level-select.pro { background: linear-gradient(135deg, #d1fae5, #a7f3d0); border-color: #059669; color: #065f46; font-weight: 600; }
+  .access-level-select.free-trial { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); border-color: #4f46e5; color: #3730a3; font-weight: 500; }
   .role-select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .th-hint { opacity: 0.7; cursor: help; font-size: 0.75rem; }
+  .stripe-cell { font-size: 0.75rem; color: #6b7280; max-width: 140px; }
+  .stripe-cell .stripe-id { display: block; font-family: monospace; }
+  .stripe-cell .stripe-id.sub { color: #4f46e5; }
   .updating-indicator { font-size: 0.75rem; color: #9ca3af; font-style: italic; margin-left: 0.5rem; }
   .games-cell, .date-cell { color: #6b7280; font-size: 0.875rem; }
   .action-buttons { display: flex; gap: 0.5rem; align-items: center; }

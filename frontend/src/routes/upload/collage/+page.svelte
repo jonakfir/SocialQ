@@ -15,7 +15,7 @@
   // ───────────────────────────────────────────────────────────
   const EMOTIONS = ['Angry','Disgust','Fear','Happy','Sad','Surprise'] as const;
   type Emotion = typeof EMOTIONS[number];
-  type Tile = { emotion: Emotion; canvas: HTMLCanvasElement | null; frozenUrl?: string };
+  type Tile = { emotion: Emotion; canvas: HTMLCanvasElement | null; frozenUrl?: string; approvedAnyway?: boolean };
 
   let tiles: Tile[] = EMOTIONS.map((e)=>({ emotion: e, canvas: null }));
   let gridEl: HTMLDivElement;
@@ -273,6 +273,7 @@
     drawToCanvas(focusCanvas);
     const still = focusCanvas.toDataURL('image/jpeg', 0.95);
     tiles[focusedIdx].frozenUrl = still;
+    tiles[focusedIdx].approvedAnyway = true; // Mark so server stores as unverified
     showPassFlash = true;
     setTimeout(() => { closeFocus(); }, 350);
   }
@@ -533,7 +534,8 @@
           // Each tile has only one emotion
           const emotionName = titleCase(tile.emotion);
           formData.append('emotions', JSON.stringify([emotionName]));
-          
+          formData.append('approvedAnyway', tile.approvedAnyway ? 'true' : 'false');
+
           // CRITICAL: Append user info to FormData (MUST be in FormData for file uploads)
           formData.append('userId', String(user.id));
           formData.append('userEmail', user.email);

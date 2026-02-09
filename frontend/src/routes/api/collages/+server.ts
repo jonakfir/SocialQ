@@ -224,6 +224,8 @@ export const POST: RequestHandler = async (event) => {
     
     const file = formData.get('file') as File | null;
     const emotionsStr = formData.get('emotions') as string | null; // JSON array of emotions
+    const approvedAnywayRaw = formData.get('approvedAnyway') as string | null;
+    const approvedAnyway = approvedAnywayRaw === 'true' || approvedAnywayRaw === '1';
 
     if (!file) {
       return json({ ok: false, error: 'No file provided' }, { status: 400 });
@@ -258,7 +260,8 @@ export const POST: RequestHandler = async (event) => {
       data: {
         userId: user.id,
         imageUrl: dataUrl, // Store as base64 data URL instead of file path
-        emotions: emotions ? JSON.stringify(emotions) : null
+        emotions: emotions ? JSON.stringify(emotions) : null,
+        approvedAnyway: approvedAnyway || undefined
       }
     });
     

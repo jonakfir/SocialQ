@@ -12,6 +12,7 @@ const {
   updateUserDarkMode,
   getUserRole,
   updateUserRole,
+  updateUserAccessLevel,
   createUserProfile,
   findUserProfileByUserId,
   initializeSchema
@@ -27,6 +28,25 @@ const JWT_TTL        = '7d';                      // token lifetime
 const isProd         = process.env.NODE_ENV === 'production';
 
 // --------------- Helpers ----------------
+/** Returns effective access level and trialEndsAt (ISO string or null). If free_trial is expired, updates user to none and returns none. */
+async function getEffectiveAccessAndTrial(user) {
+  let accessLevel = user.access_level || 'none';
+  let trialEndsAt = null;
+  if (user.trial_ends_at) {
+    const end = new Date(user.trial_ends_at);
+    if (!isNaN(end.getTime())) trialEndsAt = end.toISOString();
+  }
+  if (accessLevel === 'free_trial' && trialEndsAt) {
+    const now = new Date();
+    if (new Date(trialEndsAt).getTime() <= now.getTime()) {
+      await updateUserAccessLevel(user.id, 'none', null);
+      accessLevel = 'none';
+      trialEndsAt = null;
+    }
+  }
+  return { accessLevel, trialEndsAt };
+}
+
 function normEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -230,7 +250,11 @@ router.post('/register', async (req, res) => {
     // Sign them in immediately - get JWT token
     const token = setSessionCookies(res, user);
 
-    return res.status(201).json({ ok: true, user: { ...user, role: user.role, accessLevel: user.access_level || 'none' }, token });
+    // Notify admin of new signup (fire-and-forget; don't block response)
+    const { notifyNewSignup } = require('../lib/notifyNewSignup');
+    notifyNewSignup(user).catch((err) => console.error('[register] notify signup email failed:', err?.message || err));
+
+    return res.status(201).json({ ok: true, user: { ...user, role: user.role, accessLevel: user.access_level || 'none', trialEndsAt: null }, token });
   } catch (e) {
     console.error('[register] error', e);
     console.error('[register] error details:', e.message);
@@ -336,7 +360,7 @@ router.post('/login', async (req, res) => {
       const token = setSessionCookies(res, { id: user.id, email: user.email });
       const accessLevel = user.access_level || 'none';
       console.log('[login] ✅ ADMIN LOGIN SUCCESS');
-      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role || 'admin', accessLevel }, token });
+      return res.json({ ok: true, user: { id: user.id, email: user.email, role: user.role || 'admin', accessLevel, trialEndsAt: null }, token });
     }
 
     // Regular login for other users
@@ -389,9 +413,9 @@ router.post('/login', async (req, res) => {
     }
     
     const token = setSessionCookies(res, { id: user.id, email: user.email });
-    const accessLevel = user.access_level || 'none';
+    const { accessLevel, trialEndsAt } = await getEffectiveAccessAndTrial(user);
     console.log('[login] ✅ Regular login successful, role:', role, 'accessLevel:', accessLevel, 'user.id:', user.id);
-    return res.json({ ok: true, user: { id: user.id, email: user.email, role, accessLevel }, token });
+    return res.json({ ok: true, user: { id: user.id, email: user.email, role, accessLevel, trialEndsAt }, token });
   } catch (e) {
     console.error('[login] FATAL ERROR:', e);
     console.error('[login] Error message:', e.message);
@@ -465,7 +489,7 @@ router.get('/me', async (req, res) => {
       console.warn('[me] Profile fetch failed:', e.message);
     }
 
-    const accessLevel = user.access_level || 'none';
+    const { accessLevel, trialEndsAt } = await getEffectiveAccessAndTrial(user);
     console.log('[me] ✅ User found:', email, 'Role:', role, 'AccessLevel:', accessLevel);
     return res.json({ 
       ok: true, 
@@ -474,6 +498,7 @@ router.get('/me', async (req, res) => {
         email: user.email, 
         role,
         accessLevel,
+        trialEndsAt,
         darkMode: user.dark_mode ?? false,
         profile: profile ? {
           userType: profile.user_type,
@@ -544,7 +569,7 @@ router.post('/update', async (req, res) => {
     // refresh cookies in case email changed
     setSessionCookies(res, { id: updated.id, email: updated.email });
 
-    const accessLevel = updated.access_level || 'none';
+    const { accessLevel, trialEndsAt } = await getEffectiveAccessAndTrial(updated);
     return res.json({ 
       ok: true, 
       user: { 
@@ -552,6 +577,7 @@ router.post('/update', async (req, res) => {
         email: updated.email, 
         role,
         accessLevel,
+        trialEndsAt,
         darkMode: updated.dark_mode ?? false
       } 
     });
@@ -626,7 +652,7 @@ router.post('/preferences', async (req, res) => {
       role = 'admin';
     }
 
-    const accessLevel = updated.access_level || 'none';
+    const { accessLevel, trialEndsAt } = await getEffectiveAccessAndTrial(updated);
     return res.json({ 
       ok: true, 
       user: { 
@@ -634,6 +660,7 @@ router.post('/preferences', async (req, res) => {
         email: updated.email, 
         role,
         accessLevel,
+        trialEndsAt,
         darkMode: updated.dark_mode ?? false
       } 
     });

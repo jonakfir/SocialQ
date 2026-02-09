@@ -2,7 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-// Lazy load env
+import { env as publicEnv } from '$env/dynamic/public';
+
+async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
+  const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('PUBLIC_API_URL not set');
+  const url = `${base}${path.startsWith('/') ? path : '/' + path}`;
+  const headers = new Headers(init?.headers);
+  request.headers.forEach((v, k) => {
+    if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'cookie') headers.set(k, v);
+  });
+  return fetch(url, { ...init, headers });
+}
 
 /**
  * Get current user helper (same as main friends endpoint)
@@ -77,9 +88,32 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 
 /**
  * GET /api/friends/requests - Get pending friend requests
+ * When PUBLIC_API_URL is set, proxies to Node backend so web and mobile share the same DB.
  */
 export const GET: RequestHandler = async (event) => {
   try {
+    const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+    if (base) {
+      const res = await proxyToBackend('/relationships/requests', event.request);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ ok: false, error: data?.error || 'Failed to fetch requests' }, { status: res.status });
+      }
+      const sent = (data.sent || []).map((r: { id?: number; to_user_id?: number; to_user_email?: string; created_at?: string }) => ({
+        id: r.id,
+        toUserId: r.to_user_id,
+        toUsername: r.to_user_email ?? '',
+        createdAt: r.created_at
+      }));
+      const received = (data.received || []).map((r: { id?: number; from_user_id?: number; from_user_email?: string; created_at?: string }) => ({
+        id: r.id,
+        fromUserId: r.from_user_id,
+        fromUsername: r.from_user_email ?? '',
+        createdAt: r.created_at
+      }));
+      return json({ ok: true, sent, received });
+    }
+
     const user = await getCurrentUser(event);
     if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -140,10 +174,35 @@ export const GET: RequestHandler = async (event) => {
 
 /**
  * POST /api/friends/requests - Send friend request
- * Body: { toUserId?: string, invitationCode?: string }
+ * Body: { toUserId?: string, userEmail?: string, invitationCode?: string }
+ * When PUBLIC_API_URL is set, proxies to Node backend so web and mobile share the same DB.
  */
 export const POST: RequestHandler = async (event) => {
   try {
+    const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+    if (base) {
+      const body = await event.request.json();
+      const { toUserId, userEmail } = body;
+      const backendBody = toUserId != null ? { toUserId: Number(toUserId) } : userEmail ? { userEmail: String(userEmail).trim() } : null;
+      if (!backendBody) {
+        return json({ ok: false, error: 'toUserId or userEmail required' }, { status: 400 });
+      }
+      const res = await proxyToBackend('/relationships/requests', event.request, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backendBody)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ ok: false, error: data?.error || 'Failed to send request' }, { status: res.status });
+      }
+      const req = data.request;
+      return json({
+        ok: true,
+        request: req ? { id: req.id, toUserId: req.to_user_id ?? toUserId, createdAt: req.created_at } : undefined
+      });
+    }
+
     const user = await getCurrentUser(event);
     if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });

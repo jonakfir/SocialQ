@@ -160,8 +160,8 @@ export const DELETE: RequestHandler = async (event) => {
 };
 
 /**
- * PATCH /api/collages/[id] - Update collage metadata (e.g., folder)
- * Body: { folder?: string }
+ * PATCH /api/collages/[id] - Update collage metadata (e.g., folder, or verify for admin)
+ * Body: { folder?: string, verified?: true } — verified: true sets approvedAnyway to false (admin only)
  */
 export const PATCH: RequestHandler = async (event) => {
   try {
@@ -170,14 +170,29 @@ export const PATCH: RequestHandler = async (event) => {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
+    const me = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true, username: true } });
+    const email = (me?.username || '').trim().toLowerCase();
+    const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
+
     const body = await event.request.json().catch(() => ({}));
     const folder = typeof body?.folder === 'string' ? body.folder.trim() : undefined;
-    if (!folder || folder.length === 0) {
-      return json({ ok: false, error: 'Folder name required' }, { status: 400 });
-    }
+    const verify = body?.verified === true;
 
     const collage = await prisma.collage.findUnique({ where: { id: collageId } });
     if (!collage) return json({ ok: false, error: 'Not found' }, { status: 404 });
+
+    if (verify) {
+      if (!isAdmin) return json({ ok: false, error: 'Only admins can verify photos' }, { status: 403 });
+      const updated = await prisma.collage.update({
+        where: { id: collageId },
+        data: { approvedAnyway: false }
+      });
+      return json({ ok: true, collage: { id: updated.id, approvedAnyway: updated.approvedAnyway } });
+    }
+
+    if (!folder || folder.length === 0) {
+      return json({ ok: false, error: 'Folder name required' }, { status: 400 });
+    }
     if (collage.userId !== user.id) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
 
     const updated = await prisma.collage.update({

@@ -47,6 +47,13 @@ try {
 } catch (e) {
   console.warn('[Server] Stripe webhook not mounted:', e.message);
 }
+// Collages proxy: forward POST/GET /api/collages to SvelteKit (raw body for multipart upload)
+try {
+  app.use('/api/collages', express.raw({ type: () => true }), require('./routes/collagesProxy'));
+  console.log('[Server] Collages proxy mounted at /api/collages (forwards to frontend when FRONTEND_URL set)');
+} catch (e) {
+  console.warn('[Server] Collages proxy not mounted:', e.message);
+}
 app.use(express.json());
 app.use(cookieParser());
 
@@ -825,7 +832,7 @@ app.get('/admin/users', requireAuth, async (req, res) => {
     let users = [];
     if (pool) {
       // PostgreSQL
-      const result = await pool.query('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, created_at FROM users ORDER BY created_at DESC');
+      const result = await pool.query('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, trial_ends_at, created_at FROM users ORDER BY created_at DESC');
       users = result.rows.map(row => ({
         id: row.id,
         email: row.email,
@@ -834,11 +841,12 @@ app.get('/admin/users', requireAuth, async (req, res) => {
         accessLevel: row.access_level || 'none',
         stripeCustomerId: row.stripe_customer_id || null,
         stripeSubscriptionId: row.stripe_subscription_id || null,
+        trialEndsAt: row.trial_ends_at ? (row.trial_ends_at instanceof Date ? row.trial_ends_at.toISOString() : String(row.trial_ends_at)) : null,
         createdAt: row.created_at
       }));
     } else if (db) {
       // SQLite
-      const allUsers = db.prepare('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, created_at FROM users ORDER BY created_at DESC').all();
+      const allUsers = db.prepare('SELECT id, email, role, access_level, stripe_customer_id, stripe_subscription_id, trial_ends_at, created_at FROM users ORDER BY created_at DESC').all();
       users = allUsers.map(u => ({
         id: u.id,
         email: u.email,
@@ -847,6 +855,7 @@ app.get('/admin/users', requireAuth, async (req, res) => {
         accessLevel: u.access_level || 'none',
         stripeCustomerId: u.stripe_customer_id || null,
         stripeSubscriptionId: u.stripe_subscription_id || null,
+        trialEndsAt: u.trial_ends_at ? String(u.trial_ends_at) : null,
         createdAt: u.created_at
       }));
     }
@@ -893,18 +902,18 @@ app.patch('/admin/users/:userId/role', requireAuth, async (req, res) => {
   }
 });
 
-// PATCH /admin/users/:userId/access_level - Update user access level (Pro Access, Free Trial, None)
+// PATCH /admin/users/:userId/access_level - Update user access level (Pro Access, Free Trial, None) and optional trial end date
 app.patch('/admin/users/:userId/access_level', requireAuth, async (req, res) => {
   try {
     const userId = parseInt(req.params.userId, 10);
-    const { accessLevel } = req.body;
+    const { accessLevel, trialEndsAt } = req.body;
     if (isNaN(userId)) {
       return res.status(400).json({ error: 'Invalid user ID' });
     }
     if (!['pro', 'free_trial', 'none'].includes(accessLevel)) {
       return res.status(400).json({ error: 'Invalid access level. Must be "pro", "free_trial", or "none"' });
     }
-    await updateUserAccessLevel(userId, accessLevel);
+    await updateUserAccessLevel(userId, accessLevel, trialEndsAt);
     const updatedUser = await findUserById(userId);
     return res.json({ ok: true, user: updatedUser });
   } catch (e) {
