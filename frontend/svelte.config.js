@@ -5,8 +5,9 @@ const config = {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter(),
-    csrf: { 
-      trustedOrigins: ['localhost', '127.0.0.1', '*.vercel.app', '*.localhost']
+    csrf: {
+      // Allow mobile app (no browser Origin) to POST to /api/collages; hook sets Origin for same-origin check
+      checkOrigin: false
     },
     // Disable service worker in dev
     serviceWorker: {
