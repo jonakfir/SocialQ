@@ -204,6 +204,20 @@ async function initializeSchema(retries = 5) {
             console.error('[DB] Migration', col, 'failed:', e);
           }
         }
+
+        // Add trial_ends_at for free trial expiry (migration)
+        try {
+          const check = await pool.query(`
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'users' AND column_name = 'trial_ends_at'
+          `);
+          if (check.rows.length === 0) {
+            await pool.query(`ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP;`);
+            console.log('[DB] Added column: trial_ends_at');
+          }
+        } catch (e) {
+          console.error('[DB] trial_ends_at migration failed:', e);
+        }
       
         await pool.query(`
           CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -531,7 +545,16 @@ async function initializeSchema(retries = 5) {
         console.error('[DB] Migration', col, 'failed:', e);
       }
     }
-    
+    try {
+      const cols = db.prepare(`PRAGMA table_info(users);`).all().map(c => c.name);
+      if (!cols.includes('trial_ends_at')) {
+        db.exec(`ALTER TABLE users ADD COLUMN trial_ends_at TEXT;`);
+        console.log('[DB] Added column: trial_ends_at');
+      }
+    } catch (e) {
+      console.error('[DB] trial_ends_at migration failed:', e);
+    }
+
     db.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);`);
     
@@ -722,7 +745,7 @@ async function findUserByEmail(email) {
     
     if (usePostgres) {
       const result = await pool.query(
-        'SELECT id, email, password, role, dark_mode, access_level FROM users WHERE email = $1',
+        'SELECT id, email, password, role, dark_mode, access_level, trial_ends_at FROM users WHERE email = $1',
         [e]
       );
       const user = result.rows[0] || null;
@@ -737,7 +760,7 @@ async function findUserByEmail(email) {
       return user;
     } else {
       const user = db
-        .prepare('SELECT id, email, password, role, dark_mode, access_level FROM users WHERE email = ?')
+        .prepare('SELECT id, email, password, role, dark_mode, access_level, trial_ends_at FROM users WHERE email = ?')
         .get(e) || null;
       if (user) {
         user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
@@ -833,7 +856,7 @@ async function searchUsersByEmail(emailPartial, excludeUserId, limit = 10) {
 async function findUserById(id) {
   if (usePostgres) {
     const result = await pool.query(
-      'SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE id = $1',
+      'SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id, trial_ends_at FROM users WHERE id = $1',
       [id]
     );
     const user = result.rows[0] || null;
@@ -848,7 +871,7 @@ async function findUserById(id) {
     return user;
   } else {
     const user = db
-      .prepare('SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id FROM users WHERE id = ?')
+      .prepare('SELECT id, email, password, role, dark_mode, access_level, stripe_customer_id, stripe_subscription_id, trial_ends_at FROM users WHERE id = ?')
       .get(id) || null;
     if (user) {
       user.dark_mode = user.dark_mode ? Boolean(user.dark_mode) : false;
@@ -948,12 +971,21 @@ async function updateUserRole(userId, role) {
   }
 }
 
-async function updateUserAccessLevel(userId, accessLevel) {
+async function updateUserAccessLevel(userId, accessLevel, trialEndsAt) {
   const level = accessLevel && ['pro', 'free_trial', 'none'].includes(accessLevel) ? accessLevel : 'none';
   if (usePostgres) {
+    if (trialEndsAt !== undefined) {
+      const ts = trialEndsAt === null || trialEndsAt === '' ? null : (typeof trialEndsAt === 'string' ? trialEndsAt : new Date(trialEndsAt).toISOString());
+      const result = await pool.query('UPDATE users SET access_level = $1, trial_ends_at = $2 WHERE id = $3', [level, ts, userId]);
+      return { changes: result.rowCount };
+    }
     const result = await pool.query('UPDATE users SET access_level = $1 WHERE id = $2', [level, userId]);
     return { changes: result.rowCount };
   } else {
+    if (trialEndsAt !== undefined) {
+      const ts = trialEndsAt === null || trialEndsAt === '' ? null : (typeof trialEndsAt === 'string' ? trialEndsAt : new Date(trialEndsAt).toISOString());
+      return db.prepare('UPDATE users SET access_level = ?, trial_ends_at = ? WHERE id = ?').run(level, ts, userId);
+    }
     return db.prepare('UPDATE users SET access_level = ? WHERE id = ?').run(level, userId);
   }
 }
@@ -1224,7 +1256,7 @@ async function getFriendRequests(userId) {
       SELECT fr.*, u.email as to_user_email
       FROM friend_requests fr
       JOIN users u ON fr.to_user_id = u.id
-      WHERE fr.from_user_id = $1
+      WHERE fr.from_user_id = $1 AND fr.status = 'pending'
       ORDER BY fr.created_at DESC
     `, [userId]);
     
@@ -1232,7 +1264,7 @@ async function getFriendRequests(userId) {
       SELECT fr.*, u.email as from_user_email
       FROM friend_requests fr
       JOIN users u ON fr.from_user_id = u.id
-      WHERE fr.to_user_id = $1
+      WHERE fr.to_user_id = $1 AND fr.status = 'pending'
       ORDER BY fr.created_at DESC
     `, [userId]);
     
@@ -1245,7 +1277,7 @@ async function getFriendRequests(userId) {
       SELECT fr.*, u.email as to_user_email
       FROM friend_requests fr
       JOIN users u ON fr.to_user_id = u.id
-      WHERE fr.from_user_id = ?
+      WHERE fr.from_user_id = ? AND fr.status = 'pending'
       ORDER BY fr.created_at DESC
     `).all(userId);
     
@@ -1253,7 +1285,7 @@ async function getFriendRequests(userId) {
       SELECT fr.*, u.email as from_user_email
       FROM friend_requests fr
       JOIN users u ON fr.from_user_id = u.id
-      WHERE fr.to_user_id = ?
+      WHERE fr.to_user_id = ? AND fr.status = 'pending'
       ORDER BY fr.created_at DESC
     `).all(userId);
     

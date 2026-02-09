@@ -167,6 +167,42 @@ export const GET: RequestHandler = async (event) => {
         };
       })
     );
+
+    // Merge backend user data (role, accessLevel, backendId) by email
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      const backendRes = await fetch(`${base}/admin/users`, {
+        method: 'GET',
+        headers: { Cookie: cookieHeader },
+        credentials: 'include'
+      });
+      if (backendRes.ok) {
+        const backendData = await backendRes.json();
+        const backendUsers = (backendData.users || []) as Array<{ id: number; email?: string; username?: string; role?: string; accessLevel?: string; stripeCustomerId?: string | null; stripeSubscriptionId?: string | null; trialEndsAt?: string | null }>;
+        const byEmail = new Map<string, (typeof backendUsers)[0]>();
+        backendUsers.forEach((u) => {
+          const email = (u.email || u.username || '').toLowerCase().trim();
+          if (email) byEmail.set(email, u);
+        });
+        usersWithStats.forEach((u: any) => {
+          const backend = byEmail.get((u.username || '').toLowerCase().trim());
+          if (backend) {
+            u.backendId = backend.id;
+            u.role = backend.role ?? u.role;
+            u.accessLevel = backend.accessLevel ?? 'none';
+            u.stripeCustomerId = backend.stripeCustomerId ?? null;
+            u.stripeSubscriptionId = backend.stripeSubscriptionId ?? null;
+            u.trialEndsAt = backend.trialEndsAt ?? null;
+          } else {
+            u.accessLevel = u.accessLevel ?? 'none';
+          }
+        });
+      }
+    } catch (_) {
+      usersWithStats.forEach((u: any) => { u.accessLevel = u.accessLevel ?? 'none'; });
+    }
     
     return json({
       ok: true,

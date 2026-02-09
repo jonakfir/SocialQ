@@ -76,6 +76,7 @@ export const GET: RequestHandler = async (event) => {
     const organizationId = url.searchParams.get('organizationId');
     const startDate = url.searchParams.get('startDate');
     const endDate = url.searchParams.get('endDate');
+    const userPhotoCategory = url.searchParams.get('userPhotoCategory'); // 'verified' | 'unverified'
 
     // Build where clause
     const where: any = {};
@@ -102,6 +103,13 @@ export const GET: RequestHandler = async (event) => {
       if (endDate) {
         where.createdAt.lte = new Date(endDate);
       }
+    }
+
+    // Filter by verified vs unverified (user photos only)
+    if (userPhotoCategory === 'verified') {
+      where.approvedAnyway = { not: true }; // false or null
+    } else if (userPhotoCategory === 'unverified') {
+      where.approvedAnyway = true;
     }
 
     // Fetch all collages with user info
@@ -140,6 +148,7 @@ export const GET: RequestHandler = async (event) => {
       imageUrl: c.imageUrl,
       emotions: c.emotions ? JSON.parse(c.emotions) : null,
       folder: c.folder || 'Me',
+      approvedAnyway: c.approvedAnyway ?? false,
       createdAt: c.createdAt,
       user: {
         id: c.user.id,

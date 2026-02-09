@@ -2,7 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-// Lazy load env
+import { env as publicEnv } from '$env/dynamic/public';
+
+async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
+  const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('PUBLIC_API_URL not set');
+  const url = `${base}${path.startsWith('/') ? path : '/' + path}`;
+  const headers = new Headers(init?.headers);
+  request.headers.forEach((v, k) => {
+    if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'cookie') headers.set(k, v);
+  });
+  return fetch(url, { ...init, headers });
+}
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
   try {
@@ -74,15 +85,25 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 
 /**
  * POST /api/friends/requests/:requestId/accept - Accept friend request
+ * When PUBLIC_API_URL is set, proxies to Node backend so web and mobile share the same DB.
  */
 export const POST: RequestHandler = async (event) => {
   try {
+    const requestId = event.params.requestId;
+    const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+    if (base) {
+      const res = await proxyToBackend(`/relationships/requests/${requestId}/accept`, event.request, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ ok: false, error: data?.error || 'Failed to accept request' }, { status: res.status });
+      }
+      return json({ ok: true, message: 'Friend request accepted' });
+    }
+
     const user = await getCurrentUser(event);
     if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
-
-    const requestId = event.params.requestId;
 
     // Find the request
     const request = await prisma.friendRequest.findUnique({

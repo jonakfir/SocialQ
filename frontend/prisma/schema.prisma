@@ -29,16 +29,18 @@ model User {
   organizationMemberships OrganizationMembership[]
 
   @@index([role])
+  @@map("users")
 }
 
 model Collage {
-  id        String   @id @default(cuid())
-  userId    String
-  imageUrl  String // Path to the saved image file
-  emotions  String? // JSON array of emotions: ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise"]
-  folder    String?  @default("Me")
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  userId         String
+  imageUrl       String // Path to the saved image file
+  emotions       String? // JSON array of emotions: ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise"]
+  folder         String?  @default("Me")
+  approvedAnyway Boolean? @default(false) // true when user chose "Approve Anyway" (unverified)
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -180,4 +182,17 @@ model TransitionVideo {
   @@index([from])
   @@index([to])
   @@index([from, to])
+}
+
+// Project art assets (characters, faces, bubs, etc.) – call by key when needed
+model ProjectAsset {
+  id        String   @id @default(cuid())
+  key       String   @unique // e.g. "bub1a", "faces1", "girl1" – use this to fetch
+  category  String?  // e.g. "bub", "faces", "characters", "girl"
+  mimeType  String   // image/png | image/webp | video/mp4
+  data      String   // Base64 data URL (data:image/png;base64,... or data:video/mp4;base64,...)
+  createdAt DateTime @default(now())
+
+  @@index([key])
+  @@index([category])
 }

@@ -144,14 +144,19 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       return { id: String(mockUserId) };
     }
     
-    // Try backend auth
+    // Try backend auth (cookies for web, Bearer for mobile app)
     const cookieHeader = event.request.headers.get('cookie') || '';
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
-    
+
+    const headers: Record<string, string> = {};
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    if (authHeader) headers['Authorization'] = authHeader;
+
     try {
       const response = await fetch(`${backendUrl}/auth/me`, {
-        headers: { cookie: cookieHeader }
+        headers: headers
       });
       
       if (response.ok) {
@@ -289,21 +294,23 @@ async function getEffectivePhotoSourceSettings(userId: string | null): Promise<{
   }
 }
 
-// photoTypeFilter: 'ekman' = ekman+other only, 'synthetic' = synthetic only, undefined = all
+// photoTypeFilter: 'ekman' = ekman+other, 'synthetic' = synthetic, 'canonical' = only from assets/ekman folder (folder = 'canonical')
 async function getAllImages(
   userOrganizationIds: string[] = [],
-  photoTypeFilter?: 'ekman' | 'synthetic'
+  photoTypeFilter?: 'ekman' | 'synthetic' | 'canonical'
 ): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
-    const wherePhotoType: any = {};
-    if (photoTypeFilter === 'ekman') {
-      wherePhotoType.photoType = { in: ['ekman', 'other'] };
+    const whereClause: any = {};
+    if (photoTypeFilter === 'canonical') {
+      whereClause.folder = 'canonical';
+    } else if (photoTypeFilter === 'ekman') {
+      whereClause.photoType = { in: ['ekman', 'other'] };
     } else if (photoTypeFilter === 'synthetic') {
-      wherePhotoType.photoType = 'synthetic';
+      whereClause.photoType = 'synthetic';
     }
 
     const allImages = await prisma.ekmanImage.findMany({
-      where: Object.keys(wherePhotoType).length ? wherePhotoType : undefined,
+      where: Object.keys(whereClause).length ? whereClause : undefined,
       select: {
         id: true,
         imageData: true,
@@ -335,6 +342,27 @@ async function getAllImages(
   }
 
   if (photoTypeFilter === 'synthetic') return [];
+  // For canonical: only use static assets from $lib/assets/ekman (no DB fallback with other types)
+  if (photoTypeFilter === 'canonical') {
+    const imageModules = getStaticImages();
+    const images: Array<{ img: string; label: string; difficulty: string }> = [];
+    for (const [path, url] of Object.entries(imageModules)) {
+      const parts = path.split('/');
+      const folder = parts[parts.length - 2];
+      if (folder && !folder.startsWith('Transition')) {
+        const [label, difficulty] = folder.split('_');
+        if (label && EMOTIONS.includes(label)) {
+          const imageUrl = typeof url === 'string' ? url : (url as any).default || url;
+          images.push({
+            img: imageUrl,
+            label: label,
+            difficulty: difficulty || '1'
+          });
+        }
+      }
+    }
+    return images;
+  }
   // Fallback to static imports only for ekman (no synthetic in static)
   const imageModules = getStaticImages();
   const images: Array<{ img: string; label: string; difficulty: string }> = [];
@@ -367,31 +395,39 @@ function shuffle<T>(a: T[]) {
 export const GET: RequestHandler = async (event) => {
   try {
     const diff = (event.url.searchParams.get('difficulty') ?? '1').toString();
-    console.log(`[ekman] Fetching images for difficulty: ${diff}`);
+    const ekmanOnly = (event.url.searchParams.get('ekmanOnly') ?? event.url.searchParams.get('photoType') ?? '').toLowerCase() === '1' || (event.url.searchParams.get('photoType') ?? '').toLowerCase() === 'ekman';
+    console.log(`[ekman] Fetching images for difficulty: ${diff}, ekmanOnly (canonical only): ${ekmanOnly}`);
     const count = Number(event.url.searchParams.get('count') ?? '12');
-
-    const user = await getCurrentUser(event);
-    const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
-    const effective = user ? await getEffectivePhotoSourceSettings(user.id) : { ekman: true, own: true, synthetic: true };
-    console.log(`[ekman] Effective photo sources: ekman=${effective.ekman} own=${effective.own} synthetic=${effective.synthetic}`);
 
     let pool: Array<{ img: string; label: string; difficulty: string }> = [];
 
-    if (effective.ekman) {
-      const ekmanImages = await getAllImages(userOrganizationIds, 'ekman');
-      pool = [...pool, ...ekmanImages];
-      console.log(`[ekman] Added ${ekmanImages.length} ekman/other images`);
-    }
-    if (effective.synthetic) {
-      const syntheticImages = await getAllImages(userOrganizationIds, 'synthetic');
-      pool = [...pool, ...syntheticImages];
-      console.log(`[ekman] Added ${syntheticImages.length} synthetic images`);
-    }
-    if (effective.own && user) {
-      const userCollages = await getUserCollages(user.id);
-      const friendsCollages = await getFriendsCollages(user.id);
-      pool = [...pool, ...userCollages, ...friendsCollages];
-      console.log(`[ekman] Added ${userCollages.length} user + ${friendsCollages.length} friends photos`);
+    if (ekmanOnly) {
+      // Mirroring: only images from web app assets/ekman folder (DB folder='canonical' or static fallback)
+      const canonicalImages = await getAllImages([], 'canonical');
+      pool = [...canonicalImages];
+      console.log(`[ekman] Canonical only: ${pool.length} images from assets/ekman`);
+    } else {
+      const user = await getCurrentUser(event);
+      const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
+      const effective = user ? await getEffectivePhotoSourceSettings(user.id) : { ekman: true, own: true, synthetic: true };
+      console.log(`[ekman] Effective photo sources: ekman=${effective.ekman} own=${effective.own} synthetic=${effective.synthetic}`);
+
+      if (effective.ekman) {
+        const ekmanImages = await getAllImages(userOrganizationIds, 'ekman');
+        pool = [...pool, ...ekmanImages];
+        console.log(`[ekman] Added ${ekmanImages.length} ekman/other images`);
+      }
+      if (effective.synthetic) {
+        const syntheticImages = await getAllImages(userOrganizationIds, 'synthetic');
+        pool = [...pool, ...syntheticImages];
+        console.log(`[ekman] Added ${syntheticImages.length} synthetic images`);
+      }
+      if (effective.own && user) {
+        const userCollages = await getUserCollages(user.id);
+        const friendsCollages = await getFriendsCollages(user.id);
+        pool = [...pool, ...userCollages, ...friendsCollages];
+        console.log(`[ekman] Added ${userCollages.length} user + ${friendsCollages.length} friends photos`);
+      }
     }
 
     pool = pool
@@ -409,7 +445,7 @@ export const GET: RequestHandler = async (event) => {
     shuffle(pool);
     const picked = pool.slice(0, Math.min(count, pool.length));
     const rows = picked.map((p) => {
-      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 2);
+      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 3);
       const options = shuffle([p.label, ...distractors]);
       return { img: p.img, options, correct: p.label };
     });

@@ -2,8 +2,21 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
+import { env as publicEnv } from '$env/dynamic/public';
 // Lazy load env
 import { randomBytes } from 'crypto';
+
+/** Forward request to Node backend with same auth; return response. */
+async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
+  const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('PUBLIC_API_URL not set');
+  const url = `${base}${path.startsWith('/') ? path : '/' + path}`;
+  const headers = new Headers(init?.headers);
+  request.headers.forEach((v, k) => {
+    if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'cookie') headers.set(k, v);
+  });
+  return fetch(url, { ...init, headers });
+}
 
 /**
  * Get current user helper (reused from collages API)
@@ -165,9 +178,27 @@ async function ensureInvitationCode(userId: string): Promise<string> {
 
 /**
  * GET /api/friends - Get current user's friends
+ * When PUBLIC_API_URL is set, proxies to Node backend so web and mobile share the same DB.
  */
 export const GET: RequestHandler = async (event) => {
   try {
+    const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+    if (base) {
+      const res = await proxyToBackend('/relationships/friends', event.request);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ ok: false, error: data?.error || 'Failed to fetch friends' }, { status: res.status });
+      }
+      const friendships = data.friendships || [];
+      const friends = friendships.map((f: { friend_id?: number; friend_email?: string; id?: number; created_at?: string }) => ({
+        id: String(f.friend_id ?? ''),
+        username: f.friend_email ?? '',
+        friendshipId: f.id,
+        createdAt: f.created_at
+      }));
+      return json({ ok: true, friends });
+    }
+
     const user = await getCurrentUser(event);
     if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });

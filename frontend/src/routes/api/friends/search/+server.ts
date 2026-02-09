@@ -2,7 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-// Lazy load env
+import { env as publicEnv } from '$env/dynamic/public';
+
+async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
+  const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+  if (!base) throw new Error('PUBLIC_API_URL not set');
+  const url = `${base}${path.startsWith('/') ? path : '/' + path}`;
+  const headers = new Headers(init?.headers);
+  request.headers.forEach((v, k) => {
+    if (k.toLowerCase() === 'authorization' || k.toLowerCase() === 'cookie') headers.set(k, v);
+  });
+  return fetch(url, { ...init, headers });
+}
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
   try {
@@ -76,15 +87,30 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 
 /**
  * GET /api/friends/search?email=... - Search users by email
+ * When PUBLIC_API_URL is set, proxies to Node backend so web and mobile share the same DB.
  */
 export const GET: RequestHandler = async (event) => {
   try {
+    const email = event.url.searchParams.get('email');
+    const base = (publicEnv.PUBLIC_API_URL || '').replace(/\/+$/, '');
+    if (base && email && email.trim().length >= 2) {
+      const res = await proxyToBackend(`/relationships/search?email=${encodeURIComponent(email.trim())}`, event.request);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ ok: false, error: data?.error || 'Search failed' }, { status: res.status });
+      }
+      const users = (data.users || []).map((u: { id?: number | string; email?: string; username?: string }) => ({
+        id: String(u.id ?? ''),
+        username: u.email ?? u.username ?? ''
+      }));
+      return json({ ok: true, users });
+    }
+
     const user = await getCurrentUser(event);
     if (!user) {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const email = event.url.searchParams.get('email');
     const userId = event.url.searchParams.get('userId');
     
     // Search by email or user ID

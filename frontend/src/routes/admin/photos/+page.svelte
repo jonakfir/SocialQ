@@ -9,6 +9,16 @@
     imageUrl: string;
     emotions: string[] | null;
     folder: string;
+    approvedAnyway?: boolean;
+    createdAt: string;
+    user: { id: string; username: string };
+  }> = [];
+  let unverifiedPhotos: Array<{
+    id: string;
+    imageUrl: string;
+    emotions: string[] | null;
+    folder: string;
+    approvedAnyway?: boolean;
     createdAt: string;
     user: { id: string; username: string };
   }> = [];
@@ -58,19 +68,22 @@
   }> = [];
   
   let totalPhotos = 0;
+  let totalUnverifiedPhotos = 0;
   let totalEkmanImages = 0;
   let totalGeneratedImages = 0;
   let totalDemoClassImages = 0;
   let totalDemoFamilyImages = 0;
   let error: string | null = null;
   let deletingPhoto: Record<string, boolean> = {};
+  let deletingUnverifiedPhoto: Record<string, boolean> = {};
+  let verifyingPhoto: Record<string, boolean> = {};
   let deletingEkmanImage: Record<string, boolean> = {};
   let deletingGeneratedImage: Record<string, boolean> = {};
   let deletingDemoClassImage: Record<string, boolean> = {};
   let deletingDemoFamilyImage: Record<string, boolean> = {};
 
-  // Active tab: 'user' | 'ekman' | 'generated' | 'democlass' | 'demofamily'
-  type TabType = 'user' | 'ekman' | 'generated' | 'democlass' | 'demofamily';
+  // Active tab: 'user' (verified) | 'unverified' | 'ekman' | 'generated' | 'democlass' | 'demofamily'
+  type TabType = 'user' | 'unverified' | 'ekman' | 'generated' | 'democlass' | 'demofamily';
   let activeTab: TabType = 'user';
 
   // Upload modal state
@@ -127,7 +140,7 @@
   let loadingOrgs = false;
 
   onMount(async () => {
-    await Promise.all([loadPhotos(), loadEkmanImages(), loadGeneratedImages(), loadDemoClassImages(), loadDemoFamilyImages(), loadUsers(), loadOrganizations()]);
+    await Promise.all([loadPhotos(), loadUnverifiedPhotos(), loadEkmanImages(), loadGeneratedImages(), loadDemoClassImages(), loadDemoFamilyImages(), loadUsers(), loadOrganizations()]);
   });
 
   async function loadUsers() {
@@ -161,10 +174,11 @@
   }
 
   async function loadPhotos() {
-    loading = true;
+    if (activeTab === 'user') loading = true;
     error = null;
     try {
       const params = new URLSearchParams();
+      params.set('userPhotoCategory', 'verified');
       if (selectedEmotion && selectedEmotion !== 'All') {
         params.set('emotion', selectedEmotion);
       }
@@ -194,7 +208,46 @@
       error = e?.message || 'Failed to load photos';
       console.error('Error loading photos:', e);
     } finally {
-      loading = false;
+      if (activeTab === 'user') loading = false;
+    }
+  }
+
+  async function loadUnverifiedPhotos() {
+    if (activeTab === 'unverified') loading = true;
+    error = null;
+    try {
+      const params = new URLSearchParams();
+      params.set('userPhotoCategory', 'unverified');
+      if (selectedEmotion && selectedEmotion !== 'All') {
+        params.set('emotion', selectedEmotion);
+      }
+      if (selectedUserId) {
+        params.set('userId', selectedUserId);
+      }
+      if (selectedOrgId) {
+        params.set('organizationId', selectedOrgId);
+      }
+      if (startDate) {
+        params.set('startDate', startDate);
+      }
+      if (endDate) {
+        params.set('endDate', endDate);
+      }
+
+      const res = await apiFetch(`/api/admin/photos?${params.toString()}`);
+      const data = await res.json();
+      
+      if (data.ok) {
+        unverifiedPhotos = data.photos || [];
+        totalUnverifiedPhotos = data.total || 0;
+      } else {
+        if (activeTab === 'unverified') error = data.error || 'Failed to load unverified photos';
+      }
+    } catch (e: any) {
+      if (activeTab === 'unverified') error = e?.message || 'Failed to load unverified photos';
+      console.error('Error loading unverified photos:', e);
+    } finally {
+      if (activeTab === 'unverified') loading = false;
     }
   }
 
@@ -308,6 +361,8 @@
     endDate = '';
     if (activeTab === 'user') {
       loadPhotos();
+    } else if (activeTab === 'unverified') {
+      loadUnverifiedPhotos();
     } else if (activeTab === 'ekman') {
       loadEkmanImages();
     } else if (activeTab === 'generated') {
@@ -326,7 +381,7 @@
       if (selectedDifficulty !== 'All') count++;
     } else if (activeTab === 'generated') {
       // Emotion filter is already counted above
-    } else if (activeTab === 'user') {
+    } else if (activeTab === 'user' || activeTab === 'unverified') {
       if (selectedUserId) count++;
       if (selectedOrgId) count++;
       if (startDate) count++;
@@ -339,6 +394,8 @@
     activeTab = tab;
     if (tab === 'user') {
       loadPhotos();
+    } else if (tab === 'unverified') {
+      loadUnverifiedPhotos();
     } else if (tab === 'ekman') {
       loadEkmanImages();
     } else if (tab === 'generated') {
@@ -448,6 +505,8 @@
 
       if (activeTab === 'user') {
         await loadPhotos();
+      } else if (activeTab === 'unverified') {
+        await loadUnverifiedPhotos();
       } else if (activeTab === 'ekman') {
         await loadEkmanImages();
       } else if (activeTab === 'generated') {
@@ -607,7 +666,6 @@
       const data = await res.json();
       
       if (data.ok) {
-        // Remove from local array and reload
         photos = photos.filter(p => p.id !== photoId);
         totalPhotos = Math.max(0, totalPhotos - 1);
       } else {
@@ -618,6 +676,49 @@
       alert('Failed to delete photo: ' + (e?.message || 'Network error'));
     } finally {
       deletingPhoto[photoId] = false;
+    }
+  }
+
+  async function deleteUnverifiedPhoto(photoId: string) {
+    deletingUnverifiedPhoto[photoId] = true;
+    try {
+      const res = await apiFetch(`/api/collages/${photoId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        unverifiedPhotos = unverifiedPhotos.filter(p => p.id !== photoId);
+        totalUnverifiedPhotos = Math.max(0, totalUnverifiedPhotos - 1);
+      } else {
+        alert('Failed to delete photo: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      console.error('Error deleting unverified photo:', e);
+      alert('Failed to delete photo: ' + (e?.message || 'Network error'));
+    } finally {
+      deletingUnverifiedPhoto[photoId] = false;
+    }
+  }
+
+  async function verifyPhoto(photoId: string) {
+    verifyingPhoto[photoId] = true;
+    try {
+      const res = await apiFetch(`/api/collages/${photoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verified: true })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        unverifiedPhotos = unverifiedPhotos.filter(p => p.id !== photoId);
+        totalUnverifiedPhotos = Math.max(0, totalUnverifiedPhotos - 1);
+        await loadPhotos();
+      } else {
+        alert('Failed to verify photo: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e: any) {
+      console.error('Error verifying photo:', e);
+      alert('Failed to verify photo: ' + (e?.message || 'Network error'));
+    } finally {
+      verifyingPhoto[photoId] = false;
     }
   }
 </script>
@@ -647,6 +748,7 @@
       </button>
       <button class="refresh-btn" on:click={() => {
         if (activeTab === 'user') loadPhotos();
+        else if (activeTab === 'unverified') loadUnverifiedPhotos();
         else if (activeTab === 'ekman') loadEkmanImages();
         else if (activeTab === 'generated') loadGeneratedImages();
         else if (activeTab === 'democlass') loadDemoClassImages();
@@ -669,7 +771,14 @@
       class:active={activeTab === 'user'}
       on:click={() => handleTabChange('user')}
     >
-      User Photos ({totalPhotos})
+      Verified Photos ({totalPhotos})
+    </button>
+    <button 
+      class="tab-btn" 
+      class:active={activeTab === 'unverified'}
+      on:click={() => handleTabChange('unverified')}
+    >
+      Unverified Photos ({totalUnverifiedPhotos})
     </button>
     <button 
       class="tab-btn" 
@@ -708,17 +817,12 @@
       <div class="filter-group">
         <label class="filter-label">Emotion</label>
         <select class="filter-select" bind:value={selectedEmotion} on:change={() => {
-          if (activeTab === 'user') {
-            loadPhotos();
-          } else if (activeTab === 'ekman') {
-            loadEkmanImages();
-          } else if (activeTab === 'generated') {
-            loadGeneratedImages();
-          } else if (activeTab === 'democlass') {
-            loadDemoClassImages();
-          } else if (activeTab === 'demofamily') {
-            loadDemoFamilyImages();
-          }
+          if (activeTab === 'user') loadPhotos();
+          else if (activeTab === 'unverified') loadUnverifiedPhotos();
+          else if (activeTab === 'ekman') loadEkmanImages();
+          else if (activeTab === 'generated') loadGeneratedImages();
+          else if (activeTab === 'democlass') loadDemoClassImages();
+          else if (activeTab === 'demofamily') loadDemoFamilyImages();
         }}>
           {#each EMOTIONS as emotion}
             <option value={emotion}>{emotion}</option>
@@ -726,11 +830,11 @@
         </select>
       </div>
 
-      {#if activeTab === 'user'}
+      {#if activeTab === 'user' || activeTab === 'unverified'}
         <!-- User Filter -->
         <div class="filter-group">
           <label class="filter-label">User</label>
-          <select class="filter-select" bind:value={selectedUserId} on:change={loadPhotos} disabled={loadingUsers}>
+          <select class="filter-select" bind:value={selectedUserId} on:change={() => activeTab === 'user' ? loadPhotos() : loadUnverifiedPhotos()} disabled={loadingUsers}>
             <option value="">All Users</option>
             {#each availableUsers as user}
               <option value={user.id}>{user.username}</option>
@@ -740,7 +844,7 @@
         <!-- Organization Filter -->
         <div class="filter-group">
           <label class="filter-label">Organization</label>
-          <select class="filter-select" bind:value={selectedOrgId} on:change={loadPhotos} disabled={loadingOrgs}>
+          <select class="filter-select" bind:value={selectedOrgId} on:change={() => activeTab === 'user' ? loadPhotos() : loadUnverifiedPhotos()} disabled={loadingOrgs}>
             <option value="">All Organizations</option>
             {#each availableOrgs as org}
               <option value={org.id}>{org.name}</option>
@@ -755,7 +859,7 @@
             type="date" 
             class="filter-input" 
             bind:value={startDate} 
-            on:change={loadPhotos}
+            on:change={() => activeTab === 'user' ? loadPhotos() : loadUnverifiedPhotos()}
           />
         </div>
 
@@ -765,7 +869,7 @@
             type="date" 
             class="filter-input" 
             bind:value={endDate} 
-            on:change={loadPhotos}
+            on:change={() => activeTab === 'user' ? loadPhotos() : loadUnverifiedPhotos()}
           />
         </div>
       {:else if activeTab === 'ekman'}
@@ -853,6 +957,70 @@
                 </div>
                 <div class="photo-date">
                   <strong>Date:</strong> {new Date(photo.createdAt).toLocaleDateString()} {new Date(photo.createdAt).toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    {:else if activeTab === 'unverified'}
+      {#if loading}
+        <div class="loading-state">Loading unverified photos...</div>
+      {:else if error}
+        <div class="error-state">{error}</div>
+      {:else if unverifiedPhotos.length === 0}
+        <div class="empty-state">
+          <p>No unverified photos. Photos appear here when users choose "Approve Anyway" during upload.</p>
+          {#if getActiveFilterCount() > 0}
+            <button class="clear-filters-btn" on:click={clearFilters}>Clear Filters</button>
+          {/if}
+        </div>
+      {:else}
+        <div class="stats-bar">
+          <span class="total-count">Total: {totalUnverifiedPhotos} unverified photo{totalUnverifiedPhotos !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="photos-grid">
+          {#each unverifiedPhotos as photo}
+            <div class="photo-card">
+              <div class="photo-image-container">
+                <img src={photo.imageUrl} alt="Photo" loading="lazy" />
+                <div class="delete-photo-btn-wrapper">
+                  <TrashDeleteButton
+                    confirmMessage="Are you sure you want to delete this photo? This action cannot be undone."
+                    onConfirm={() => deleteUnverifiedPhoto(photo.id)}
+                    disabled={deletingUnverifiedPhoto[photo.id]}
+                    loading={deletingUnverifiedPhoto[photo.id]}
+                    title="Delete this photo"
+                  />
+                </div>
+              </div>
+              <div class="photo-info">
+                <div class="photo-user">
+                  <strong>User:</strong> {photo.user.username}
+                </div>
+                <div class="photo-emotions">
+                  <strong>Emotions:</strong>
+                  {#if photo.emotions && photo.emotions.length > 0}
+                    {photo.emotions.join(', ')}
+                  {:else}
+                    <span class="no-emotions">None</span>
+                  {/if}
+                </div>
+                <div class="photo-folder">
+                  <strong>Folder:</strong> {photo.folder || 'Me'}
+                </div>
+                <div class="photo-date">
+                  <strong>Date:</strong> {new Date(photo.createdAt).toLocaleDateString()} {new Date(photo.createdAt).toLocaleTimeString()}
+                </div>
+                <div class="verify-action">
+                  <button
+                    class="verify-btn"
+                    on:click={() => verifyPhoto(photo.id)}
+                    disabled={verifyingPhoto[photo.id]}
+                    title="Mark as verified (moves to Verified Photos)"
+                  >
+                    {verifyingPhoto[photo.id] ? 'Verifying...' : '✓ Verify'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1468,6 +1636,32 @@
   .no-emotions {
     color: rgba(0, 0, 0, 0.4);
     font-style: italic;
+  }
+
+  .verify-action {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .verify-btn {
+    padding: 0.4rem 0.75rem;
+    background: #22c55e;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .verify-btn:hover:not(:disabled) {
+    background: #16a34a;
+  }
+
+  .verify-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 
   .photo-organizations {

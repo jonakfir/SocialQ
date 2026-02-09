@@ -85,13 +85,19 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
+  /* Blob background from global /style.css (loaded in app.html) */
 
   .journey-container {
     min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: 24px;
+    padding-bottom: 80px;
     background: transparent;
     position: relative;
+    z-index: 1;
+    -webkit-overflow-scrolling: touch;
   }
 
   .header {
@@ -105,30 +111,34 @@
     color: white;
     -webkit-text-stroke: 2px rgba(0,0,0,0.5);
     text-shadow: 0 10px 10px rgba(0,0,0,0.4);
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
 
   .level-info {
     font-size: 1.5rem;
-    font-weight: 700;
-    color: #111;
-    margin-bottom: 8px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 6px;
+    text-shadow: 0 1px 2px rgba(255,255,255,0.8);
   }
 
   .completion {
     font-size: 1rem;
-    color: #6b7280;
-    margin-bottom: 16px;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 12px;
   }
 
   .progress-bar {
     width: 100%;
     max-width: 400px;
-    height: 12px;
-    background: rgba(0,0,0,0.1);
+    height: 16px;
+    background: rgba(0,0,0,0.15);
     border-radius: 9999px;
     overflow: hidden;
     margin: 0 auto 32px;
+    border: 2px solid rgba(255,255,255,0.4);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
   }
 
   .progress-fill {
@@ -136,6 +146,7 @@
     background: linear-gradient(90deg, #4f46e5, #22d3ee);
     border-radius: 9999px;
     transition: width 0.3s ease;
+    box-shadow: 0 0 12px rgba(79,70,229,0.5);
   }
 
   .modules-path {
@@ -159,13 +170,15 @@
   .puzzle-piece {
     width: 80px;
     height: 80px;
+    min-width: 80px;
+    min-height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 900;
     font-size: 24px;
     color: white;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
     border-radius: 12px;
     position: relative;
     cursor: pointer;
@@ -174,15 +187,28 @@
       0% 20%, 20% 0%, 80% 0%, 100% 20%,
       100% 80%, 80% 100%, 20% 100%, 0% 80%
     );
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    border: 3px solid rgba(255,255,255,0.5);
   }
 
   .puzzle-piece:hover {
     transform: scale(1.05);
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.35);
   }
 
   .puzzle-piece.completed {
-    opacity: 0.8;
+    opacity: 1;
+    box-shadow: 0 0 0 3px rgba(34,197,94,0.8), 0 4px 12px rgba(0,0,0,0.25);
+  }
+
+  .puzzle-piece.completed::after {
+    content: '✓';
+    position: absolute;
+    bottom: 4px;
+    right: 6px;
+    font-size: 14px;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   }
 
   .module-name {
