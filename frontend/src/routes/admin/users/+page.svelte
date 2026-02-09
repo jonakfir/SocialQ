@@ -531,7 +531,12 @@
 
   <div class="users-table-container">
     {#if users.length === 0}
-      <div class="empty-state"><p>No users found.</p></div>
+      <div class="empty-state">
+        <p>No users found.</p>
+        {#if data._dbHint}
+          <p class="db-hint">{data._dbHint}</p>
+        {/if}
+      </div>
     {/if}
     {#if users.length > 0}
       <table class="users-table">
@@ -775,6 +780,7 @@
   .view-btn { padding: 0.375rem 0.75rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; color: #4f46e5; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .view-btn:hover { background: #4f46e5; color: white; border-color: #4f46e5; }
   .empty-state { text-align: center; padding: 2rem; color: #9ca3af; font-size: 0.875rem; }
+  .empty-state .db-hint { margin-top: 0.75rem; font-size: 0.8rem; color: #f59e0b; max-width: 32rem; margin-left: auto; margin-right: auto; }
   .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
   .pagination button { padding: 0.5rem 0.875rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; color: #4f46e5; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .pagination button:hover:not(:disabled) { background: #4f46e5; color: white; border-color: #4f46e5; }
