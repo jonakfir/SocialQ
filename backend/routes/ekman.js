@@ -60,13 +60,16 @@ router.get('/', async (req, res) => {
           const proxyRes = await fetch(url, { headers: { 'X-Proxy-Secret': PROXY_SECRET } });
           if (proxyRes.ok) {
             const questions = await proxyRes.json();
-            return res.json(Array.isArray(questions) ? questions : []);
+            const arr = Array.isArray(questions) ? questions : [];
+            if (arr.length === 0) console.warn('[ekman] Frontend returned 0 quiz images; check frontend DB has synthetic images.');
+            return res.json(arr);
           }
+          console.warn('[ekman] Frontend proxy returned', proxyRes.status, '- check BACKEND_PROXY_SECRET on frontend matches PROXY_SECRET here');
         } catch (err) {
           console.warn('[ekman] Generated-only proxy failed:', err?.message || err);
         }
       } else {
-        console.warn('[ekman] photoType=synthetic requested but FRONTEND_URL or PROXY_SECRET not set; returning no images.');
+        console.warn('[ekman] photoType=synthetic requested but FRONTEND_URL or PROXY_SECRET not set; returning no images. Set both on the backend.');
       }
       return res.json([]);
     }
