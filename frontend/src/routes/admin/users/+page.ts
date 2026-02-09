@@ -39,7 +39,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
         total: data.total || 0,
         limit: data.limit || limit,
         offset: data.offset || offset,
-        dateRange
+        dateRange,
+        _dbHint: data._dbHint || null
       };
     }
     
@@ -48,7 +49,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
       total: 0,
       limit,
       offset,
-      dateRange
+      dateRange,
+      _dbHint: null
     };
   } catch (error) {
     console.error('[admin users] Error loading users:', error);
@@ -57,7 +59,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
       total: 0,
       limit: 50,
       offset: 0,
-      dateRange: 'all'
+      dateRange: 'all',
+      _dbHint: null
     };
   }
 };

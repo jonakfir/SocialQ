@@ -49,8 +49,8 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
   }
 }
 
-/** Return empty user list so UI never gets 500. */
-function emptyUserListResponse(url?: URL | null): ReturnType<typeof json> {
+/** Return empty user list so UI never gets 500; hint when DB failed. */
+function emptyUserListResponse(url?: URL | null, dbError?: boolean): ReturnType<typeof json> {
   const limit = url ? Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100) : 50;
   const offset = url ? parseInt(url.searchParams.get('offset') || '0', 10) : 0;
   return json({
@@ -58,7 +58,8 @@ function emptyUserListResponse(url?: URL | null): ReturnType<typeof json> {
     users: [],
     total: 0,
     limit,
-    offset
+    offset,
+    ...(dbError && { _dbHint: 'Database not connected. On Vercel: set DATABASE_URL to your Railway Postgres URL (no space after postgres:). Redeploy after changing.' })
   });
 }
 
@@ -217,6 +218,6 @@ export const GET: RequestHandler = async (event) => {
     return json({ ok: true, users: usersWithStats, total, limit, offset });
   } catch (error: any) {
     console.error('[GET /api/admin/stats/users] error:', error);
-    return emptyUserListResponse(url);
+    return emptyUserListResponse(url, true);
   }
 };
