@@ -239,84 +239,58 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Invalid user id for collage' }, { status: 400 });
     }
 
-    // Ensure user row exists in frontend DB before create (avoids FK error when frontend/backend DBs differ)
-    let userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
-    if (!userRow && effectiveUserId && effectiveUserEmail) {
-      const reEnsure = await ensurePrismaUserForUpload(effectiveUserId, effectiveUserEmail);
-      if (reEnsure) {
-        user = { id: reEnsure.id, backendId: Number(effectiveUserId) };
-        userIdNum = toPrismaUserId(reEnsure.id);
-        userRow = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
-      }
-    }
-    // Last resort: force-create user with backend id so collage create has valid FK
-    if (!userRow && effectiveUserId && effectiveUserEmail) {
-      const bid = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : effectiveUserId;
-      if (Number.isInteger(bid) && bid > 0) {
-        try {
-          const bcrypt = await import('bcryptjs');
-          await prisma.user.create({
-            data: {
-              id: bid,
-              username: effectiveUserEmail.trim().toLowerCase(),
-              password: await bcrypt.hash('upload-placeholder', 10),
-              role: 'personal'
-            }
-          });
-          userRow = { id: bid };
-          userIdNum = bid;
-          console.log('[POST /api/collages] Force-created user:', bid);
-        } catch (e: any) {
-          if (e?.code === 'P2002') {
-            userRow = await prisma.user.findUnique({ where: { id: bid }, select: { id: true } });
-            if (userRow) userIdNum = bid;
-          }
-        }
-      }
-    }
-    if (!userRow) {
-      console.error('[POST /api/collages] No user row for id:', userIdNum, 'effective:', effectiveUserId, effectiveUserEmail ? 'email present' : 'no email');
-      return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
-    }
-
     // When approvedAnyway is sent (Upload flow): true → Unverified Photos, false → Verified Photos (red button + emotion matched)
     const folder =
       formData.has('approvedAnyway') ?
         (approvedAnyway ? 'Unverified Photos' : 'Verified Photos') :
         'Me';
     const emotionsJson = emotions ? JSON.stringify(emotions) : null;
-    console.log('[POST /api/collages] Saving collage with userId:', userIdNum, 'folder:', folder, 'imageUrl length:', dataUrl.length);
+    const approvedAnywayVal = !!approvedAnyway;
+    const effectiveIdNum = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : Number(effectiveUserId);
+    const emailNorm = effectiveUserEmail?.trim()?.toLowerCase() || '';
 
-    let collage;
-    const fullData = {
-      userId: userIdNum,
-      imageUrl: dataUrl,
-      emotions: emotionsJson,
-      folder,
-      approvedAnyway: !!approvedAnyway
-    };
+    // Run user insert + collage create in ONE transaction (same connection = FK guaranteed)
+    console.log('[POST /api/collages] Using transaction flow (user insert + collage create)');
+    let collage: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
     try {
-      collage = await prisma.collage.create({ data: fullData });
-    } catch (createError: any) {
-      const errMsg = createError?.message ?? String(createError);
-      console.error('[POST /api/collages] create failed:', errMsg);
-      // Retry with minimal fields in case DB or Prisma client is missing folder/approvedAnyway
-      try {
-        collage = await prisma.collage.create({
-          data: {
-            userId: userIdNum,
-            imageUrl: dataUrl,
-            emotions: emotionsJson
-          }
-        });
-        console.log('[POST /api/collages] Created with minimal fields (folder/approvedAnyway may be missing in DB)');
-      } catch (retryError: any) {
-        const retryMsg = retryError?.message ?? String(retryError);
-        console.error('[POST /api/collages] retry create failed:', retryMsg);
-        const msg = retryMsg.includes('Foreign key') ? 'User not found. Please log in again.' : retryMsg;
-        return json({ ok: false, error: msg }, { status: 500 });
-      }
+      collage = await prisma.$transaction(async (tx) => {
+        const uid = Number.isInteger(effectiveIdNum) && effectiveIdNum > 0 ? effectiveIdNum : userIdNum;
+        if (!Number.isInteger(uid) || uid <= 0) {
+          throw new Error('User not found. Please log in again.');
+        }
+        // Ensure user row exists in THIS transaction with raw SQL (same connection = FK will see it)
+        if (emailNorm) {
+          const bcrypt = await import('bcryptjs');
+          const hash = await bcrypt.hash('upload-placeholder', 10);
+          await (tx as any).$executeRaw`
+            INSERT INTO users (id, email, password, role, created_at)
+            VALUES (${uid}, ${emailNorm}, ${hash}, 'personal', NOW())
+            ON CONFLICT (id) DO NOTHING
+          `;
+          console.log('[POST /api/collages] User ensured in tx (raw insert):', uid);
+        } else {
+          const u = await tx.user.findUnique({ where: { id: uid }, select: { id: true } });
+          if (!u) throw new Error('User not found. Please log in again.');
+        }
+        const fullData = {
+          userId: uid,
+          imageUrl: dataUrl,
+          emotions: emotionsJson,
+          folder,
+          approvedAnyway: approvedAnywayVal
+        };
+        return tx.collage.create({ data: fullData });
+      });
+    } catch (txError: any) {
+      const msg = txError?.message ?? String(txError);
+      console.error('[POST /api/collages] transaction failed:', msg);
+      return json(
+        { ok: false, error: msg.includes('User not found') ? msg : 'User not found. Please log in again.' },
+        { status: 500 }
+      );
     }
+
+    console.log('[POST /api/collages] Saving collage with userId:', collage.userId, 'folder:', folder, 'imageUrl length:', dataUrl.length);
 
     console.log('[POST /api/collages] Created collage:', {
       id: collage.id,
