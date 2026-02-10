@@ -253,6 +253,20 @@ export const POST: RequestHandler = async (event) => {
     if (!Number.isInteger(uid) || uid <= 0) {
       return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
     }
+    if (emailNorm) {
+      const bcrypt = await import('bcryptjs');
+      await prisma.user.upsert({
+        where: { id: uid },
+        create: { id: uid, username: emailNorm, password: await bcrypt.hash('upload-placeholder', 10), role: 'personal' },
+        update: {}
+      });
+      console.log('[POST /api/collages] User ensured:', uid);
+    } else {
+      const u = await prisma.user.findUnique({ where: { id: uid }, select: { id: true } });
+      if (!u) {
+        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+      }
+    }
     const collageData = {
       userId: uid,
       imageUrl: dataUrl,
@@ -260,33 +274,24 @@ export const POST: RequestHandler = async (event) => {
       folder,
       approvedAnyway: approvedAnywayVal
     };
-    let collage: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
-    if (emailNorm) {
-      const bcrypt = await import('bcryptjs');
-      const hash = await bcrypt.hash('upload-placeholder', 10);
-      // Batch transaction: both ops run in order on one connection (avoids pooler splitting interactive tx)
+    let collage!: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
+    const maxAttempts = 5;
+    const retryMs = 600;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const [, created] = await prisma.$transaction([
-          prisma.user.upsert({
-            where: { id: uid },
-            create: { id: uid, username: emailNorm, password: hash, role: 'personal' },
-            update: {}
-          }),
-          prisma.collage.create({ data: collageData })
-        ]);
-        collage = created;
-        console.log('[POST /api/collages] User + collage in batch tx:', uid);
-      } catch (txErr: any) {
-        const msg = txErr?.message ?? String(txErr);
-        console.error('[POST /api/collages] batch tx failed:', msg);
+        collage = await prisma.collage.create({ data: collageData });
+        if (attempt > 1) console.log('[POST /api/collages] create succeeded on attempt', attempt);
+        break;
+      } catch (err: any) {
+        const isFk = err?.message?.includes('Foreign key') || err?.code === 'P2003';
+        if (isFk && attempt < maxAttempts) {
+          console.log(`[POST /api/collages] FK on create, retry ${attempt}/${maxAttempts} in ${retryMs}ms`);
+          await new Promise((r) => setTimeout(r, retryMs));
+          continue;
+        }
+        console.error('[POST /api/collages] create failed:', err?.message ?? err);
         return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
       }
-    } else {
-      const u = await prisma.user.findUnique({ where: { id: uid }, select: { id: true } });
-      if (!u) {
-        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
-      }
-      collage = await prisma.collage.create({ data: collageData });
     }
 
     console.log('[POST /api/collages] Saving collage with userId:', collage.userId, 'folder:', folder, 'imageUrl length:', dataUrl.length);
