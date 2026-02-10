@@ -249,27 +249,28 @@ export const POST: RequestHandler = async (event) => {
     const effectiveIdNum = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : Number(effectiveUserId);
     const emailNorm = effectiveUserEmail?.trim()?.toLowerCase() || '';
 
-    // Run user upsert + collage create in ONE transaction (same connection = FK guaranteed; fixes replica/connection issues)
+    // Run user insert + collage create in ONE transaction (same connection = FK guaranteed)
+    console.log('[POST /api/collages] Using transaction flow (user insert + collage create)');
     let collage: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
     try {
       collage = await prisma.$transaction(async (tx) => {
         const uid = Number.isInteger(effectiveIdNum) && effectiveIdNum > 0 ? effectiveIdNum : userIdNum;
-        if (!emailNorm && !(await tx.user.findUnique({ where: { id: uid }, select: { id: true } }))) {
+        if (!Number.isInteger(uid) || uid <= 0) {
           throw new Error('User not found. Please log in again.');
         }
-        if (Number.isInteger(uid) && uid > 0 && emailNorm) {
+        // Ensure user row exists in THIS transaction with raw SQL (same connection = FK will see it)
+        if (emailNorm) {
           const bcrypt = await import('bcryptjs');
-          await tx.user.upsert({
-            where: { id: uid },
-            create: {
-              id: uid,
-              username: emailNorm,
-              password: await bcrypt.hash('upload-placeholder', 10),
-              role: 'personal'
-            },
-            update: {}
-          });
-          console.log('[POST /api/collages] User ensured in tx:', uid);
+          const hash = await bcrypt.hash('upload-placeholder', 10);
+          await (tx as any).$executeRaw`
+            INSERT INTO users (id, email, password, role, created_at)
+            VALUES (${uid}, ${emailNorm}, ${hash}, 'personal', NOW())
+            ON CONFLICT (id) DO NOTHING
+          `;
+          console.log('[POST /api/collages] User ensured in tx (raw insert):', uid);
+        } else {
+          const u = await tx.user.findUnique({ where: { id: uid }, select: { id: true } });
+          if (!u) throw new Error('User not found. Please log in again.');
         }
         const fullData = {
           userId: uid,
@@ -278,14 +279,7 @@ export const POST: RequestHandler = async (event) => {
           folder,
           approvedAnyway: approvedAnywayVal
         };
-        return tx.collage.create({ data: fullData }).catch((err: any) => {
-          if (err?.message?.includes('Foreign key') || err?.code === 'P2003') {
-            return tx.collage.create({
-              data: { userId: uid, imageUrl: dataUrl, emotions: emotionsJson }
-            });
-          }
-          throw err;
-        });
+        return tx.collage.create({ data: fullData });
       });
     } catch (txError: any) {
       const msg = txError?.message ?? String(txError);
