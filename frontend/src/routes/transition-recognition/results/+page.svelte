@@ -33,8 +33,10 @@
   };
 
   import { getUserKey } from '$lib/userKey';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
 
   onMount(() => {
+    markPlayedIfPending();
     document.title = 'Quiz Result';
     
     const userKey = getUserKey();

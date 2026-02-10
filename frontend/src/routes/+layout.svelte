@@ -10,7 +10,7 @@
   export let data;
 
   // Hide header on these routes (mirroring game and results use their own chrome)
-  const HIDE = new Set(['', '/', '/login', '/register', '/create-account', '/create_account']);
+  const HIDE = new Set(['', '/', '/login', '/register', '/create-account', '/create_account', '/daily']);
   $: path = ($page.url.pathname || '/').replace(/\/$/, '') || '/';
   $: hideHeader = HIDE.has(path.toLowerCase()) ||
                   ($page.url.pathname || '/').startsWith('/admin') ||

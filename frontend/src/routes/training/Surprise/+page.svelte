@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
   import helperUrl from '$lib/assets/helper.png';           // used in banners
   import SurpriseClip from '$lib/assets/ekman/SurprisePractice.mp4';
 
@@ -137,6 +138,7 @@
 
   // ------- nav -------
   function goBackToPicker() {
+    markPlayedIfPending();
     goto('/training/training-pick-emotion');
   }
   function goDashboard() {

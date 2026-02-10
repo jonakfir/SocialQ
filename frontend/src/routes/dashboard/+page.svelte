@@ -44,9 +44,6 @@
     if (dailyFreePlayOnly && kind !== 'train') return; // only train (daily free play) allowed
     panel = kind;
   }
-  function openDailyFreePlay() {
-    panel = 'train';
-  }
   const closePanel = () => (panel = null);
 
   onMount(() => {
@@ -448,7 +445,7 @@
     class="daily-free-play-btn"
     aria-label="Daily free play"
     title="Daily free play – one free round per game"
-    on:click={openDailyFreePlay}
+    on:click={() => goto('/daily')}
   >
     🎮
     <span class="label">Daily free play</span>

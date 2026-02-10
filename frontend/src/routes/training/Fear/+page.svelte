@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
   import helperUrl from '$lib/assets/helper.png';           // still used in the top banners
   import FearClip from '$lib/assets/ekman/FearPractice.mp4';
 
@@ -90,7 +91,10 @@
   }
 
   // ------- nav -------
-  function goBackToPicker() { goto('/training/training-pick-emotion'); }
+  function goBackToPicker() {
+    markPlayedIfPending();
+    goto('/training/training-pick-emotion');
+  }
   function goDashboard() { goto('/dashboard'); }
 
   // ------- mount: webcam + Human -------

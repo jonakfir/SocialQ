@@ -4,6 +4,7 @@
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import { getUserKey } from '$lib/userKey';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
 
   let score = 0;
   let total = 0;
@@ -22,7 +23,7 @@
 
   onMount(() => {
     document.title = 'Mirroring Result';
-
+    markPlayedIfPending();
     const userKey = getUserKey();
 
     score   = Number(localStorage.getItem(`mirroring_score_${userKey}`)  || 0);
