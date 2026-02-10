@@ -249,45 +249,47 @@ export const POST: RequestHandler = async (event) => {
     const effectiveIdNum = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : Number(effectiveUserId);
     const emailNorm = effectiveUserEmail?.trim()?.toLowerCase() || '';
 
-    // Run user insert + collage create in ONE transaction (same connection = FK guaranteed)
-    console.log('[POST /api/collages] Using transaction flow (user insert + collage create)');
+    // Ensure user row exists then create collage (no $transaction - prisma proxy doesn't support it)
+    const uid = Number.isInteger(effectiveIdNum) && effectiveIdNum > 0 ? effectiveIdNum : userIdNum;
+    if (!Number.isInteger(uid) || uid <= 0) {
+      return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+    }
+    if (emailNorm) {
+      const bcrypt = await import('bcryptjs');
+      await prisma.user.upsert({
+        where: { id: uid },
+        create: {
+          id: uid,
+          username: emailNorm,
+          password: await bcrypt.hash('upload-placeholder', 10),
+          role: 'personal'
+        },
+        update: {}
+      });
+      console.log('[POST /api/collages] User ensured (upsert):', uid);
+    } else {
+      const u = await prisma.user.findUnique({ where: { id: uid }, select: { id: true } });
+      if (!u) {
+        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+      }
+    }
+    const fullData = {
+      userId: uid,
+      imageUrl: dataUrl,
+      emotions: emotionsJson,
+      folder,
+      approvedAnyway: approvedAnywayVal
+    };
     let collage: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
     try {
-      collage = await prisma.$transaction(async (tx) => {
-        const uid = Number.isInteger(effectiveIdNum) && effectiveIdNum > 0 ? effectiveIdNum : userIdNum;
-        if (!Number.isInteger(uid) || uid <= 0) {
-          throw new Error('User not found. Please log in again.');
-        }
-        // Ensure user row exists in THIS transaction with raw SQL (same connection = FK will see it)
-        if (emailNorm) {
-          const bcrypt = await import('bcryptjs');
-          const hash = await bcrypt.hash('upload-placeholder', 10);
-          await (tx as any).$executeRaw`
-            INSERT INTO users (id, email, password, role, created_at)
-            VALUES (${uid}, ${emailNorm}, ${hash}, 'personal', NOW())
-            ON CONFLICT (id) DO NOTHING
-          `;
-          console.log('[POST /api/collages] User ensured in tx (raw insert):', uid);
-        } else {
-          const u = await tx.user.findUnique({ where: { id: uid }, select: { id: true } });
-          if (!u) throw new Error('User not found. Please log in again.');
-        }
-        const fullData = {
-          userId: uid,
-          imageUrl: dataUrl,
-          emotions: emotionsJson,
-          folder,
-          approvedAnyway: approvedAnywayVal
-        };
-        return tx.collage.create({ data: fullData });
-      });
-    } catch (txError: any) {
-      const msg = txError?.message ?? String(txError);
-      console.error('[POST /api/collages] transaction failed:', msg);
-      return json(
-        { ok: false, error: msg.includes('User not found') ? msg : 'User not found. Please log in again.' },
-        { status: 500 }
-      );
+      collage = await prisma.collage.create({ data: fullData });
+    } catch (createErr: any) {
+      const msg = createErr?.message ?? String(createErr);
+      console.error('[POST /api/collages] create failed:', msg);
+      if (msg.includes('Foreign key') || createErr?.code === 'P2003') {
+        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+      }
+      throw createErr;
     }
 
     console.log('[POST /api/collages] Saving collage with userId:', collage.userId, 'folder:', folder, 'imageUrl length:', dataUrl.length);
