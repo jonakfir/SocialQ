@@ -20,7 +20,10 @@ The admin panel and all `/api/*` routes run on **Vercel**. They use Prisma and n
    - No space after `postgres:` in the URL.
    - Use that full value as `DATABASE_URL` on Vercel.
 
-3. Apply to **Production** (and Preview if you use it).
-4. **Redeploy** the project (Deployments → … → Redeploy) so the new variable is used.
+3. Add **`DIRECT_URL`** with the **same value** as `DATABASE_URL`.  
+   Prisma uses this for transactions (e.g. collage upload). Without it, the pooled connection can cause "Foreign key constraint violated" on upload.
+
+4. Apply to **Production** (and Preview if you use it).
+5. **Redeploy** the project (Deployments → … → Redeploy) so the new variable is used.
 
 After this, the admin Users list and other Prisma-backed routes will use the same database as your Railway backend.
