@@ -1,6 +1,5 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { Prisma } from '@prisma/client';
 import { prisma } from '$lib/db';
 import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { ensurePrismaUser, ensurePrismaUserForUpload } from '$lib/utils/syncUser';
@@ -260,16 +259,18 @@ export const POST: RequestHandler = async (event) => {
       collage = await prisma.$transaction(async (tx: any) => {
         if (emailNorm) {
           const bcrypt = await import('bcryptjs');
-          const hash = await bcrypt.hash('upload-placeholder', 10);
-          // Raw INSERT in same tx so FK definitely sees the row (avoids any Prisma/connection quirk)
-          await tx.$executeRaw(
-            Prisma.sql`
-              INSERT INTO users (id, email, password, role, created_at)
-              VALUES (${uid}, ${emailNorm}, ${hash}, 'personal', NOW())
-              ON CONFLICT (id) DO NOTHING
-            `
-          );
-          console.log('[POST /api/collages] User ensured in tx (raw):', uid);
+          // Prisma upsert = correct columns + same tx so FK sees row
+          await tx.user.upsert({
+            where: { id: uid },
+            create: {
+              id: uid,
+              username: emailNorm,
+              password: await bcrypt.hash('upload-placeholder', 10),
+              role: 'personal'
+            },
+            update: {}
+          });
+          console.log('[POST /api/collages] User ensured in tx:', uid);
         } else {
           const u = await tx.user.findUnique({ where: { id: uid }, select: { id: true } });
           if (!u) throw new Error('User not found. Please log in again.');
