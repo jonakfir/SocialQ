@@ -417,6 +417,21 @@ async function initializeSchema(retries = 5) {
         await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_to_idx" ON "TransitionVideo"("to");`);
         await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_from_to_idx" ON "TransitionVideo"("from", "to");`);
         console.log('[DB] TransitionVideo table created/verified');
+
+        // Collage table (photo booth / Unverified Photos - same as frontend Prisma)
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS "Collage" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            "imageUrl" TEXT NOT NULL,
+            "emotions" TEXT,
+            "folder" TEXT DEFAULT 'Me',
+            "approvedAnyway" BOOLEAN DEFAULT false,
+            "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+        await pool.query(`CREATE INDEX IF NOT EXISTS "Collage_userId_idx" ON "Collage"("userId");`);
+        console.log('[DB] Collage table created/verified');
         
         console.log('[DB] ✅ Schema initialization complete');
         

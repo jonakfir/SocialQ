@@ -47,12 +47,12 @@ try {
 } catch (e) {
   console.warn('[Server] Stripe webhook not mounted:', e.message);
 }
-// Collages proxy: forward POST/GET /api/collages to SvelteKit (raw body for multipart upload)
+// Collages: POST = save on backend DB (no FK issue); GET = proxy to frontend
 try {
-  app.use('/api/collages', express.raw({ type: () => true }), require('./routes/collagesProxy'));
-  console.log('[Server] Collages proxy mounted at /api/collages (forwards to frontend when FRONTEND_URL set)');
+  app.use('/api/collages', require('./routes/collagesUpload'));
+  console.log('[Server] Collages: POST saves to backend DB, GET proxies to frontend');
 } catch (e) {
-  console.warn('[Server] Collages proxy not mounted:', e.message);
+  console.warn('[Server] Collages route not mounted:', e.message);
 }
 app.use(express.json());
 app.use(cookieParser());
