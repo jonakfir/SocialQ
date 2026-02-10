@@ -150,10 +150,11 @@ export const POST: RequestHandler = async (event) => {
   try {
     const { request } = event;
 
-    // Proxy to backend when set (backend saves to its DB = no FK/pooler issue)
+    // Always proxy POST to backend when any backend URL is set (backend has no FK = no more Collage_userId_fkey errors)
     try {
       const { env } = await import('$env/dynamic/private');
-      const backendUrl = (env.BACKEND_COLLAGES_URL || '').toString().trim().replace(/\/$/, '');
+      const { env: publicEnv } = await import('$env/dynamic/public');
+      const backendUrl = (env.BACKEND_COLLAGES_URL || publicEnv.PUBLIC_API_URL || '').toString().trim().replace(/\/$/, '');
       if (backendUrl) {
         const res = await fetch(backendUrl + '/api/collages', {
           method: 'POST',

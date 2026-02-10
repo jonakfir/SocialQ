@@ -418,11 +418,11 @@ async function initializeSchema(retries = 5) {
         await pool.query(`CREATE INDEX IF NOT EXISTS "TransitionVideo_from_to_idx" ON "TransitionVideo"("from", "to");`);
         console.log('[DB] TransitionVideo table created/verified');
 
-        // Collage table (photo booth / Unverified Photos - same as frontend Prisma)
+        // Collage table (photo booth / Unverified Photos). No FK on userId so upload never fails (app may send id from different source).
         await pool.query(`
           CREATE TABLE IF NOT EXISTS "Collage" (
             "id" TEXT NOT NULL PRIMARY KEY,
-            "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            "userId" INTEGER NOT NULL,
             "imageUrl" TEXT NOT NULL,
             "emotions" TEXT,
             "folder" TEXT DEFAULT 'Me',
@@ -430,8 +430,9 @@ async function initializeSchema(retries = 5) {
             "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
         `);
+        await pool.query(`ALTER TABLE "Collage" DROP CONSTRAINT IF EXISTS "Collage_userId_fkey";`);
         await pool.query(`CREATE INDEX IF NOT EXISTS "Collage_userId_idx" ON "Collage"("userId");`);
-        console.log('[DB] Collage table created/verified');
+        console.log('[DB] Collage table created/verified (no FK on userId)');
         
         console.log('[DB] ✅ Schema initialization complete');
         

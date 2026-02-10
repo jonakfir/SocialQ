@@ -1,8 +1,8 @@
-// POST /api/collages - Save collage on backend DB. Resolve user by email so FK always exists (same DB as backend users).
+// POST /api/collages - Save collage on backend. No FK on Collage.userId so insert never fails.
 const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
-const { pool, findUserByEmail } = require('../db/db');
+const { pool } = require('../db/db');
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.PUBLIC_WEB_APP_URL || '').replace(/\/$/, '');
 const PROXY_SECRET = process.env.PROXY_SECRET || process.env.BACKEND_PROXY_SECRET || '';
 
@@ -15,7 +15,8 @@ function generateId() {
 async function handlePost(req, res) {
   try {
     const userEmail = (req.body.userEmail || '').trim().toLowerCase();
-    if (!userEmail) {
+    const userId = parseInt(req.body.userId, 10);
+    if (!userEmail || !Number.isInteger(userId) || userId <= 0) {
       return res.status(401).json({ ok: false, error: 'Unauthorized - Please log in first' });
     }
     const file = req.file;
@@ -32,13 +33,7 @@ async function handlePost(req, res) {
       return res.status(503).json({ ok: false, error: 'Database not available' });
     }
 
-    // Resolve user by email in THIS DB so userId always exists (no FK violation)
-    const user = await findUserByEmail(userEmail);
-    if (!user || !user.id) {
-      return res.status(401).json({ ok: false, error: 'User not found, please log in again' });
-    }
-    const userId = Number(user.id);
-
+    // Use client's userId; Collage table has no FK so this always succeeds
     const id = generateId();
     await pool.query(
       `INSERT INTO "Collage" ("id", "userId", "imageUrl", "emotions", "folder", "approvedAnyway", "createdAt")
