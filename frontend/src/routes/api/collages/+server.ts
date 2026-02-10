@@ -150,6 +150,21 @@ export const POST: RequestHandler = async (event) => {
   try {
     const { request } = event;
 
+    // Proxy to backend when set (backend saves to its DB = no FK/pooler issue)
+    try {
+      const { env } = await import('$env/dynamic/private');
+      const backendUrl = (env.BACKEND_COLLAGES_URL || '').toString().trim().replace(/\/$/, '');
+      if (backendUrl) {
+        const res = await fetch(backendUrl + '/api/collages', {
+          method: 'POST',
+          headers: request.headers,
+          body: request.body
+        });
+        const data = await res.json().catch(() => ({ ok: false, error: 'Invalid response' }));
+        return json(data, { status: res.status });
+      }
+    } catch (_) { /* continue with local save */ }
+
     // Parse form data first to get user info
     const formData = await request.formData();
     
