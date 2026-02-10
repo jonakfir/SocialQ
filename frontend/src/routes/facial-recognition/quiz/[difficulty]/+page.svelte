@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
+  import { lastFrQuizDetails } from '$lib/quizDetailsStore';
 
   type Row = { img: string; options: string[]; correct: string };
 
@@ -32,6 +33,14 @@
 
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
+
+  /** Only persist img when it's a URL (not base64) to avoid localStorage quota */
+  const safeToStoreImg = (u: unknown): string | undefined => {
+    const s = normalizeImg(u);
+    if (!s || s.startsWith('data:')) return undefined;
+    if (s.length > 8000) return undefined;
+    return s;
+  };
 
   // Level-5 per-question timer
   const TIME_LIMIT_MS = 5000;
@@ -91,9 +100,9 @@
       const { apiFetch } = await import('$lib/api');
       console.log('[facial-recognition] Fetching quiz data for difficulty:', serverDiff);
       
-      // Pull only from Generated Photos (synthetic), not Ekman images
+      // Load images based on user's checked photo sources (ekman, own, synthetic) per settings
       const res = await apiFetch(
-        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}&photoType=synthetic`
+        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}`
       );
       
       console.log('[facial-recognition] Response status:', res.status, res.ok);
@@ -116,8 +125,7 @@
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
 
-      const minimal = quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct }));
-      localStorage.setItem('fr_questions', JSON.stringify(minimal));
+      // Do not store questions in localStorage here — image data can exceed quota and causes "setItem exceeded the quota"
       localStorage.removeItem('fr_picks');
 
       if (!instructionsOpen) {
@@ -189,22 +197,43 @@
 
     const picks = userAnswers.map(v => (v == null ? '__timeout__' : v));
     localStorage.setItem(`fr_picks_${userKey}`, JSON.stringify(picks));
+    // Store correct + img only when URL (not base64) so results thumbnails show without exceeding quota
     localStorage.setItem(
       `fr_questions_${userKey}`,
-      JSON.stringify(quizData.map(q => ({ img: normalizeImg(q.img), correct: q.correct })))
+      JSON.stringify(quizData.map(q => {
+        const img = safeToStoreImg(q.img);
+        return img ? { correct: q.correct, img } : { correct: q.correct };
+      }))
     );
 
-    const details = quizData.map((q, i) => {
+    const detailsWithImg = quizData.map((q, i) => {
       const picked = picks[i];
+      const img = safeToStoreImg(q.img);
       return {
         index: i,
-        img: normalizeImg(q.img),
         correct: q.correct,
         picked,
-        isCorrect: picked === q.correct
+        isCorrect: picked === q.correct,
+        ...(img ? { img } : {})
       };
     });
-    localStorage.setItem(`fr_quiz_details_${userKey}`, JSON.stringify(details));
+    localStorage.setItem(`fr_quiz_details_${userKey}`, JSON.stringify(detailsWithImg));
+    // In-memory store so "Your Answers" page can show thumbnails (avoids sessionStorage quota)
+    const detailsFull = quizData.map((q, i) => ({
+      index: i,
+      img: normalizeImg(q.img),
+      correct: q.correct,
+      picked: picks[i],
+      isCorrect: picks[i] === q.correct
+    }));
+    lastFrQuizDetails.set(detailsFull);
+    try {
+      const sessionPayload = JSON.stringify(detailsFull);
+      sessionStorage.setItem(`fr_quiz_details_session_${userKey}`, sessionPayload);
+      sessionStorage.setItem('fr_quiz_details_session_latest', sessionPayload);
+    } catch {
+      // sessionStorage quota can fail with base64 images; store is enough for thumbnails
+    }
 
     const historyKey = `fr_history_${userKey}`;
 
@@ -228,7 +257,7 @@
           score,
           total: quizData.length,
           timeMs: Math.round(elapsedMs),
-          questions: details.map((d, idx) => ({
+          questions: detailsWithImg.map((d, idx) => ({
             questionIndex: idx,
             correct: d.correct,
             picked: d.picked,

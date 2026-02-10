@@ -1,8 +1,10 @@
 <script lang="ts">
 
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { getUserKey } from '$lib/userKey';
+  import { lastFrQuizDetails } from '$lib/quizDetailsStore';
 
   let details = [];
   let score = 0;
@@ -29,15 +31,44 @@
     });
   }
 
+  const readSessionJSON = (k: string, f: any) => {
+    try {
+      const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(k) : null;
+      return raw ? JSON.parse(raw) ?? f : f;
+    } catch {
+      return f;
+    }
+  };
+
   onMount(() => {
     document.title = 'Quiz Stats';
     
     const userKey = getUserKey();
 
-    // Prefer rich details from user-specific keys
-    let d = readJSON(`fr_quiz_details_${userKey}`, null);
+    // Prefer in-memory store (full details with thumbnails) when user just finished quiz in this tab
+    let d: any[] | null = get(lastFrQuizDetails);
+    if (Array.isArray(d) && d.length) {
+      details = d;
+      score = details.filter((x: any) => x.isCorrect).length;
+      lastFrQuizDetails.set(null);
+      return;
+    }
+
+    // Fallback: sessionStorage (can hit quota with base64 images)
+    d = readSessionJSON(`fr_quiz_details_session_${userKey}`, null);
+    if (!(Array.isArray(d) && d.length)) {
+      d = readSessionJSON('fr_quiz_details_session_latest', null);
+    }
+    if (Array.isArray(d) && d.length) {
+      details = d;
+      score = details.filter((x: any) => x.isCorrect).length;
+      return;
+    }
+
+    // Prefer rich details from localStorage
+    d = readJSON(`fr_quiz_details_${userKey}`, null);
     const broken = !(Array.isArray(d) && d.length) ||
-                   d.some(x => !('picked' in x) || !('correct' in x));
+                   d.some((x: any) => !('picked' in x) || !('correct' in x));
 
     // Repair from FR storage if needed
     if (broken) {
@@ -51,7 +82,7 @@
     // Final fallback from booleans
     if (!(Array.isArray(d) && d.length)) {
       const bools = readJSON(`fr_quiz_results_${userKey}`, []);
-      d = bools.map((ok, i) => ({
+      d = bools.map((ok: any, i: number) => ({
         index: i,
         img: undefined,
         correct: '(unknown)',
@@ -61,20 +92,25 @@
     }
 
     details = d;
-    score = details.filter(x => x.isCorrect).length;
+    score = details.filter((x: any) => x.isCorrect).length;
   });
 
   function playAgain() {
     const userKey = getUserKey();
     
-    // Remove only this user's data
+    lastFrQuizDetails.set(null);
+    // Remove only this user's data (localStorage + sessionStorage thumbnails)
     localStorage.removeItem(`fr_quiz_results_${userKey}`);
     localStorage.removeItem(`fr_quiz_score_${userKey}`);
     localStorage.removeItem(`fr_quiz_total_${userKey}`);
     localStorage.removeItem(`fr_picks_${userKey}`);
     localStorage.removeItem(`fr_questions_${userKey}`);
     localStorage.removeItem(`fr_quiz_details_${userKey}`);
-    goto('/facial-recognition/settings');
+    try {
+      sessionStorage.removeItem(`fr_quiz_details_session_${userKey}`);
+      sessionStorage.removeItem('fr_quiz_details_session_latest');
+    } catch {}
+    goto('/facial-recognition/quiz/1');
   }
 </script>
 

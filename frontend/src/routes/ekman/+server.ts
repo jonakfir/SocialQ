@@ -251,7 +251,7 @@ async function getUserOrganizationIds(userId: string | null): Promise<string[]> 
 
 // Effective photo source settings: intersection of user and all their orgs. Default = all true.
 function parsePhotoSourceSettings(raw: string | null): { ekman: boolean; own: boolean; synthetic: boolean } {
-  const defaults = { ekman: true, own: true, synthetic: true };
+  const defaults = { ekman: false, own: true, synthetic: true };
   if (!raw) return defaults;
   try {
     const o = JSON.parse(raw);
@@ -266,7 +266,7 @@ function parsePhotoSourceSettings(raw: string | null): { ekman: boolean; own: bo
 }
 
 async function getEffectivePhotoSourceSettings(userId: string | null): Promise<{ ekman: boolean; own: boolean; synthetic: boolean }> {
-  const defaults = { ekman: true, own: true, synthetic: true };
+  const defaults = { ekman: false, own: true, synthetic: true };
   if (!userId) return defaults;
   try {
     const user = await prisma.user.findUnique({
@@ -418,7 +418,7 @@ export const GET: RequestHandler = async (event) => {
     } else {
       const user = await getCurrentUser(event);
       const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
-      const effective = user ? await getEffectivePhotoSourceSettings(user.id) : { ekman: true, own: true, synthetic: true };
+      const effective = user ? await getEffectivePhotoSourceSettings(user.id) : { ekman: false, own: true, synthetic: true };
       console.log(`[ekman] Effective photo sources: ekman=${effective.ekman} own=${effective.own} synthetic=${effective.synthetic}`);
 
       if (effective.ekman) {
@@ -455,7 +455,7 @@ export const GET: RequestHandler = async (event) => {
     shuffle(pool);
     const picked = pool.slice(0, Math.min(count, pool.length));
     const rows = picked.map((p) => {
-      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 3);
+      const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 2);
       const options = shuffle([p.label, ...distractors]);
       return { img: p.img, options, correct: p.label };
     });

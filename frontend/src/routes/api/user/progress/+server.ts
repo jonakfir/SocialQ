@@ -83,7 +83,17 @@ function matchesTask(
   task: (typeof JOURNEY_TASKS)[0]
 ): boolean {
   if (session.gameType !== task.gameType) return false;
-  const pct = task.total > 0 ? Math.round((session.score / session.total) * 100) : 0;
+
+  // Emotion training has no percentage score; completion is based on doing the training
+  if (task.gameType === 'emotion_training') {
+    const taskEmotion = (task.emotion || '').toLowerCase();
+    const sessLevel = (session.level || '').toLowerCase();
+    if (taskEmotion === sessLevel) return true;
+    if ((taskEmotion === 'happy' && sessLevel === 'happiness') || (taskEmotion === 'sad' && sessLevel === 'sadness')) return true;
+    return false;
+  }
+
+  const pct = session.total > 0 ? Math.round((session.score / session.total) * 100) : 0;
   if (pct < task.requiredScore) return false;
 
   switch (task.gameType) {
@@ -97,12 +107,6 @@ function matchesTask(
       return sessLevel === task.level.toLowerCase();
     case 'mirroring':
       return true;
-    case 'emotion_training':
-      const taskEmotion = (task.emotion || '').toLowerCase();
-      const sessLevel2 = (session.level || '').toLowerCase();
-      if (taskEmotion === sessLevel2) return true;
-      if ((taskEmotion === 'happy' && sessLevel2 === 'happiness') || (taskEmotion === 'sad' && sessLevel2 === 'sadness')) return true;
-      return false;
     default:
       return false;
   }
@@ -142,7 +146,11 @@ export const GET: RequestHandler = async (event) => {
       const passedBySession = sessions.some((s) => matchesTask(s, task));
       const passedByOverride = task.webModuleId != null && completedModuleIds.has(task.webModuleId);
       if (passedBySession) {
-        if (task.webModuleId) completedModuleIds.add(task.webModuleId);
+        if (task.webModuleId) {
+          completedModuleIds.add(task.webModuleId);
+        } else if (task.gameType === 'emotion_training' && task.emotion) {
+          completedModuleIds.add('emotion_' + task.emotion);
+        }
       }
     }
 

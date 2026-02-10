@@ -67,7 +67,7 @@
     localStorage.removeItem(`tr_quiz_total_${userKey}`);
     localStorage.removeItem(`tr_details_${userKey}`);
     localStorage.removeItem(`tr_last_run_${userKey}`);
-    goto('/transition-recognition/settings');
+    goto('/transition-recognition/quiz/Normal');
   }
 </script>
 

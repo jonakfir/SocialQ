@@ -1,13 +1,7 @@
 <script>
-    import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
 
     let difficulty = '2';
-    let stats = [
-        { date: '2025-07-15', score: '8/10', difficulty: '2' },
-        { date: '2025-07-16', score: '9/10', difficulty: '1' },
-        { date: '2025-07-17', score: '7/10', difficulty: '3' }
-    ];
 
     function beginGame() {
         goto(`/mirroring/mirroring?difficulty=${difficulty}`);
@@ -23,109 +17,85 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 100vh;
-        position: relative;
+        min-height: 100%;
+        padding: 24px;
+        box-sizing: border-box;
     }
 
-    .dashboard-box {
-        width: 500px; /* narrowed from before */
-        padding: 30px;
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.2);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+    .content {
         text-align: center;
+        max-width: 420px;
     }
 
-	.settings-title {
-		font-family: 'Georgia', serif;
-		font-size: 3rem;
-		color: white;
-		-webkit-text-stroke: 2px rgba(0, 0, 0, 0.5);
-		text-shadow: 0 10px 10px rgba(0, 0, 0, 0.4);
-		margin-bottom: 20px;
-	}
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-        font-size: 16px;
-    }
-
-    th, td {
-        padding: 12px;
-        text-align: center;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.2);
-    }
-
-    th {
-        background-color: rgba(255, 255, 255, 0.6);
+    .settings-title {
+        font-family: Georgia, serif;
+        font-size: clamp(2.25rem, 5vw, 3rem);
         font-weight: bold;
+        color: var(--af-mirroring-yellow);
+        text-shadow: 0 4px 8px rgba(0, 0, 0, 0.45);
+        margin: 0 0 28px;
     }
 
-    td {
-        background-color: rgba(255, 255, 255, 0.4);
+    .buttons {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
     }
 
-    .settings-btn {
+    /* Play Again style: white pill, dark navy text */
+    .btn-begin {
         display: block;
-        width: 80%;
-        margin: 10px auto;
-        padding: 10px 20px;
-        font-size: 16px;
-        font-weight: bold;
-        border: none;
-        border-radius: 30px;
+        width: 100%;
+        max-width: 300px;
+        padding: 14px 24px;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--af-dark-navy);
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(15, 20, 46, 0.2);
+        border-radius: 9999px;
         cursor: pointer;
-        background-color: #4f46e5;
-        color: white;
-        transition: background-color 0.3s;
+        transition: transform 0.08s ease, box-shadow 0.2s ease;
+    }
+    .btn-begin:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+    .btn-begin:active {
+        transform: scale(0.985);
     }
 
-    .settings-btn:hover {
-        background-color: #4338ca;
+    /* Home style: glow blue pill, white text */
+    .btn-dashboard {
+        display: block;
+        width: 100%;
+        max-width: 300px;
+        padding: 14px 24px;
+        font-size: 18px;
+        font-weight: 600;
+        color: #fff;
+        background: var(--af-glow-blue);
+        border: 1px solid var(--af-glow-blue);
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: transform 0.08s ease, filter 0.2s ease;
     }
-
-    .settings-btn:nth-of-type(2) {
-        background-color: white;
-        color: black;
-        border: 2px solid black;
+    .btn-dashboard:hover {
+        filter: brightness(1.05);
+        transform: translateY(-1px);
     }
-
-    .settings-btn:nth-of-type(2):hover {
-        background-color: rgba(0, 0, 0, 0.05);
+    .btn-dashboard:active {
+        transform: scale(0.985);
     }
 </style>
 
-<!-- Background Blobs -->
-<div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-<div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-<div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
-
-<!-- Glass container -->
 <div class="page-container">
-    <div class="dashboard-box">
+    <div class="content">
         <h2 class="settings-title">Mirroring Game</h2>
-        <!-- <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Score</th>
-                </tr>
-            </thead>
-            <tbody>
-                {#each stats as stat}
-                    <tr>
-                        <td>{stat.date}</td>
-                        <td>{stat.score}</td>
-                    </tr>
-                {/each}
-            </tbody>
-        </table> -->
-
-        <button class="settings-btn" on:click={beginGame}>Let's Begin</button>
-        <button class="settings-btn" on:click={goToDashboard}>Back to Dashboard</button>
+        <div class="buttons">
+            <button class="btn-begin" on:click={beginGame}>Let's Begin</button>
+            <button class="btn-dashboard" on:click={goToDashboard}>Back to Dashboard</button>
+        </div>
     </div>
 </div>

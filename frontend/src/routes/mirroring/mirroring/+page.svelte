@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
 
   // ---------- NATIVE APP BRIDGE ----------
@@ -45,7 +46,7 @@
     name?: string;
     answer?: string;
   };
-  let difficulty = '1';
+  $: difficulty = $page.url.searchParams.get('difficulty') || '1';
   let targets: Target[] = [];
 
   // scoring
@@ -415,7 +416,7 @@
     evaluating = true;
 
     let cnt = 3;
-    countdown.style.display = 'block';
+    countdown.classList.add('show');
     countdown.textContent = String(cnt);
 
     logFramesFor(3000);
@@ -428,7 +429,7 @@
         clearInterval(iv);
         countdown.textContent = 'Go!';
         setTimeout(async () => {
-          countdown.style.display = 'none';
+          countdown.classList.remove('show');
           await evaluateCurrent();
           evaluating = false;
           nextTarget();
@@ -438,61 +439,73 @@
   }
 
   function goDashboard() { goto('/dashboard'); }
+  function goSettings() { goto('/mirroring/settings'); }
+
+  $: statusText = lastResult?.face?.[0]
+    ? (() => {
+        const emo = lastResult.face[0].emotion;
+        if (Array.isArray(emo) && emo.length) {
+          const top = emo.reduce((a: any, b: any) => (b.score > a.score ? b : a), emo[0]);
+          return `Detecting… ${top.emotion} ${Math.round((top.score || 0) * 100)}%`;
+        }
+        return 'Detecting…';
+      })()
+    : 'Detecting…';
 </script>
 
 <svelte:head>
   <title>Mirroring Game – SocialQ</title>
 </svelte:head>
 
-<!-- background blobs already on page -->
-<div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-<div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-<div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
-
-<!-- Header: HIDDEN inside the native app -->
 {#if !isNative}
-  <div class="header">
-    <h1>Mirroring</h1>
-  </div>
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <button type="button" class="circle-btn" aria-label="Close" on:click={goSettings}>
+        <span aria-hidden="true">×</span>
+      </button>
+      <button
+        type="button"
+        class="circle-btn"
+        aria-label={autoZoom ? 'Face framing on' : 'Face framing off'}
+        title="Toggle auto zoom"
+        on:click={() => (autoZoom = !autoZoom)}
+      >
+        <span aria-hidden="true">{autoZoom ? '⊞' : '▢'}</span>
+      </button>
+    </div>
+    <h1 class="top-bar-title">Mirroring Exercises</h1>
+    <div class="top-bar-right">
+      <button
+        type="button"
+        class="record-btn-top"
+        aria-label="Record"
+        disabled={instructionsOpen}
+        on:click={startCountdown}
+      ></button>
+    </div>
+  </header>
 {/if}
 
-<!-- The canvas fills this entire card; on native, the card becomes full-bleed -->
-<div class="mirroring-container" bind:this={cameraArea}>
+<div class="stage-wrap" bind:this={cameraArea}>
   <div class="camera-area">
     <video bind:this={video} autoplay playsinline muted style="display:none;"></video>
     <canvas bind:this={canvas}></canvas>
-
-    <!-- keep the target face preview (you can hide it on native if you want) -->
     <img class="target-face" alt="Target Face" />
     <div bind:this={countdown} class="countdown"></div>
   </div>
 
-  <!-- Controls overlay: HIDDEN inside the native app -->
   {#if !isNative}
-    <div class="controls">
-      <button
-        class="record-btn"
-        on:click={startCountdown}
-        aria-label="Start countdown"
-        disabled={instructionsOpen}
-      ></button>
-
-      <!-- bottom left -->
-      <button class="toggle-ui hide-ui-fixed" on:click={() => (showOverlay = !showOverlay)}>
-        {showOverlay ? 'Hide UI' : 'Show UI'}
-      </button>
-
-      <!-- bottom right cluster: Auto zoom + scale + Recalibrate -->
-      <div class="zoom-row corner-right">
-        <label class="switch">
-          <input type="checkbox" bind:checked={autoZoom} />
-          <span>Auto zoom</span>
-        </label>
-        <button class="action small" type="button" on:click={recalibrate}>Recalibrate</button>
-      </div>
-
-      <div bind:this={bar} class="progress-bar"></div>
-    </div>
+    <div class="status-pill">{statusText}</div>
+    <div bind:this={bar} class="progress-dots"></div>
+    <button
+      type="button"
+      class="mesh-pill"
+      aria-label="Toggle mesh overlay"
+      on:click={() => (showOverlay = !showOverlay)}
+    >
+      <span class="mesh-icon">{showOverlay ? '◉' : '○'}</span>
+      <span>{showOverlay ? 'Mesh On' : 'Mesh Off'}</span>
+    </button>
   {/if}
 </div>
 
@@ -500,210 +513,291 @@
 {#if instructionsOpen}
   <div class="modal-backdrop" on:click={() => (instructionsOpen = false)}>
     <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
-      <div class="modal-header">
-        <div class="badge">🪞</div>
-        <h3>How to play</h3>
-      </div>
+      <h3 class="modal-title">About Face</h3>
+      <p class="modal-subtitle">Mirroring</p>
       <div class="modal-body">
-        <ul>
+        <p class="modal-instructions-label">Instructions:</p>
+        <ol class="modal-list">
           <li>Mirror the picture as close as possible.</li>
           <li>When you are ready click the red button to start a countdown.</li>
           <li>Auto zoom keeps your face size steady as you move in and out.</li>
           <li>If the scale feels off tap Recalibrate while you are at a good distance.</li>
           <li>At the end you will get a score.</li>
-        </ul>
+        </ol>
       </div>
       <div class="modal-actions">
-        <button class="action" type="button" on:click={() => (instructionsOpen = false)}>Got it</button>
+        <button class="modal-btn" type="button" on:click={() => (instructionsOpen = false)}>Got it</button>
       </div>
     </div>
   </div>
 {/if}
 
 <style>
-  :root{
-    --brand: #4f46e5;
-    --brand2: #22d3ee;
-    --ink: #0f172a;
-    --glass: rgba(255,255,255,0.32);
-    --glass-strong: rgba(255,255,255,0.48);
+  /* Top bar: iOS-style */
+  .top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 76px;
+    padding-top: env(safe-area-inset-top, 0);
+    background: var(--af-deep-blue);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 16px;
+    padding-right: 20px;
+    z-index: 20;
+    box-sizing: border-box;
   }
-
-  :global(body) {
+  .top-bar-left, .top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .top-bar-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: Georgia, serif;
+    font-size: 34px;
+    font-weight: bold;
+    color: var(--af-mirroring-yellow);
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.45);
+    line-height: 1;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .circle-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    font-size: 24px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.08s ease;
+  }
+  .circle-btn:hover { background: rgba(255, 255, 255, 0.25); }
+  .circle-btn:active { transform: scale(0.96); }
+  .record-btn-top {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    background: var(--af-record-red);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.08s ease;
+  }
+  .record-btn-top:hover { transform: translateY(-1px); }
+  .record-btn-top:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Stage: fills below top bar */
+  .stage-wrap {
+    position: fixed;
+    top: 76px;
+    top: calc(76px + env(safe-area-inset-top, 0px));
+    left: 0;
+    right: 0;
+    bottom: 0;
     overflow: hidden;
-    background:
-      radial-gradient(1200px 800px at 20% 0%, rgba(79,70,229,.10), transparent 60%),
-      radial-gradient(1200px 800px at 80% 30%, rgba(34,211,238,.12), transparent 60%),
-      #f7f7fb;
+    z-index: 1;
   }
-
-  .header {
-    position: absolute; top: 0; width: 100%;
-    display: flex; justify-content: center; align-items: center;
-    padding: 12px 20px; z-index: 10;
+  :global(body.native) .stage-wrap {
+    top: 0;
   }
-  .header h1 {
-    margin: 0; color: #fff; font-family: Georgia, serif; font-size: 3.2rem;
-    text-shadow: 0 3px 8px rgba(0,0,0,.6);
-  }
-
-  .mirroring-container {
-    position: absolute; top: 100px; bottom: 40px; left: 150px; right: 150px;
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.22)),
-      radial-gradient(1200px 800px at 10% 0%, rgba(79,70,229,.12), transparent 60%),
-      radial-gradient(1200px 800px at 90% 20%, rgba(34,211,238,.12), transparent 60%);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255,255,255,.6);
-    border-radius: 16px;
-    box-shadow: 0 8px 40px rgba(0,0,0,.45);
-    display: block;
-    z-index: 5;
-    overflow: hidden;
-  }
-
   .camera-area {
     position: absolute;
     inset: 0;
     overflow: hidden;
   }
-
   canvas {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    border-radius: 16px;
+    object-fit: cover;
     z-index: 2;
     pointer-events: none;
-    box-shadow: inset 0 2px 18px rgba(0,0,0,.2);
   }
-
   .target-face {
-    position: absolute; top: 12px; right: 12px;
-    width: 220px; height: 220px; background: #fff; border: 2px solid #333;
-    border-radius: 8px; object-fit: cover; z-index: 6;
-  }
-
-  .countdown {
-    position: absolute; font-size: 4rem; color: #fff;
-    text-shadow: 0 4px 10px rgba(0,0,0,.7); display: none; z-index: 6;
-  }
-
-  .controls {
     position: absolute;
-    left: 0; right: 0; bottom: 0;
-    padding: 16px;
-    display: flex; flex-direction: column; align-items: center; gap: 10px;
-    z-index: 9;
-    background: transparent;
-    backdrop-filter: none;
-    pointer-events: auto;
+    top: 16px;
+    right: 16px;
+    width: 140px;
+    height: 140px;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    object-fit: cover;
+    z-index: 6;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+  }
+  .countdown {
+    position: absolute;
+    inset: 0;
+    display: none;
+    place-items: center;
+    font-size: 84px;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 6px 26px rgba(0, 0, 0, 0.7);
+    z-index: 8;
+  }
+  .countdown.show {
+    display: grid;
   }
 
-  .record-btn {
-    width: 52px; height: 52px; background: #ef4444; border: none; border-radius: 50%;
-    box-shadow: 0 4px 12px rgba(0,0,0,.6); cursor: pointer; margin-bottom: 12px;
-    transition: transform .08s ease, filter .2s ease;
+  /* Bottom controls */
+  .status-pill {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    backdrop-filter: blur(8px);
+    font-size: 14px;
+    z-index: 10;
   }
-  .record-btn:hover { transform: translateY(-1px); }
-  .record-btn[disabled]{ opacity: .6; cursor: not-allowed; filter: grayscale(0.1); }
-
-  .hide-ui-fixed {
-    position: absolute; left: 16px; bottom: 16px; z-index: 10;
+  .progress-dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 100px;
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    z-index: 10;
   }
-  .corner-right {
-    position: absolute; right: 16px; bottom: 16px; z-index: 10;
+  .progress-dots :global(.dot) {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.35);
   }
-
-  .toggle-ui {
-    background: linear-gradient(135deg, rgba(255,255,255,.96), #f5f3ff);
-    border: 1px solid rgba(79,70,229,.35);
-    border-radius: 10px;
-    padding: 8px 14px;
+  .progress-dots :global(.dot.active) {
+    background: var(--af-glow-blue);
+    box-shadow: 0 0 8px rgba(115, 166, 242, 0.5);
+  }
+  .mesh-pill {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 9999px;
+    background: rgba(26, 31, 71, 0.9);
+    border: 1px solid rgba(115, 166, 242, 0.6);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
     cursor: pointer;
-    color: var(--ink);
-    box-shadow: 0 6px 18px rgba(79,70,229,.15);
-    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   }
-  .toggle-ui:hover { filter: brightness(1.02); box-shadow: 0 10px 26px rgba(79,70,229,.22); }
-  .toggle-ui:active { transform: translateY(1px); }
+  .mesh-pill:hover { filter: brightness(1.05); }
+  .mesh-icon { font-size: 18px; }
 
-  .zoom-row { display: flex; align-items: center; gap: 10px; }
-  .switch { display: inline-flex; align-items: center; gap: 8px; user-select: none; color: white; }
-  .switch input { width: 18px; height: 18px; }
-  .zoom-readout { font-size: 12px; color: #374151; }
-
-  .progress-bar { display: flex; gap: 8px; }
-  .dot { width: 40px; height: 8px; background: #e5e7eb; border-radius: 4px; transition: background .3s ease; }
-  .dot.active { background: var(--brand); }
-
-  .modal-backdrop{
-    position: fixed; inset: 0;
-    background:
-      radial-gradient(60% 40% at 20% 10%, rgba(79,70,229,.28), transparent 60%),
-      radial-gradient(50% 40% at 80% 30%, rgba(34,211,238,.24), transparent 60%),
-      rgba(0,0,0,.45);
-    display: grid; place-items: center;
+  /* Instructions modal: AboutFace style */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: grid;
+    place-items: center;
     z-index: 50;
-    animation: fadeIn .18s ease;
+    animation: modalFadeIn 0.18s ease;
   }
-  .modal{
+  .modal {
     width: min(640px, 94vw);
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.86)),
-      radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%),
-      radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%);
-    border: 1px solid rgba(79,70,229,.28);
-    border-radius: 16px;
-    box-shadow: 0 24px 68px rgba(0,0,0,.35);
-    padding: 18px 18px 14px;
+    padding: 24px;
+    background: rgba(26, 31, 71, 0.95);
+    border: 1px solid rgba(115, 166, 242, 0.5);
+    border-radius: 20px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
     text-align: left;
-    color: var(--ink);
-    animation: pop .18s ease;
+    animation: modalPop 0.18s ease;
   }
-  .modal-header{ display:flex; align-items:center; gap:10px; margin-bottom: 6px; }
-  .badge{
-    width: 34px; height: 34px; border-radius: 9999px;
-    display:grid; place-items:center;
-    background: linear-gradient(135deg, var(--brand), var(--brand2));
-    box-shadow: 0 6px 18px rgba(79,70,229,.35);
-    color: #fff; font-size: 18px;
+  .modal-title {
+    margin: 0 0 8px;
+    font-size: 26px;
+    font-weight: bold;
+    color: #fff;
   }
-  .modal h3{ margin: 0; font-size: 1.25rem; }
-  .modal-body{ color:#111; line-height:1.55; padding: 6px 2px 0; }
-  .modal-body ul{ margin: 0; padding-left: 18px; }
-  .modal-body li{ margin: 6px 0; }
-  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top: 12px; }
-  .action{
-    background: linear-gradient(135deg, var(--brand), var(--brand2));
-    color:#fff; border: none; border-radius: 10px;
-    padding: 10px 16px; cursor: pointer;
-    box-shadow: 0 10px 26px rgba(79,70,229,.28);
-    transition: transform .06s ease, box-shadow .2s ease, filter .2s ease;
+  .modal-subtitle {
+    margin: 0 0 16px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--af-mirroring-yellow);
+    text-decoration: underline;
+    text-underline-offset: 4px;
   }
-  .action.small { padding: 6px 10px; font-size: 12px; }
-  .action:hover{ filter: brightness(1.02); box-shadow: 0 14px 32px rgba(79,70,229,.36); }
-  .action:active{ transform: translateY(1px); }
+  .modal-body { margin-bottom: 16px; }
+  .modal-instructions-label {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--af-mirroring-yellow);
+  }
+  .modal-list {
+    margin: 0;
+    padding-left: 20px;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.6;
+  }
+  .modal-list li { margin: 6px 0; }
+  .modal-actions { display: flex; justify-content: flex-end; }
+  .modal-btn {
+    padding: 12px 28px;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--af-dark-navy);
+    background: var(--af-glow-blue);
+    border: 1px solid var(--af-glow-blue);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: filter 0.2s ease;
+  }
+  .modal-btn:hover { filter: brightness(1.1); }
+  @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes modalPop { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-  @keyframes pop{ from{ transform: scale(.96); opacity: 0; } to{ transform: scale(1); opacity: 1; } }
-  @keyframes fadeIn{ from{ opacity: 0; } to{ opacity: 1; } }
-
-  /* ---------- NATIVE-ONLY OVERRIDES ---------- */
-  :global(body.native .mirroring-container) {
-    top: 0; bottom: 0; left: 0; right: 0;
-    border-radius: 0;
-    border: none;
-    background: transparent;
-    box-shadow: none;
+  /* Desktop */
+  @media (min-width: 768px) {
+    .top-bar-title { font-size: clamp(24px, 3vw, 34px); }
+    .stage-wrap {
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 1200px;
+      max-height: 70vh;
+      top: calc(76px + env(safe-area-inset-top, 0px));
+      bottom: auto;
+      height: 70vh;
+    }
+    .target-face {
+      width: 160px;
+      height: 160px;
+      top: 24px;
+      right: 24px;
+    }
+    .status-pill { left: 24px; bottom: 2vh; }
+    .progress-dots { bottom: 14vh; }
+    .mesh-pill { right: 24px; bottom: 2vh; }
   }
-  :global(body.native canvas) {
-    border-radius: 0;
-    box-shadow: none;
-  }
-  /* optional: hide target preview in native too
-  :global(body.native .target-face) { display: none; }
-  */
 </style>

@@ -5,6 +5,7 @@
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
   import { getUserKey } from '$lib/userKey';
+  import { lastFrQuizDetails } from '$lib/quizDetailsStore';
 
   let score = 0;
   let total = 0;
@@ -36,14 +37,19 @@
   function playAgain() {
     const userKey = getUserKey();
     
-    // Remove only this user's data
+    lastFrQuizDetails.set(null);
+    // Remove only this user's data (localStorage + sessionStorage thumbnails)
     localStorage.removeItem(`fr_quiz_results_${userKey}`);
     localStorage.removeItem(`fr_quiz_score_${userKey}`);
     localStorage.removeItem(`fr_quiz_total_${userKey}`);
     localStorage.removeItem(`fr_picks_${userKey}`);
     localStorage.removeItem(`fr_questions_${userKey}`);
     localStorage.removeItem(`fr_quiz_details_${userKey}`);
-    goto('/facial-recognition/settings');
+    try {
+      sessionStorage.removeItem(`fr_quiz_details_session_${userKey}`);
+      sessionStorage.removeItem('fr_quiz_details_session_latest');
+    } catch {}
+    goto('/facial-recognition/quiz/1');
   }
 
   function buildSmsLink(text: string) {
@@ -58,7 +64,7 @@
   }
 
   async function shareResults() {
-    const link = location.origin + '/facial-recognition/settings';
+    const link = location.origin + '/facial-recognition/quiz/1';
     const percent = total ? Math.round((score / total) * 100) : 0;
 
     const text =

@@ -34,7 +34,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
 }
 
 function parsePhotoSourceSettings(raw: string | null): { ekman: boolean; own: boolean; synthetic: boolean } {
-  const defaults = { ekman: true, own: true, synthetic: true };
+  const defaults = { ekman: false, own: true, synthetic: true };
   if (!raw) return defaults;
   try {
     const o = JSON.parse(raw);

@@ -123,10 +123,14 @@
       level = progress?.level ?? 1;
       completionPercent = progress?.completionPercent ?? 0;
       stages = STAGES.map((stage, stageIndex) => {
-        const tasks: JourneyTask[] = stage.tasks.map((t) => ({
-          ...t,
-          completed: t.webModuleId ? completedSet.has(t.webModuleId) : false,
-        }));
+        const tasks: JourneyTask[] = stage.tasks.map((t) => {
+          const completed = t.webModuleId
+            ? completedSet.has(t.webModuleId)
+            : t.type === 'emotion_training' && t.emotion
+              ? completedSet.has('emotion_' + t.emotion)
+              : false;
+          return { ...t, completed };
+        });
         const completed = tasks.every((t) => t.completed);
         const prevCompleted = stageIndex === 0 || STAGES[stageIndex - 1].tasks.every((t) =>
           t.webModuleId ? completedSet.has(t.webModuleId) : false
@@ -222,7 +226,7 @@
     min-height: 100vh;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 24px;
+    padding: 28px;
     padding-bottom: 100px;
     background: transparent;
     position: relative;
@@ -232,33 +236,33 @@
 
   .header {
     text-align: center;
-    margin-bottom: 28px;
+    margin-bottom: 32px;
   }
 
   .journey-title {
     font-family: Georgia, serif;
-    font-size: clamp(1.5rem, 5vw, 2.25rem);
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
     color: white;
     -webkit-text-stroke: 2px rgba(0,0,0,0.5);
     text-shadow: 0 8px 12px rgba(0,0,0,0.4);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
 
   .level-info, .completion {
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 600;
     color: #94a3b8;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
   }
 
   .progress-bar {
     width: 100%;
-    max-width: 360px;
-    height: 8px;
+    max-width: 400px;
+    height: 9px;
     background: rgba(148, 163, 184, 0.4);
     border-radius: 9999px;
     overflow: hidden;
-    margin: 0 auto 32px;
+    margin: 0 auto 36px;
   }
 
   .progress-fill {
@@ -269,21 +273,20 @@
   }
 
   .path-wrap {
-    max-width: 560px;
+    max-width: 640px;
     margin: 0 auto;
     position: relative;
-    padding-left: 24px;
-    padding-right: 24px;
+    padding-left: 28px;
+    padding-right: 28px;
   }
 
   .spine {
     position: absolute;
     left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: #ea580c;
-    border-radius: 2px;
+    top: 32px;
+    bottom: 32px;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.9);
     transform: translateX(-50%);
     z-index: 0;
   }
@@ -311,7 +314,7 @@
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
 
   .stage-row.diagonal-left {
@@ -329,11 +332,11 @@
   .stage-card {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     max-width: 100%;
     cursor: pointer;
-    padding: 4px;
-    border-radius: 16px;
+    padding: 5px;
+    border-radius: 18px;
     transition: background 0.2s;
     background: transparent;
     border: none;
@@ -359,9 +362,9 @@
   .puzzle-wrap {
     position: relative;
     flex-shrink: 0;
-    width: 64px;
-    height: 64px;
-    border-radius: 12px;
+    width: 76px;
+    height: 76px;
+    border-radius: 14px;
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -391,10 +394,10 @@
 
   .puzzle-wrap .check {
     position: absolute;
-    bottom: 2px;
-    right: 2px;
-    width: 22px;
-    height: 22px;
+    bottom: 3px;
+    right: 3px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     background: rgba(34,197,94,0.95);
     color: white;
@@ -407,18 +410,18 @@
 
   .puzzle-wrap .lock-icon {
     position: absolute;
-    bottom: 2px;
-    right: 2px;
-    font-size: 18px;
+    bottom: 3px;
+    right: 3px;
+    font-size: 20px;
     line-height: 1;
   }
 
   .stage-info {
     flex: 1;
     min-width: 0;
-    padding: 12px 16px;
+    padding: 14px 18px;
     background: rgba(255, 255, 255, 0.95);
-    border-radius: 14px;
+    border-radius: 16px;
     border: 1px solid rgba(0,0,0,0.08);
     box-shadow: 0 2px 10px rgba(0,0,0,0.06);
   }
@@ -430,38 +433,28 @@
   }
 
   .stage-name {
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 800;
     color: #111;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
   }
 
   .stage-desc {
-    font-size: 0.8rem;
+    font-size: 0.88rem;
     color: #64748b;
     margin-bottom: 6px;
   }
 
   .stage-meta {
-    font-size: 0.75rem;
+    font-size: 0.82rem;
     font-weight: 700;
     color: #475569;
   }
 
-  .connector {
-    width: 3px;
-    height: 20px;
-    background: #ea580c;
-    margin: 0 auto 4px;
-    border-radius: 2px;
-    position: relative;
-    z-index: 1;
-  }
-
   .tasks-dropdown {
-    max-width: 520px;
-    margin: 8px auto 16px;
-    padding: 16px;
+    max-width: 580px;
+    margin: 10px auto 18px;
+    padding: 18px;
     background: rgba(255, 255, 255, 0.88);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -524,7 +517,7 @@
 
   .home-btn {
     position: fixed;
-    bottom: 28px;
+    bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
     padding: 14px 40px;
@@ -537,6 +530,7 @@
     cursor: pointer;
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
     transition: transform 0.2s, box-shadow 0.2s;
+    z-index: 10000;
   }
 
   .home-btn:hover {
@@ -610,15 +604,16 @@
                   class="task-item {task.completed ? 'completed' : ''}"
                 >
                   {task.title}
-                  <div class="req">Requires {task.requiredScore}% to pass</div>
+                  {#if task.type !== 'emotion_training'}
+                    <div class="req">Requires {task.requiredScore}% to pass</div>
+                  {:else}
+                    <div class="req">Complete the training to pass</div>
+                  {/if}
                 </a>
               {/each}
             </div>
           {/if}
 
-          {#if index < stages.length - 1}
-            <div class="connector"></div>
-          {/if}
         </div>
       {/each}
     </div>
