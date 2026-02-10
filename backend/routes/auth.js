@@ -218,11 +218,14 @@ router.post('/register', async (req, res) => {
     
     // Determine role - jonakfir@gmail.com is always admin
     const role = email === 'jonakfir@gmail.com' ? 'admin' : 'personal';
+    // Daily free play (just_try) → access_level 'none'; pro/trial come via services/signup
+    const profile = req.body?.profile;
+    const goal = profile?.goal;
+    const accessLevel = goal === 'just_try' ? 'none' : 'none';
     
-    const user = await createUser({ email, password: hash, role });
+    const user = await createUser({ email, password: hash, role, accessLevel });
 
     // Store onboarding profile data tied to this user (age, verbal, literate, goals - for reminders)
-    const profile = req.body?.profile;
     if (profile && typeof profile === 'object') {
       try {
         const userType = (profile.user_type || 'myself').replace(/-/g, '_').toLowerCase();
@@ -250,9 +253,9 @@ router.post('/register', async (req, res) => {
     // Sign them in immediately - get JWT token
     const token = setSessionCookies(res, user);
 
-    // Notify admin of new signup (fire-and-forget; don't block response)
+    // Notify admin of new signup with full flow details (fire-and-forget)
     const { notifyNewSignup } = require('../lib/notifyNewSignup');
-    notifyNewSignup(user).catch((err) => console.error('[register] notify signup email failed:', err?.message || err));
+    notifyNewSignup(user, profile).catch((err) => console.error('[register] notify signup email failed:', err?.message || err));
 
     return res.status(201).json({ ok: true, user: { ...user, role: user.role, accessLevel: user.access_level || 'none', trialEndsAt: null }, token });
   } catch (e) {

@@ -57,7 +57,7 @@
 
   function startWithTransition(e) {
     ripple(e);
-    goto('/login');
+    goto('/register');
   }
 </script>
 

@@ -17,11 +17,13 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Email required' }, { status: 400 });
     }
 
+    // Select only columns we need (avoids errors if e.g. photoSourceSettings is missing before migration)
+    const userSelect = { id: true, username: true, password: true, invitationCode: true };
+
     // Check if Prisma user already exists by email (username)
     let prismaUser = await prisma.user.findFirst({
-      where: {
-        username: email
-      }
+      where: { username: email },
+      select: userSelect
     });
 
     if (!prismaUser) {
@@ -37,7 +39,7 @@ export const POST: RequestHandler = async (event) => {
       // Generate unique 9-digit user ID
       const newUserId = await generateUserId();
 
-      // Generate unique invitation code
+      // Generate unique invitation code (only select id to avoid missing columns)
       let invitationCode: string;
       let attempts = 0;
       do {
@@ -46,7 +48,7 @@ export const POST: RequestHandler = async (event) => {
         if (attempts > 10) {
           throw new Error('Failed to generate unique invitation code');
         }
-      } while (await prisma.user.findUnique({ where: { invitationCode } }));
+      } while (await prisma.user.findUnique({ where: { invitationCode }, select: { id: true } }));
 
       prismaUser = await prisma.user.create({
         data: {
@@ -54,7 +56,8 @@ export const POST: RequestHandler = async (event) => {
           username: email,
           password: passwordHash,
           invitationCode
-        }
+        },
+        select: userSelect
       });
 
       console.log('[sync-user] Created Prisma user:', prismaUser.id, 'for email:', email);
@@ -65,7 +68,8 @@ export const POST: RequestHandler = async (event) => {
         const passwordHash = await bcrypt.hash(password, 10);
         prismaUser = await prisma.user.update({
           where: { id: prismaUser.id },
-          data: { password: passwordHash }
+          data: { password: passwordHash },
+          select: userSelect
         });
         console.log('[sync-user] Updated Prisma user password for:', email);
       } else {
