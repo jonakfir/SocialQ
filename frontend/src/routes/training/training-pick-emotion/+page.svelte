@@ -1,7 +1,13 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
 
   const EMOTIONS = ['Anger','Disgust','Fear','Happiness','Sadness','Surprise'];
+
+  onMount(() => {
+    markPlayedIfPending(); // if they came from daily free play, mark emotion training as played
+  });
 
   // motion + pointer capability
   let motionOK = true;

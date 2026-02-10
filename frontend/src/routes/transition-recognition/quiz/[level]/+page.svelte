@@ -236,7 +236,8 @@
    * Finish & persist
    * --------------------------------------------------- */
   async function finish() {
-    stopTimer();
+    try {
+      stopTimer();
 
     // Picks (fallback to "__timeout__" if unanswered)
     const pickedFrom = clips.map((_, i) => (guessFrom[i] ?? '__timeout__'));
@@ -347,10 +348,12 @@
       clearTimeout(timeoutId);
     } catch (error) {
       console.error('[transition-recognition] Failed to save session to database:', error);
-      // Continue anyway - localStorage is the source of truth
     }
-
-    goto('/transition-recognition/results');
+  } catch (err) {
+      console.error('[transition-recognition] Finish error:', err);
+    } finally {
+      goto('/transition-recognition/results');
+    }
   }
 </script>
 
@@ -366,7 +369,28 @@
 <style>
   :root{ --brand:#4f46e5; --brand2:#22d3ee; --ink:#0f172a; }
 
+  .stage {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    background-image: linear-gradient(
+      180deg,
+      rgba(15, 20, 46, 0.5) 0%,
+      rgba(26, 31, 71, 0.55) 50%,
+      rgba(15, 20, 46, 0.5) 100%
+    ), url('/web.png');
+    background-size: 150%;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
   .panel{
+    position: relative;
+    z-index: 1;
     width:min(980px,92vw);
     max-height:88vh;
     margin:4vh auto;
@@ -535,12 +559,13 @@
   .action:active{ transform:translateY(1px); }
 </style>
 
-<!-- Blobs -->
-<div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-<div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-<div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
+<div class="stage">
+  <!-- Blobs -->
+  <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
+  <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
+  <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
-{#if loading}
+  {#if loading}
   <div class="panel">Loading…</div>
 {:else if loadError}
   <div class="panel">Error: {loadError}</div>
@@ -645,3 +670,4 @@
 {:else}
   <div class="panel">No clips available.</div>
 {/if}
+</div>

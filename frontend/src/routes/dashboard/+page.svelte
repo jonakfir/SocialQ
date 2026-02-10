@@ -5,24 +5,24 @@
   import { apiFetch } from '$lib/api';
 
   let userRole: string | null = null;
+  let accessLevel: string = 'none'; // 'none' = daily free play only, 'free_trial' | 'pro' = full access
   $: viewAsPersonal = isViewingAsPersonal();
 
-  // Check if user is admin
+  // Check if user is admin and access level (for daily free play lock UI)
   async function checkUserRole() {
     try {
-      // Try to get role from /auth/me first (backend PostgreSQL)
       const res = await apiFetch('/auth/me');
       const data = await res.json();
       if (data?.ok && data?.user) {
         const email = (data.user.email || data.user.username || '').toLowerCase();
-        // Hardcode: jonakfir@gmail.com is always admin
         if (email === 'jonakfir@gmail.com') {
           userRole = 'admin';
+          accessLevel = 'pro';
           return;
         }
         userRole = data.user.role || 'personal';
+        accessLevel = data.user.accessLevel ?? 'none';
       } else {
-        // Fallback to /api/user/role
         const res2 = await apiFetch('/api/user/role');
         const data2 = await res2.json();
         if (data2?.ok && data2?.role) {
@@ -35,11 +35,13 @@
   }
 
   $: isAdmin = userRole === 'admin';
+  $: dailyFreePlayOnly = accessLevel === 'none';
 
   // Which side panel is open
   let panel: null | 'train' | 'test' = null;
 
   function openPanel(kind: 'train' | 'test') {
+    if (dailyFreePlayOnly && kind !== 'train') return; // only train (daily free play) allowed
     panel = kind;
   }
   const closePanel = () => (panel = null);
@@ -196,11 +198,8 @@
   .fab:active { transform: translateY(0); }
   .fab .label { position: absolute; left: -9999px; }
 
-  /* Friends Plus Icon Button (top right) */
+  /* Friends Plus Icon Button (inside .top-right-actions) */
   .friends-btn{
-    position: fixed;
-    top: 22px;
-    right: 22px;
     width: 50px;
     height: 50px;
     border-radius: 9999px;
@@ -222,6 +221,60 @@
   .friends-btn:hover { transform: translateY(-2px) scale(1.05); filter: brightness(1.03); box-shadow: 0 12px 28px rgba(79,70,229,.4); }
   .friends-btn:active { transform: translateY(0) scale(1); }
   .friends-btn .label { position: absolute; left: -9999px; }
+
+  /* Top-right stack: Friends + Daily free play */
+  .top-right-actions {
+    position: fixed;
+    top: 22px;
+    right: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1001;
+    pointer-events: none;
+  }
+  .top-right-actions > * { pointer-events: auto; }
+
+  .daily-free-play-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 9999px;
+    border: 0;
+    color: #fff;
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, .35);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1;
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+    overflow: hidden;
+  }
+  .daily-free-play-btn:hover { transform: translateY(-2px); filter: brightness(1.05); box-shadow: 0 12px 28px rgba(16, 185, 129, .45); }
+  .daily-free-play-btn:active { transform: translateY(0); }
+  .daily-free-play-btn .label { position: absolute; left: -9999px; }
+
+  /* Lock UI for daily-free-play-only users */
+  .locked {
+    position: relative;
+    pointer-events: none !important;
+    cursor: not-allowed !important;
+    opacity: 0.7;
+    filter: grayscale(0.4) brightness(0.9);
+  }
+  .locked::after {
+    content: '🔒';
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    pointer-events: none;
+    border-radius: inherit;
+  }
+  .big.locked::after { font-size: 1.75rem; }
 
   .journey-btn{
     position: fixed;
@@ -329,7 +382,8 @@
     color: var(--text-secondary, #94a3b8);
   }
   :global(html.dark) .fab,
-  :global(html.dark) .friends-btn {
+  :global(html.dark) .friends-btn,
+  :global(html.dark) .daily-free-play-btn {
     color: #fff;
     pointer-events: auto;
   }
@@ -344,10 +398,10 @@
   <div class="shell">
     <h2 class="title">AboutFace</h2>
     <div class="stack">
-      <button class="big" on:click={() => openPanel('train')}>
+      <button class="big" class:locked={dailyFreePlayOnly} on:click={() => openPanel('train')}>
         <span class="fxtext">Train</span>
       </button>
-      <button class="big" on:click={() => openPanel('test')}>
+      <button class="big" class:locked={dailyFreePlayOnly} on:click={() => openPanel('test')}>
         <span class="fxtext">Test</span>
       </button>
     </div>
@@ -376,20 +430,32 @@
   {/if}
 </div>
 
-<!-- Friends Plus Icon (top right) -->
-<button
-  class="friends-btn"
-  aria-label="Friends"
-  title="Friends"
-  on:click={() => goto('/friends')}
->
-  +
-  <span class="label">Friends</span>
-</button>
+<!-- Top right: Add Friends + Daily free play -->
+<div class="top-right-actions">
+  <button
+    class="friends-btn"
+    aria-label="Friends"
+    title="Friends"
+    on:click={() => goto('/friends')}
+  >
+    +
+    <span class="label">Friends</span>
+  </button>
+  <button
+    class="daily-free-play-btn"
+    aria-label="Daily free play"
+    title="Daily free play – one free round per game"
+    on:click={() => goto('/daily')}
+  >
+    🎮
+    <span class="label">Daily free play</span>
+  </button>
+</div>
 
 <!-- Journey Button (bottom right, next to upload) -->
 <button
   class="journey-btn"
+  class:locked={dailyFreePlayOnly}
   aria-label="Journey"
   title="Your Journey"
   on:click={() => goto('/journey')}
@@ -414,6 +480,7 @@
 <!-- Floating Upload FAB (bottom right) -->
 <button
   class="fab"
+  class:locked={dailyFreePlayOnly}
   aria-label="Upload"
   title="Upload"
   on:click={() => goto('/upload')}

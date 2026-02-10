@@ -6,6 +6,7 @@
   import { cubicOut } from 'svelte/easing';
   import { getUserKey } from '$lib/userKey';
   import { lastFrQuizDetails } from '$lib/quizDetailsStore';
+  import { markPlayedIfPending } from '$lib/dailyFreePlay';
 
   let score = 0;
   let total = 0;
@@ -14,7 +15,7 @@
 
   onMount(() => {
     document.title = 'Recognition Results – AboutFace';
-    
+    markPlayedIfPending(); // mark daily free play as completed when they reach results
     const userKey = getUserKey();
 
     // Read from user-specific keys only

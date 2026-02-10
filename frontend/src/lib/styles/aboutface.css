@@ -8,16 +8,15 @@
   --af-record-red: #ef4444;
 }
 
-/* Full-viewport dark background for mirroring pages */
+/* Full-viewport background for mirroring pages – same art as rest of app */
 .mirroring-root {
   position: fixed;
   inset: 0;
   min-height: 100vh;
-  background: linear-gradient(
-    180deg,
-    var(--af-dark-navy) 0%,
-    var(--af-deep-blue) 50%,
-    var(--af-dark-navy) 100%
-  );
+  background-image: url('/web.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--af-dark-navy);
   overflow: hidden;
 }

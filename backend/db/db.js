@@ -733,10 +733,15 @@ async function createUser({ email, password, role, accessLevel }) {
     
     if (usePostgres) {
       console.log('[createUser] Using PostgreSQL');
-      const result = await pool.query(
-        'INSERT INTO users (email, password, role, access_level) VALUES ($1, $2, $3, $4) RETURNING id, email, role, access_level',
-        [e, password, userRole, level]
-      );
+      // If table has username column (NOT NULL), set it to email so constraint is satisfied
+      const hasUsername = (await pool.query(
+        `SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'username' LIMIT 1`
+      )).rows.length > 0;
+      const insertQuery = hasUsername
+        ? 'INSERT INTO users (email, password, role, access_level, username) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role, access_level'
+        : 'INSERT INTO users (email, password, role, access_level) VALUES ($1, $2, $3, $4) RETURNING id, email, role, access_level';
+      const insertParams = hasUsername ? [e, password, userRole, level, e] : [e, password, userRole, level];
+      const result = await pool.query(insertQuery, insertParams);
       const row = result.rows[0];
       console.log('[createUser] User created, ID:', row.id, 'Role:', row.role, 'AccessLevel:', row.access_level);
       return { id: Number(row.id), email: row.email, role: row.role, access_level: row.access_level };

@@ -2,639 +2,592 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { apiFetch } from '$lib/api';
-  import { fade, fly } from 'svelte/transition';
+  import { fade } from 'svelte/transition';
 
-  let email = '';
-  let password = '';
+  type UserType = 'myself' | 'my_child' | 'my_student' | 'someone_else';
+  type StepId =
+    | 'ageOver18'
+    | 'email'
+    | 'password'
+    | 'userName'
+    | 'beneficiaryName'
+    | 'birthdayOptional'
+    | 'teacherOptional'
+    | 'doctorOptional'
+    | 'parentOptional'
+    | 'canRead'
+    | 'isVerbal'
+    | 'goals';
+
+  const GOALS: { id: string; label: string; subtitle: string }[] = [
+    { id: 'just_try', label: 'Just here to try', subtitle: 'Daily free round of each game' },
+    { id: 'learn_emotions', label: 'Learn to Recognize Emotions', subtitle: 'Start free trial' },
+    { id: 'join_pro', label: 'Join AboutFace Pro!', subtitle: 'Membership Only' }
+  ];
+
+  function stepsFor(userType: UserType): StepId[] {
+    switch (userType) {
+      case 'myself':
+      case 'someone_else':
+        return ['ageOver18', 'userName', 'email', 'password', 'goals'];
+      case 'my_child':
+        return ['email', 'password', 'beneficiaryName', 'birthdayOptional', 'teacherOptional', 'doctorOptional', 'canRead', 'isVerbal', 'goals'];
+      case 'my_student':
+        return ['email', 'password', 'beneficiaryName', 'birthdayOptional', 'parentOptional', 'doctorOptional', 'canRead', 'isVerbal', 'goals'];
+      default:
+        return ['ageOver18', 'userName', 'email', 'password', 'goals'];
+    }
+  }
+
+  function skippable(step: StepId): boolean {
+    return ['birthdayOptional', 'teacherOptional', 'doctorOptional', 'parentOptional'].includes(step);
+  }
+
+  $: userTypeRaw = $page.url.searchParams.get('type') || 'myself';
+  $: userType = (userTypeRaw === 'child' ? 'my_child' : userTypeRaw) as UserType;
+  $: steps = stepsFor(userType);
+  $: stepIndex = Math.max(0, Math.min(stepIdx, steps.length - 1));
+  $: currentStep = steps[stepIndex] ?? steps[0] ?? 'ageOver18';
+
+  let stepIdx = 0;
   let error = '';
   let loading = false;
-  let cardEl: HTMLDivElement | null = null;
-  let showPassword = false;
-  // account type
-  let accountType: 'personal' | 'organization' = 'personal';
-  let orgName = '';
-  let orgDescription = '';
-  
-  // Registration type from query param
-  $: registrationType = $page.url.searchParams.get('type') || 'myself';
-  $: isChildRegistration = registrationType === 'child';
-
-  // terms and modal
-  let accepted = false;
+  let acceptedTerms = false;
   let termsOpen = false;
 
-  // motion and pointer checks for tilt
-  let motionOK = true;
-  let finePointer = true;
-  if (typeof window !== 'undefined') {
-    motionOK    = matchMedia('(prefers-reduced-motion: no-preference)').matches;
-    finePointer = matchMedia('(pointer: fine)').matches;
-  }
+  // Form data
+  let isOver18: boolean | null = null;
+  let userName = '';
+  let beneficiaryName = '';
+  let email = '';
+  let password = '';
+  let showPassword = false;
+  let birthday = '';
+  let teacherEmail = '';
+  let doctorEmail = '';
+  let doctorName = '';
+  let parentName = '';
+  let parentEmail = '';
+  let isLiterate: boolean | null = null;
+  let isVerbal: boolean | null = null;
+  let goal: string = '';
 
-  let rafId = 0;
-  function handleTilt(e: MouseEvent) {
-    if (!cardEl || !motionOK || !finePointer) return;
-    const r = cardEl.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width;
-    const py = (e.clientY - r.top) / r.height;
-
-    const ry = (px - 0.5) * 5;
-    const rx = (0.5 - py) * 3;
-    const gx = px * 100;
-    const gy = py * 100;
-
-    if (!rafId) {
-      rafId = requestAnimationFrame(() => {
-        cardEl!.style.setProperty('--rx', rx.toFixed(2) + 'deg');
-        cardEl!.style.setProperty('--ry', ry.toFixed(2) + 'deg');
-        cardEl!.style.setProperty('--gx', gx.toFixed(1) + '%');
-        cardEl!.style.setProperty('--gy', gy.toFixed(1) + '%');
-        rafId = 0;
-      });
+  function promptFor(step: StepId): string {
+    switch (step) {
+      case 'beneficiaryName':
+        return userType === 'my_student' ? "What is Your Student's Name" : "What is Your Child's Name";
+      case 'birthdayOptional':
+        return userType === 'my_student' ? "What is Your Student's Birthday (optional)" : "What is Your Child's Birthday (optional)";
+      case 'teacherOptional':
+        return "Your Child's Teacher (optional)";
+      case 'doctorOptional':
+        return userType === 'my_student' ? 'Doctor Information (optional)' : "Your Child's Doctor (optional)";
+      case 'parentOptional':
+        return 'Parent Information (optional)';
+      case 'canRead':
+        return userType === 'my_student' ? 'Can your Student Read?' : 'Can your Child Read?';
+      case 'isVerbal':
+        return userType === 'my_student' ? 'Is Your Student Verbal?' : 'Is Your Child Verbal?';
+      case 'goals':
+        return userType === 'my_student' ? 'What are your Goals for your Student' : userType === 'my_child' ? 'What are your Goals for your Child' : 'What are your Goals';
+      case 'ageOver18':
+        return 'Are you over 18?';
+      case 'email':
+        return 'Enter an Email Address';
+      case 'password':
+        return 'Create a Password';
+      case 'userName':
+        return 'What is Your Name';
+      default:
+        return step;
     }
   }
 
-  function resetTilt() {
-    if (!cardEl) return;
-    cardEl.style.setProperty('--rx', '0deg');
-    cardEl.style.setProperty('--ry', '0deg');
-  }
-
-  // Button ripple action
-  function ripple(node: HTMLElement) {
-    function onClick(e: MouseEvent) {
-      const rect = node.getBoundingClientRect();
-      const d = Math.max(rect.width, rect.height);
-      const x = e.clientX - rect.left - d / 2;
-      const y = e.clientY - rect.top - d / 2;
-      const span = document.createElement('span');
-      span.className = 'ripple';
-      span.style.width = span.style.height = `${d}px`;
-      span.style.left = `${x}px`;
-      span.style.top = `${y}px`;
-      node.appendChild(span);
-      setTimeout(() => span.remove(), 600);
-    }
-    node.addEventListener('click', onClick);
-    return { destroy: () => node.removeEventListener('click', onClick) };
-  }
-
-  async function handleCreate(e: Event) {
-    e.preventDefault();
+  function validateStep(): boolean {
     error = '';
-    const u = email.trim();
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const emailCheck =  emailRegex.test(u);
+    switch (currentStep) {
+      case 'ageOver18':
+        if (isOver18 === null) { error = 'Please select Yes or No'; return false; }
+        break;
+      case 'email':
+        const e = email.trim();
+        if (!e) { error = 'Please enter an email'; return false; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { error = 'Please enter a valid email'; return false; }
+        break;
+      case 'password':
+        if (password.length < 6) { error = 'Password must be at least 6 characters'; return false; }
+        break;
+      case 'userName':
+        if (!userName.trim()) { error = 'Please enter your name'; return false; }
+        break;
+      case 'beneficiaryName':
+        if (!beneficiaryName.trim()) { error = 'Please enter the name'; return false; }
+        break;
+      case 'canRead':
+        if (isLiterate === null) { error = 'Please select Yes or No'; return false; }
+        break;
+      case 'isVerbal':
+        if (isVerbal === null) { error = 'Please select Yes or No'; return false; }
+        break;
+      case 'goals':
+        if (!goal) { error = 'Please select a goal'; return false; }
+        if (!acceptedTerms) { error = 'Please accept the Terms and Conditions'; return false; }
+        break;
+      default:
+        break;
+    }
+    return true;
+  }
 
-    const p = password;
-    if (!u || !p) {
-      error = 'Please enter an email and password.';
-      bump();
-      return;
-    }
-    if (!emailCheck) {
-      error = 'Please enter a valid email.';
-      bump();
-      return;
-    }
-    if (!accepted) {
-      error = 'Please accept the Terms and Conditions.';
-      bump();
-      return;
-    }
-    if (accountType === 'organization' && (!orgName || orgName.trim().length < 2)) {
-      error = 'Please enter an organization name.';
-      bump();
-      return;
-    }
+  function goBack() {
+    error = '';
+    if (stepIndex > 0) stepIdx--;
+    else goto('/register');
+  }
 
+  function nextStep() {
+    if (!validateStep()) return;
+    if (stepIndex < steps.length - 1) stepIdx++;
+  }
+
+  const SERVICES_URL = 'https://www.social-q.net/services';
+
+  async function submit() {
+    if (!validateStep()) return;
     loading = true;
+    error = '';
+
+    const e = email.trim().toLowerCase();
+    const profile: Record<string, unknown> = {
+      user_type: userType,
+      goal: goal || null
+    };
+    if (isOver18 !== null) profile.is_over_18 = isOver18;
+    if (isVerbal !== null) profile.is_verbal = isVerbal;
+    if (isLiterate !== null) profile.is_literate = isLiterate;
+    if (beneficiaryName.trim()) profile.beneficiary_name = beneficiaryName.trim();
+    else if (userName.trim()) profile.beneficiary_name = userName.trim();
+    if (birthday.trim()) profile.birthday = birthday.trim();
+    if (teacherEmail.trim()) profile.teacher_email = teacherEmail.trim();
+    if (doctorEmail.trim()) profile.doctor_email = doctorEmail.trim();
+    if (doctorName.trim()) profile.doctor_name = doctorName.trim();
+    if (parentName.trim()) profile.parent_name = parentName.trim();
+    if (parentEmail.trim()) profile.parent_email = parentEmail.trim();
+
     try {
-      // Step 1: Register with backend
       const res = await apiFetch('/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: u, password: p })
+        body: JSON.stringify({ email: e, password, profile })
       });
       const data = await res.json().catch(() => ({}));
-      
-      if (res.ok && (data.ok || data.success)) {
-        // Store JWT token for API authentication
+
+      if (res.ok && (data.ok || data.user)) {
         if (data.token && typeof window !== 'undefined') {
           localStorage.setItem('auth_token', data.token);
-          console.log('[create-account] Stored JWT token');
+          localStorage.setItem('email', data.user?.email ?? e);
+          if (data.user?.id != null) localStorage.setItem('userId', String(data.user.id));
         }
-        
-        // Step 2: Immediately create Prisma user so they have a 9-digit ID and are searchable
-        let syncData: any = null;
         try {
-          const syncRes = await apiFetch('/api/sync-user', {
+          await apiFetch('/api/sync-user', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              email: u,
-              backendUserId: data.user?.id,
-              password: p // Include password so it's stored correctly in Prisma
-            })
+            body: JSON.stringify({ email: e, backendUserId: data.user?.id, password })
           });
-          syncData = await syncRes.json().catch(() => ({}));
-          
-          if (syncData.ok) {
-            console.log('[create-account] Prisma user synced with ID:', syncData.user?.id);
-          } else {
-            console.warn('[create-account] Failed to sync Prisma user:', syncData.error);
-            // Continue anyway - user will be created lazily on first access
-          }
-        } catch (syncError) {
-          console.warn('[create-account] Error syncing Prisma user:', syncError);
-          // Continue anyway - user will be created lazily on first access
+        } catch (_) {}
+        // Learn to Recognize Emotions / Join AboutFace Pro → account created with daily free play, then send to services
+        if (goal === 'learn_emotions' || goal === 'join_pro') {
+          window.location.href = SERVICES_URL;
+        } else {
+          goto('/dashboard');
         }
-        
-        // Auto-login after successful registration
-        // The backend registration already sets session cookies, so we can go straight to dashboard
-        const createdEmail = data.user?.email ?? email;
-        const createdId = data.user?.id ?? null;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('email', createdEmail);
-          if (createdId != null) localStorage.setItem('userId', String(createdId));
-        }
-        // If organization account selected, request org creation (pending approval)
-        if (accountType === 'organization') {
-          try {
-            // Wait a moment for Prisma user sync to complete
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            const orgRes = await apiFetch('/api/organizations', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: orgName.trim(), description: orgDescription.trim() || undefined })
-            });
-            const orgData = await orgRes.json().catch(() => ({}));
-            if (orgData.ok && orgData.organization?.id) {
-              // Redirect directly to the organization dashboard
-              console.log('[create-account] Organization created, redirecting to:', orgData.organization.id);
-              goto(`/org/${orgData.organization.id}/dashboard`);
-              return;
-            } else {
-              console.warn('[create-account] Organization create failed:', orgData.error);
-              // Still redirect to org hub, but show error
-              error = orgData.error || 'Failed to create organization';
-            }
-          } catch (e: any) {
-            console.warn('[create-account] Organization create error:', e);
-            error = e?.message || 'Failed to create organization';
-          }
-          // If we get here, org creation failed - send them to Org hub
-          goto('/org');
-          return;
-        }
-
-        // Otherwise redirect based on role (new users are personal by default)
-        const userRole = (typeof syncData === 'object' && syncData?.user?.role) ? syncData.user.role : 'personal';
-        goto(userRole === 'admin' ? '/admin' : '/dashboard');
-      } else {
-        error = data.error || `Registration failed (HTTP ${res.status})`;
-        bump();
+        return;
       }
-    } catch {
+      error = data.error || `Registration failed (${res.status})`;
+    } catch (_) {
       error = 'Network error';
-      bump();
     } finally {
       loading = false;
     }
   }
 
-  function bump() {
-    if (!cardEl) return;
-    cardEl.classList.remove('shake');
-    void cardEl.offsetWidth;
-    cardEl.classList.add('shake');
+  function ripple(e: MouseEvent) {
+    const btn = e.currentTarget as HTMLElement;
+    const rect = btn.getBoundingClientRect();
+    const d = Math.max(rect.width, rect.height);
+    const span = document.createElement('span');
+    span.className = 'ripple';
+    span.style.width = span.style.height = d + 'px';
+    span.style.left = (e.clientX - rect.left - d / 2) + 'px';
+    span.style.top = (e.clientY - rect.top - d / 2) + 'px';
+    btn.appendChild(span);
+    span.addEventListener('animationend', () => span.remove(), { once: true });
   }
 </script>
 
 <svelte:head>
-  <title>Create Account • SocialQ</title>
+  <title>Create Account • AboutFace</title>
 </svelte:head>
 
 <style>
-  .blobs { position: fixed; inset: 0; pointer-events: none; }
-
-  .auth-wrap{
+  .onboarding-stage {
     position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: 24px;
-    z-index: 1;
-    perspective: 1000px; /* tilt depth */
-  }
-
-  .card{
-    width: 100%;
-    max-width: 440px;
-    padding: 32px;
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(18px);
-    border-radius: 18px;
-    box-shadow: 0 14px 48px rgba(0,0,0,.18);
-    text-align: center;
-    box-sizing: border-box;
-    will-change: transform, opacity;
-    transform-style: preserve-3d;
-    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-    transition: transform .12s ease, box-shadow .2s ease;
-    position: relative;
-  }
-
-  /* soft glare */
-  .card::before{
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: radial-gradient(300px circle at var(--gx,50%) var(--gy,50%), rgba(255,255,255,.28), transparent 60%);
-    opacity: 0;
-    transition: opacity .18s ease;
-  }
-  .card:hover::before{ opacity: 1; }
-  .card:hover{ box-shadow: 0 18px 56px rgba(0,0,0,.28); }
-
-  .title{
-    font-size: 3.2rem;
-    margin-bottom: 30px;
-    font-family: 'Georgia', serif;
-    color: white;
-    -webkit-text-stroke: 2px rgba(0,0,0,0.5);
-    text-shadow: 0 10px 10px rgba(0,0,0,0.4);
-  }
-
-  form{
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    margin-top: 6px;
-    padding: 0 1rem;
-    box-sizing: border-box;
+    /* Background art (web.png) with dark overlay so it shows through */
+    background-image: linear-gradient(
+      180deg,
+      rgba(15, 20, 46, 0.5) 0%,
+      rgba(26, 31, 71, 0.55) 50%,
+      rgba(15, 20, 46, 0.5) 100%
+    ), url('/web.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    isolation: isolate;
   }
 
-  .input{
+  .scroll-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 32px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-content {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    opacity: 1;
+    flex-shrink: 0;
+  }
+
+  .speech-bubble {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 8px;
+  }
+  .speech-bubble img {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+  }
+  .speech-bubble .prompt {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #e8c547;
+    text-align: center;
+    margin: 0;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .input-group {
+    width: 100%;
+    max-width: 320px;
+  }
+  .input-group label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.85);
+    margin-bottom: 8px;
+  }
+  .input {
     width: 100%;
     padding: 12px 14px;
     border-radius: 12px;
-    border: 1.5px solid rgba(17,17,17,.18);
-    background: rgba(255,255,255,.9);
-    font-size: 16px;
-    outline: none;
-    transition: border-color .2s, box-shadow .2s, transform .12s ease;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.9);
+    font-size: 1rem;
     box-sizing: border-box;
   }
-  .input::placeholder{ color:#9ca3af; }
-  .input:focus{
-    border-color:#4f46e5;
-    box-shadow:0 0 0 4px rgba(79,70,229,.15);
-    transform: translateY(-1px);
-  }
-
-  .password-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .password-wrapper .input {
-    padding-right: 45px;
-  }
-
-  .password-toggle {
+  .input::placeholder { color: #9ca3af; }
+  .pw-wrap { position: relative; }
+  .pw-wrap .input { padding-right: 44px; }
+  .pw-toggle {
     position: absolute;
-    right: 12px;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px 8px;
-    font-size: 18px;
+    font-size: 1rem;
+    opacity: 0.7;
+  }
+
+  .yes-no-row {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.6;
-    transition: opacity 0.2s;
+    gap: 16px;
+    width: 100%;
+    max-width: 320px;
   }
-
-  .password-toggle:hover {
-    opacity: 1;
+  .yn-btn {
+    flex: 1;
+    height: 52px;
+    border-radius: 14px;
+    border: 2px solid rgba(115, 166, 242, 0.6);
+    background: rgba(115, 166, 242, 0.25);
+    color: white;
+    font-size: 1rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
   }
-
-  .password-toggle:active {
-    transform: scale(0.95);
+  .yn-btn.selected {
+    background: rgba(115, 166, 242, 0.9);
+    border-color: rgba(115, 166, 242, 1);
   }
+  .yn-btn:hover { background: rgba(115, 166, 242, 0.4); }
 
-  .terms{
-    display:flex;
-    align-items:center;
-    text-align:left;
-    gap:10px;
-    font-size: 14px;
-    color:#111;
-    background: rgba(255,255,255,.85);
-    border: 1px solid rgba(17,17,17,.12);
-    padding: 10px 12px;
-    border-radius: 12px;
-  }
-  .terms input{ width:18px; height:18px; }
-  .terms a{ color:#4f46e5; text-decoration: underline; cursor: pointer; }
-
-  .btn{
-    position: relative;
-    overflow: hidden;
-    display:block;
-    width:100%;
-    padding:12px 16px;
-    border-radius:9999px;
-    font-weight:800;
-    font-size:16px;
-    cursor:pointer;
-    border:2px solid #111;
-    background:#fff;
-    color:#111;
-    transition:transform .05s ease, filter .2s ease, background .2s ease;
-    box-sizing:border-box;
-  }
-  .btn:hover{ filter:brightness(1.03); }
-  .btn:active{ transform:translateY(1px); }
-
-  .btn.primary{
-    background:#4f46e5;
-    border-color:#4f46e5;
-    color:#fff;
-  }
-  .btn[disabled]{ opacity:.75; cursor:not-allowed; }
-
-  /* Ripple */
-  .ripple{
-    position:absolute;
-    border-radius:50%;
-    transform: scale(0);
-    animation: ripple .6s ease-out forwards;
-    background: rgba(255,255,255,.55);
-    pointer-events:none;
-  }
-  @keyframes ripple{ to { transform: scale(4); opacity: 0; } }
-
-  /* Spinner inside primary button */
-  .spinner{
-    width: 16px;
-    height: 16px;
-    margin-right: 8px;
-    border: 2px solid transparent;
-    border-top-color: #fff;
-    border-right-color: #fff;
-    border-radius: 50%;
-    display: inline-block;
-    vertical-align: -3px;
-    animation: spin .6s linear infinite;
-  }
-  @keyframes spin{ to { transform: rotate(360deg); } }
-
-  .muted{ margin-top:8px; font-size:13px; color:#6b7280; }
-  .error{ margin-top:10px; color:#b91c1c; font-weight:700; min-height: 1.2em; }
-
-  /* Shake on error */
-  .shake{ animation: shake .5s ease; }
-  @keyframes shake{
-    0%,100%{ transform: translateX(0); }
-    20%{ transform: translateX(-6px); }
-    40%{ transform: translateX(6px); }
-    60%{ transform: translateX(-4px); }
-    80%{ transform: translateX(4px); }
-  }
-
-  /* modal */
-  .modal-backdrop{
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.35);
-    display: grid;
-    place-items: center;
-    z-index: 3;
-    padding: 16px;
-  }
-  .modal{
-    width: min(900px, 92vw);
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.35);
-    padding: 20px;
-    text-align: left;
-    max-height: 90vh;
+  .goals-list {
+    width: 100%;
+    max-width: 320px;
     display: flex;
     flex-direction: column;
+    gap: 12px;
   }
-  .modal h3{ margin: 0 0 8px; }
-  .modal-body{
-    color:#111; line-height:1.5;
-    overflow: auto; /* scroll long policy */
-    max-height: 75vh;
-    padding-right: 4px;
+  .goal-btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: 2px solid rgba(115, 166, 242, 0.6);
+    background: rgba(115, 166, 242, 0.25);
+    color: white;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
   }
-  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top: 14px; }
+  .goal-btn:hover { background: rgba(115, 166, 242, 0.4); }
+  .goal-btn.selected {
+    background: rgba(115, 166, 242, 0.9);
+    border-color: rgba(115, 166, 242, 1);
+  }
+  .goal-btn .label { font-size: 1rem; font-weight: 600; display: block; }
+  .goal-btn .sub { font-size: 0.75rem; color: rgba(255,255,255,0.85); margin-top: 4px; }
+
+  .terms-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.9);
+    margin-top: 8px;
+  }
+  .terms-row input { width: 18px; height: 18px; }
+  .terms-row a { color: #73a6f2; text-decoration: underline; cursor: pointer; }
+
+  .bottom-bar {
+    padding: 20px 24px max(24px, env(safe-area-inset-bottom));
+    background: #1a1f47;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .bottom-bar .row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: center;
+  }
+  .sec-btn {
+    flex: 1;
+    max-width: 160px;
+    height: 46px;
+    border-radius: 9999px;
+    border: 1.5px solid rgba(115, 166, 242, 0.6);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .sec-btn:hover { background: rgba(115, 166, 242, 0.2); }
+  .pri-btn {
+    flex: 1;
+    max-width: 200px;
+    height: 48px;
+    border-radius: 9999px;
+    border: none;
+    background: rgba(115, 166, 242, 0.95);
+    color: white;
+    font-size: 1rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: filter 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .pri-btn:hover:not(:disabled) { filter: brightness(1.05); }
+  .pri-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+  .error-msg { color: #e57373; font-size: 0.875rem; font-weight: 600; margin-top: 8px; }
+  .back-link { background: none; border: none; font-size: 0.875rem; color: rgba(255,255,255,0.85); margin-top: 12px; cursor: pointer; text-decoration: underline; }
+  .ripple { position: absolute; border-radius: 50%; background: rgba(255,255,255,0.5); transform: scale(0); animation: rip 0.6s ease-out forwards; pointer-events: none; }
+  @keyframes rip { to { transform: scale(2.6); opacity: 0; } }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 10; padding: 16px;
+  }
+  .modal {
+    width: min(900px, 92vw); max-height: 90vh; background: #fff; border-radius: 16px; padding: 20px; overflow: auto;
+  }
+  .modal h3 { margin: 0 0 8px; }
+  .modal-body { line-height: 1.5; overflow: auto; max-height: 70vh; }
+  .modal-actions { margin-top: 14px; }
   .policy h4 { margin-top: 1rem; }
   .policy ul { padding-left: 1.2rem; }
-  .policy address { font-style: normal; line-height: 1.4; }
 </style>
 
-<!-- blobs -->
-<div class="blobs">
-  <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-  <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-  <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
-</div>
-
-<div class="auth-wrap">
-  <div
-    class="card"
-    bind:this={cardEl}
-    in:fly={{ y: 28, duration: 280, opacity: 0.25 }}
-    on:mousemove={handleTilt}
-    on:mouseleave={resetTilt}
-  >
-    <h2 class="title" in:fade={{ duration: 220 }}>
-      {isChildRegistration ? 'Register as your Child\'s Guardian' : 'Register as you...'}
-    </h2>
-
-    <form on:submit={handleCreate} autocomplete="on" aria-busy={loading}>
-      <input class="input" type="text" bind:value={email} placeholder="Email" required />
-      <div class="password-wrapper">
-        <input 
-          class="input" 
-          type={showPassword ? 'text' : 'password'} 
-          value={password}
-          on:input={(e) => password = e.currentTarget.value}
-          placeholder="Password" 
-          required 
-        />
-        <button
-          type="button"
-          class="password-toggle"
-          on:click={() => showPassword = !showPassword}
-          aria-label={showPassword ? 'Hide password' : 'Show password'}
-        >
-          {showPassword ? '👁️' : '👁️‍🗨️'}
-        </button>
+<div class="onboarding-stage">
+  <div class="scroll-area">
+    <div class="step-content">
+      <div class="speech-bubble">
+        <img src="/BUB1A.png" alt="" width="56" height="56" />
+        <p class="prompt">{promptFor(currentStep)}</p>
       </div>
 
-      <label class="terms">
-        <input type="checkbox" bind:checked={accepted} aria-label="Accept Terms and Conditions" />
-        <span>
-          I agree to the
-          <a href="#" on:click|preventDefault={() => (termsOpen = true)}>Terms and Conditions</a>
-        </span>
-      </label>
-
-      <div style="background: rgba(255,255,255,.85); border:1px solid rgba(17,17,17,.12); padding:12px; border-radius:12px; display:grid; gap:10px; text-align:left; color:#111;">
-        <div style="font-weight:700;">Account Type</div>
-        <label style="display:flex; align-items:center; gap:8px;">
-          <input type="radio" name="acctType" value="personal" checked={accountType === 'personal'} on:change={() => (accountType = 'personal')} />
-          <span>Personal</span>
-        </label>
-        <label style="display:flex; align-items:center; gap:8px;">
-          <input type="radio" name="acctType" value="organization" checked={accountType === 'organization'} on:change={() => (accountType = 'organization')} />
-          <span>Create an Organization (become Org Admin)</span>
-        </label>
-
-        {#if accountType === 'organization'}
-          <div style="display:grid; gap:10px; margin-top:6px;">
-            <input
-              class="input"
-              type="text"
-              placeholder="Organization name"
-              bind:value={orgName}
-              required
-            />
-            <input
-              class="input"
-              type="text"
-              placeholder="Organization description (optional)"
-              bind:value={orgDescription}
-            />
-            <div class="muted">Your organization will be pending until approved by a master admin.</div>
+      {#if currentStep === 'ageOver18'}
+        <div class="yes-no-row">
+          <button type="button" class="yn-btn" class:selected={isOver18 === true} on:click={() => { isOver18 = true; error = ''; if (stepIndex < steps.length - 1) stepIdx++; }}>Yes</button>
+          <button type="button" class="yn-btn" class:selected={isOver18 === false} on:click={() => { isOver18 = false; error = ''; if (stepIndex < steps.length - 1) stepIdx++; }}>No</button>
+        </div>
+        <button type="button" class="back-link" on:click={() => goto('/register')}>Back to Register</button>
+      {:else if currentStep === 'email'}
+        <div class="input-group">
+          <label>Email</label>
+          <input class="input" type="email" bind:value={email} placeholder="your@email.com" />
+        </div>
+      {:else if currentStep === 'password'}
+        <div class="input-group">
+          <label>Password</label>
+          <div class="pw-wrap">
+            <input class="input" type={showPassword ? 'text' : 'password'} value={password} on:input={(e) => password = e.currentTarget?.value ?? ''} placeholder="Min 6 characters" />
+            <button type="button" class="pw-toggle" on:click={() => showPassword = !showPassword} aria-label="Toggle password">{showPassword ? 'Hide' : 'Show'}</button>
           </div>
+        </div>
+      {:else if currentStep === 'userName'}
+        <div class="input-group">
+          <label>Your Name</label>
+          <input class="input" type="text" bind:value={userName} placeholder="Name" />
+        </div>
+      {:else if currentStep === 'beneficiaryName'}
+        <div class="input-group">
+          <label>{userType === 'my_student' ? "Student's Name" : "Child's Name"}</label>
+          <input class="input" type="text" bind:value={beneficiaryName} placeholder="Name" />
+        </div>
+      {:else if currentStep === 'birthdayOptional'}
+        <div class="input-group">
+          <label>Birthday (optional)</label>
+          <input class="input" type="date" bind:value={birthday} />
+        </div>
+      {:else if currentStep === 'teacherOptional'}
+        <div class="input-group">
+          <label>Teacher's Email (optional)</label>
+          <input class="input" type="email" bind:value={teacherEmail} placeholder="teacher@school.edu" />
+        </div>
+      {:else if currentStep === 'doctorOptional'}
+        <div class="input-group" style="display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <label>Doctor's Email (optional)</label>
+            <input class="input" type="email" bind:value={doctorEmail} placeholder="email" />
+          </div>
+          <div>
+            <label>Doctor's Name (optional)</label>
+            <input class="input" type="text" bind:value={doctorName} placeholder="Name" />
+          </div>
+        </div>
+      {:else if currentStep === 'parentOptional'}
+        <div class="input-group" style="display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <label>Parent Name (optional)</label>
+            <input class="input" type="text" bind:value={parentName} placeholder="Name" />
+          </div>
+          <div>
+            <label>Parent Email (optional)</label>
+            <input class="input" type="email" bind:value={parentEmail} placeholder="email" />
+          </div>
+        </div>
+      {:else if currentStep === 'canRead'}
+        <div class="yes-no-row">
+          <button type="button" class="yn-btn" class:selected={isLiterate === true} on:click={() => isLiterate = true}>Yes</button>
+          <button type="button" class="yn-btn" class:selected={isLiterate === false} on:click={() => isLiterate = false}>No</button>
+        </div>
+      {:else if currentStep === 'isVerbal'}
+        <div class="yes-no-row">
+          <button type="button" class="yn-btn" class:selected={isVerbal === true} on:click={() => isVerbal = true}>Yes</button>
+          <button type="button" class="yn-btn" class:selected={isVerbal === false} on:click={() => isVerbal = false}>No</button>
+        </div>
+      {:else if currentStep === 'goals'}
+        <div class="goals-list">
+          {#each GOALS as g}
+            <button type="button" class="goal-btn" class:selected={goal === g.id} on:click={() => goal = g.id}>
+              <span class="label">{g.label}</span>
+              <span class="sub">{g.subtitle}</span>
+            </button>
+          {/each}
+        </div>
+        <div class="terms-row">
+          <input type="checkbox" id="terms" bind:checked={acceptedTerms} />
+          <label for="terms">
+            I agree to the <a href="#" on:click|preventDefault={() => (termsOpen = true)}>Terms and Conditions</a>
+          </label>
+        </div>
+      {/if}
+
+      {#if error}<p class="error-msg">{error}</p>{/if}
+    </div>
+  </div>
+
+  <footer class="bottom-bar">
+    {#if currentStep !== 'ageOver18'}
+      <div class="row">
+        <button type="button" class="sec-btn" on:click={goBack}>Back</button>
+        {#if currentStep === 'goals'}
+          <button type="button" class="pri-btn" disabled={loading || !acceptedTerms || !goal} on:click={(ev) => { ripple(ev); submit(); }}>
+            {loading ? 'Creating…' : 'Create Account'}
+          </button>
+        {:else if skippable(currentStep)}
+          <button type="button" class="sec-btn" on:click={nextStep}>Next / Skip</button>
+        {:else}
+          <button type="button" class="pri-btn" on:click={(ev) => { ripple(ev); nextStep(); }}>Next</button>
         {/if}
       </div>
-
-      <button
-        use:ripple
-        type="submit"
-        class="btn primary"
-        disabled={loading || !accepted || (accountType === 'organization' && (!orgName || orgName.trim().length < 2))}
-      >
-        {#if loading}<span class="spinner" aria-hidden="true"></span>Creating…{:else}Create{/if}
-      </button>
-    </form>
-
-    {#if error}<div class="error">{error}</div>{/if}
-
-    <p class="muted">Have an account already?</p>
-    <button use:ripple class="btn" type="button" on:click={() => goto('/login')}>Back to Login</button>
-  </div>
+    {/if}
+  </footer>
 </div>
 
 {#if termsOpen}
   <div class="modal-backdrop" transition:fade on:click={() => (termsOpen = false)}>
-    <div
-      class="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tc-title"
-      on:click|stopPropagation
-    >
-      <h3 id="tc-title">SocialQ Privacy Policy</h3>
-
+    <div class="modal" role="dialog" aria-modal="true" on:click|stopPropagation>
+      <h3>Terms and Conditions / Privacy Policy</h3>
       <div class="modal-body">
         <article class="policy">
           <p><strong>Effective Date:</strong> August 29, 2025</p>
-
-          <h4>1. Introduction</h4>
-          <p>
-            SocialQ, Inc. (“SocialQ,” "we," "our," or "us") is committed to protecting the privacy of our users ("you").
-            This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our
-            website <a href="https://www.social-q.net" target="_blank" rel="noopener noreferrer">www.social-q.net</a> and use our services,
-            such as the mobile and web application known as AboutFace (the “Application,” or “AboutFace”).
-          </p>
-          <p>By accessing or using our services, you agree to the terms of this Privacy Policy. If you do not agree, please do not use our services.</p>
-
-          <h4>2. Information We Collect</h4>
-          <p>We may collect personal information that you voluntarily provide to us when you register on our site, place an order, subscribe to a newsletter, respond to a survey, fill out a form, or otherwise interact with our services. The types of personal information we may collect include:</p>
-          <ul>
-            <li><strong>Contact Information:</strong> Name, email address, mailing address, and phone number.</li>
-            <li><strong>Account Information:</strong> Username, password, and other registration details.</li>
-            <li><strong>Payment Information:</strong> Credit card numbers and other payment details (handled by a secure third-party processor).</li>
-            <li><strong>Demographic Information:</strong> Age, gender, and other demographic data.</li>
-            <li><strong>User Content:</strong> Any content you post, such as comments, reviews, or forum posts.</li>
-          </ul>
-          <p>We may also automatically collect certain information when you visit our website, including:</p>
-          <ul>
-            <li><strong>Log Data:</strong> IP address, browser type, device information, access times, and pages viewed.</li>
-            <li><strong>Usage Data:</strong> Information about how you use our services, such as the features you access and the time you spend on them.</li>
-            <li><strong>Cookies and Tracking Technologies:</strong> We use cookies, web beacons, and similar technologies to enhance your experience and analyze usage. You can control cookies through your browser settings.</li>
-          </ul>
-
-          <h4>3. How We Use Your Information</h4>
-          <ul>
-            <li>Provide, operate, and maintain our services.</li>
-            <li>Process and fulfill your orders and transactions.</li>
-            <li>Improve, personalize, and expand our services.</li>
-            <li>Understand and analyze how you use our services.</li>
-            <li>Communicate with you, including sending you updates, newsletters, and promotional materials.</li>
-            <li>Respond to your comments, questions, and requests.</li>
-            <li>Detect and prevent fraud and other malicious activities.</li>
-            <li>Comply with legal obligations.</li>
-          </ul>
-
-          <h4>4. How We Share Your Information</h4>
-          <ul>
-            <li><strong>With Service Providers:</strong> We may share your information with third-party vendors, consultants, and other service providers who perform services on our behalf, such as payment processing, data analysis, email delivery, and hosting services.</li>
-            <li><strong>For Business Transfers:</strong> In the event of a merger, acquisition, or sale of all or a portion of our assets, your information may be transferred to the new owner.</li>
-            <li><strong>For Legal Reasons:</strong> We may disclose your information if required to do so by law or in response to valid requests by public authorities (e.g., a court or government agency).</li>
-            <li><strong>With Your Consent:</strong> We may share your information with your explicit consent.</li>
-          </ul>
-
-          <h4>5. Your Choices and Rights</h4>
-          <ul>
-            <li><strong>Access:</strong> You have the right to request a copy of the personal data we hold about you.</li>
-            <li><strong>Correction:</strong> You can request that we correct any inaccurate or incomplete information.</li>
-            <li><strong>Deletion:</strong> You may request that we delete your personal data under certain circumstances.</li>
-            <li><strong>Objection:</strong> You may object to the processing of your data for specific purposes.</li>
-            <li><strong>Data Portability:</strong> You have the right to receive your data in a structured, commonly used, and machine-readable format.</li>
-            <li><strong>Unsubscribe:</strong> You can opt out of receiving promotional emails from us by following the unsubscribe instructions in those emails.</li>
-          </ul>
-
-          <h4>6. Data Security</h4>
-          <p>We implement reasonable security measures to protect your information from unauthorized access, alteration, disclosure, or destruction. However, please be aware that no method of transmission over the internet or electronic storage is 100% secure.</p>
-
-          <h4>7. Biometric Data Collection</h4>
-          <p>In order to <em>[clearly state the purpose, e.g., "verify your identity," "secure your account," or "enable facial recognition features"]</em>, we may collect, store, and use certain biometric data, including scans of your face geometry derived from the facial images you provide.</p>
-          <p><strong>How We Collect It:</strong> We collect this information directly from you when you <em>[describe the action, e.g., "upload a selfie for identity verification," "enroll in our facial recognition login feature," or "use a specific app function"]</em>.</p>
-          <p><strong>Purpose of Collection:</strong> We use this data solely for <em>[be very specific, e.g., "verifying your identity against the image on your government-issued ID," "authenticating your login to your account," or "providing the facial recognition feature you've opted into"]</em>. We do not use this data for any other commercial purposes, such as marketing or advertising.</p>
-          <p><strong>Data Security and Retention:</strong> We take reasonable security measures to protect your biometric data. We will not sell, lease, or trade your biometric data. We will retain your biometric data only for as long as is necessary to fulfill the purpose for which it was collected or as required by law. After this period, we will securely and permanently destroy the data.</p>
-          <p>By providing your facial image, you are giving us your explicit, informed consent to the collection, use, and storage of your biometric data as described in this policy. If you do not agree to this, please do not use the features that require biometric data.</p>
-
-          <h4>8. Children's Privacy</h4>
-          <p>Our services are only directed to individuals under the age of 18 with explicit informed consent from those individuals’ parents or guardians.</p>
-
-          <h4>9. Changes to This Privacy Policy</h4>
-          <p>We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the "Effective Date." We encourage you to review this policy periodically.</p>
-
-          <h4>10. Contact Us</h4>
-          <address>
-            <div>Email: <a href="mailto:info@social-q.net">info@social-q.net</a></div>
-            <div>Address: SocialQ, Inc.<br/>18 Via Lampara<br/>San Clemente, CA 92673</div>
-          </address>
+          <p>SocialQ, Inc. (“SocialQ”) is committed to protecting your privacy. By using AboutFace you agree to our Terms and Privacy Policy. We collect account information, usage data, and (where applicable) biometric data for the purposes stated in the policy. We do not sell your data. Contact: <a href="mailto:info@social-q.net">info@social-q.net</a>. Full policy available at signup.</p>
         </article>
       </div>
-
       <div class="modal-actions">
-        <button class="btn" type="button" on:click={() => (termsOpen = false)}>Close</button>
+        <button type="button" class="sec-btn" style="max-width: none;" on:click={() => (termsOpen = false)}>Close</button>
       </div>
     </div>
   </div>

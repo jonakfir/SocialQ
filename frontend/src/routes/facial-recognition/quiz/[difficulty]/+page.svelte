@@ -276,6 +276,25 @@
 
 <style>
 
+  .stage {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    background-image: linear-gradient(
+      180deg,
+      rgba(15, 20, 46, 0.5) 0%,
+      rgba(26, 31, 71, 0.55) 50%,
+      rgba(15, 20, 46, 0.5) 100%
+    ), url('/web.png');
+    background-size: 150%;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
   :root{
     --brand: #4f46e5;
     --brand-strong: #7c3aed;
@@ -300,7 +319,7 @@
   }
 
   .blob { position: fixed; z-index: 0; }
-  .dashboard-box.quiz-box { position: relative; z-index: 10; }
+  .dashboard-box.quiz-box { position: relative; z-index: 1; }
 
   /* MAIN CARD — slim, moved UP, still near bottom */
   .quiz-box {
@@ -537,17 +556,18 @@
   }
 </style>
 
-{#if loading}
-  <div class="dashboard-box quiz-box">Loading…</div>
-{:else if loadError}
-  <div class="dashboard-box quiz-box">Error: {loadError}</div>
-{:else}
-  <!-- blobs -->
-  <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-  <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-  <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
+<div class="stage">
+  {#if loading}
+    <div class="dashboard-box quiz-box">Loading…</div>
+  {:else if loadError}
+    <div class="dashboard-box quiz-box">Error: {loadError}</div>
+  {:else}
+    <!-- blobs -->
+    <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
+    <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
+    <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
 
-  <div class="media-row">
+    <div class="media-row">
     {#if difficulty === '5'}
       <div class="ring-wrap" title="Time left">
         <svg viewBox="0 0 64 64" class="ring" aria-hidden="true">
@@ -611,4 +631,5 @@
       </div>
     </div>
   {/if}
-{/if}
+  {/if}
+</div>

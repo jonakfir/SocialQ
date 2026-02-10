@@ -1,24 +1,24 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { fade } from 'svelte/transition';
+  import { onMount } from 'svelte';
 
-  let selectedOption: 'myself' | 'child' | 'someone-else' | null = null;
+  type RegOption = 'myself' | 'my_child' | 'my_student' | 'someone_else';
+  let selectedOption: RegOption | null = null;
   let appear = false;
 
-  function selectOption(option: 'myself' | 'child' | 'someone-else') {
+  onMount(() => { appear = true; });
+
+  function selectOption(option: RegOption) {
     selectedOption = option;
-    setTimeout(() => {
-      if (option === 'myself' || option === 'child') {
-        goto('/create-account?type=' + option);
-      } else {
-        // Someone else - email socialq
-        window.location.href = 'mailto:info@social-q.net?subject=AboutFace Registration Request';
-      }
-    }, 300);
+    setTimeout(() => goto('/create-account?type=' + option), 300);
   }
 
-  $: if (typeof window !== 'undefined') {
-    appear = true;
+  function backToHome() {
+    goto('/');
+  }
+
+  function goLogin() {
+    goto('/login');
   }
 </script>
 
@@ -27,117 +27,155 @@
 </svelte:head>
 
 <style>
-  @import '/static/style.css';
-
-  .blobs { position: fixed; inset: 0; pointer-events: none; }
-
-  .register-wrap {
+  /* Full viewport; background art shows through from body (web.png) */
+  .register-stage {
     position: fixed;
     inset: 0;
+    z-index: 10;
+    min-height: 100vh;
     display: grid;
     place-items: center;
-    padding: 24px;
-    z-index: 1;
+    overflow: auto;
+    /* Subtle overlay so background art (faces) stays visible */
+    background: linear-gradient(
+      180deg,
+      rgba(15, 20, 46, 0.35) 0%,
+      rgba(26, 31, 71, 0.45) 50%,
+      rgba(15, 20, 46, 0.35) 100%
+    );
+    padding: clamp(24px, 5vw, 48px);
   }
 
   .card {
-    width: 100%;
-    max-width: 440px;
-    padding: 32px;
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(18px);
-    border-radius: 18px;
-    box-shadow: 0 14px 48px rgba(0,0,0,.18);
+    width: min(480px, 92vw);
+    padding: clamp(28px, 6vw, 48px);
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
     text-align: center;
-    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+  }
+  .card.visible {
+    opacity: 1;
+    transform: translateY(0);
   }
 
-  .title {
-    font-size: 3.2rem;
-    margin-bottom: 30px;
-    font-family: 'Georgia', serif;
+  .brand {
+    font-size: clamp(1.75rem, 5vw, 2.25rem);
+    font-weight: 700;
+    font-family: Georgia, 'Times New Roman', serif;
     color: white;
-    -webkit-text-stroke: 2px rgba(0,0,0,0.5);
-    text-shadow: 0 10px 10px rgba(0,0,0,0.4);
+    margin: 0 0 6px;
+    letter-spacing: -0.02em;
+    -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.35);
+    text-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
   }
 
   .question {
-    font-size: 1.2rem;
+    font-size: clamp(1rem, 2.5vw, 1.125rem);
     font-weight: 600;
-    color: #111;
-    margin-bottom: 24px;
+    color: #374151;
+    margin: 0 0 24px;
+    line-height: 1.35;
+  }
+
+  .bub-img {
+    width: 88px;
+    height: 88px;
+    object-fit: contain;
+    margin: 0 auto 28px;
+    display: block;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
   }
 
   .options {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 20px;
   }
 
   .option-btn {
     display: block;
     width: 100%;
-    padding: 16px 20px;
-    border-radius: 9999px;
-    font-weight: 800;
-    font-size: 16px;
+    height: 52px;
+    border: none;
+    border-radius: 14px;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: white;
     cursor: pointer;
-    border: 2px solid #4f46e5;
     background: #4f46e5;
-    color: #fff;
-    transition: transform .12s ease, filter .2s ease, box-shadow .2s ease;
-    box-sizing: border-box;
+    border: 2px solid #4f46e5;
+    box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+    transition: filter 0.2s, transform 0.1s, box-shadow 0.2s;
   }
   .option-btn:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 12px 32px rgba(79,70,229,.45);
-    transform: translateY(-1px);
+    filter: brightness(1.08);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(79, 70, 229, 0.45);
   }
   .option-btn:active {
-    transform: translateY(0) scale(.98);
+    transform: translateY(0) scale(0.98);
   }
 
-  .back-btn {
-    margin-top: 20px;
-    padding: 10px 16px;
-    background: transparent;
-    border: 1px solid rgba(17,17,17,.2);
-    border-radius: 9999px;
-    color: #111;
-    cursor: pointer;
-    font-size: 14px;
-    transition: background .2s ease;
+  .links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
   }
-  .back-btn:hover {
-    background: rgba(17,17,17,.05);
+  .link-btn {
+    padding: 12px 20px;
+    background: transparent;
+    border: 1.5px solid rgba(55, 65, 81, 0.4);
+    border-radius: 9999px;
+    color: #374151;
+    cursor: pointer;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    width: 100%;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .link-btn:hover {
+    background: rgba(55, 65, 81, 0.08);
+    border-color: rgba(55, 65, 81, 0.6);
+  }
+  .link-btn.primary-link {
+    border-color: rgba(79, 70, 229, 0.5);
+    color: #4f46e5;
+  }
+  .link-btn.primary-link:hover {
+    background: rgba(79, 70, 229, 0.1);
+    border-color: #4f46e5;
   }
 </style>
 
-<div class="blobs">
-  <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
-  <div class="blob blob5"></div><div class="blob blob6"></div><div class="blob blob7"></div><div class="blob blob8"></div>
-  <div class="blob blob9"></div><div class="blob blob10"></div><div class="blob blob11"></div><div class="blob blob12"></div>
-</div>
+<div class="register-stage">
+  <div class="card" class:visible={appear}>
+    <h1 class="brand">AboutFace</h1>
+    <p class="question">Who needs help with facial cues?</p>
 
-<div class="register-wrap">
-  <div class="card" in:fade={{ duration: 280, opacity: 0.25 }}>
-    <h2 class="title" in:fade={{ duration: 220 }}>Register</h2>
-    <p class="question" in:fade={{ duration: 240, delay: 100 }}>Who are you Signing Up for?</p>
-    
-    <div class="options" in:fade={{ duration: 260, delay: 150 }}>
-      <button class="option-btn" on:click={() => selectOption('myself')} in:fade={{ duration: 200, delay: 200 }}>
-        Myself
-      </button>
-      <button class="option-btn" on:click={() => selectOption('child')} in:fade={{ duration: 200, delay: 250 }}>
-        My Child
-      </button>
-      <button class="option-btn" on:click={() => selectOption('someone-else')} in:fade={{ duration: 200, delay: 300 }}>
-        Someone Else
-      </button>
+    <img src="/BUB1A.png" alt="" class="bub-img" width="88" height="88" />
+
+    <div class="options">
+      <button type="button" class="option-btn" on:click={() => selectOption('myself')}>Myself</button>
+      <button type="button" class="option-btn" on:click={() => selectOption('my_child')}>My Child</button>
+      <button type="button" class="option-btn" on:click={() => selectOption('my_student')}>My Student / Patient</button>
+      <button type="button" class="option-btn" on:click={() => selectOption('someone_else')}>Someone Else</button>
     </div>
 
-    <button class="back-btn" on:click={() => goto('/login')} in:fade={{ duration: 200, delay: 350 }}>
-      Back to Login
-    </button>
+    <div class="links">
+      <button type="button" class="link-btn primary-link" on:click={goLogin}>
+        Already have an account? Log in
+      </button>
+      <button type="button" class="link-btn" on:click={backToHome}>Back to Home</button>
+    </div>
   </div>
 </div>
