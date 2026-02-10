@@ -9,11 +9,14 @@
 
   export let data;
 
-  // Hide header on these routes
+  // Hide header on these routes (mirroring game and results use their own chrome)
   const HIDE = new Set(['', '/', '/login', '/create-account', '/create_account']);
-  $: hideHeader = HIDE.has(($page.url.pathname || '/').replace(/\/$/, '').toLowerCase()) || 
+  $: path = ($page.url.pathname || '/').replace(/\/$/, '') || '/';
+  $: hideHeader = HIDE.has(path.toLowerCase()) ||
                   ($page.url.pathname || '/').startsWith('/admin') ||
-                  ($page.url.pathname || '/').startsWith('/org/');
+                  ($page.url.pathname || '/').startsWith('/org/') ||
+                  path === '/mirroring/mirroring' ||
+                  path === '/mirroring/results';
   
   // Apply dark mode based on user preference
   function applyDarkMode(enabled: boolean) {

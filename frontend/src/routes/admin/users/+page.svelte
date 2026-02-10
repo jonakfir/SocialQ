@@ -560,7 +560,7 @@
               <td class="email-cell">
                 {user.username}
                 {#if user.organizationsCreated && user.organizationsCreated.length > 0}
-                  <div style="font-size: 0.75rem; color: #6b7280; margin-top: 2px;">
+                  <div style="font-size: 0.75rem; color: rgba(255,255,255,0.9); margin-top: 2px;">
                     Created {user.organizationsCreated.length} org{user.organizationsCreated.length !== 1 ? 's' : ''}
                     {#each user.organizationsCreated as org}
                       <div style="margin-left: 0.5rem; font-size: 0.7rem;">
@@ -752,7 +752,9 @@
   .primary-btn { padding: 0.5rem 0.875rem; border-radius: 6px; border: 1px solid #e5e7eb; background: linear-gradient(135deg, #4f46e5, #22d3ee); color: #fff; font-weight: 700; cursor: pointer; }
 
   .add-user-card { margin: 0 0 1rem 0; padding: 1rem; border-radius: 16px; border: 1px solid rgba(255,255,255,.55); background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.20)), radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%), radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%); box-shadow: 0 24px 68px rgba(0,0,0,.25); backdrop-filter: blur(22px) saturate(140%); }
-  .add-user-card h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: .5px; color: #6b7280; margin: 0 0 .75rem 0; }
+  .add-user-card h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: .5px; color: #fff; margin: 0 0 .75rem 0; }
+  .add-user-card strong { color: #fff; }
+  .add-user-card .muted { color: rgba(255, 255, 255, 0.9); }
   .add-user-form { display: grid; grid-template-columns: 1fr 1fr 160px 140px; gap: .5rem; }
   .add-user-form input, .add-user-form select { padding: .5rem .75rem; border: 1px solid #e5e7eb; border-radius: 8px; font-size: .9rem; }
   .create-btn { padding: .5rem .75rem; border-radius: 8px; border: 1px solid #e5e7eb; background: linear-gradient(135deg, #4f46e5, #22d3ee); color: #fff; font-weight: 700; cursor: pointer; }
@@ -760,22 +762,22 @@
 
   .users-table-container { background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.20)), radial-gradient(120% 120% at 0% 0%, rgba(79,70,229,.18), transparent 60%), radial-gradient(120% 120% at 100% 0%, rgba(34,211,238,.18), transparent 60%); border: 1px solid rgba(255,255,255,.55); border-radius: 24px; padding: 0; box-shadow: 0 24px 68px rgba(0,0,0,.25); backdrop-filter: blur(22px) saturate(140%); overflow-x: auto; }
   .users-table { width: 100%; border-collapse: collapse; }
-  .users-table th { text-align: left; padding: 0.875rem 1rem; font-weight: 700; font-size: 0.75rem; color: #4f46e5; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid rgba(79, 70, 229, 0.2); background: linear-gradient(135deg, rgba(79, 70, 229, 0.05), rgba(34, 211, 238, 0.05)); }
+  .users-table th { text-align: left; padding: 0.875rem 1rem; font-weight: 700; font-size: 0.75rem; color: #fff; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid rgba(79, 70, 229, 0.2); background: linear-gradient(135deg, rgba(79, 70, 229, 0.05), rgba(34, 211, 238, 0.05)); }
   .users-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6; font-size: 0.875rem; }
   .users-table tbody tr:hover { background: rgba(79, 70, 229, 0.05); transform: scale(1.01); transition: all 0.15s; }
-  .email-cell { font-weight: 600; color: #111; }
-  .id-cell { font-family: monospace; color: #6b7280; font-size: 0.9rem; }
+  .email-cell { font-weight: 600; color: #fff; }
+  .id-cell { font-family: monospace; color: #fff; font-size: 0.9rem; }
   .role-select { padding: 0.375rem 0.625rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; font-weight: 500; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .role-select.admin { background: linear-gradient(135deg, #fef3c7, #fde68a); border-color: #f59e0b; color: #92400e; font-weight: 700; }
   .access-level-select.pro { background: linear-gradient(135deg, #d1fae5, #a7f3d0); border-color: #059669; color: #065f46; font-weight: 600; }
   .access-level-select.free-trial { background: linear-gradient(135deg, #e0e7ff, #c7d2fe); border-color: #4f46e5; color: #3730a3; font-weight: 500; }
   .role-select:disabled { opacity: 0.5; cursor: not-allowed; }
-  .th-hint { opacity: 0.7; cursor: help; font-size: 0.75rem; }
-  .stripe-cell { font-size: 0.75rem; color: #6b7280; max-width: 140px; }
+  .th-hint { opacity: 0.9; cursor: help; font-size: 0.75rem; color: #fff; }
+  .stripe-cell { font-size: 0.75rem; color: #fff; max-width: 140px; }
   .stripe-cell .stripe-id { display: block; font-family: monospace; }
-  .stripe-cell .stripe-id.sub { color: #4f46e5; }
-  .updating-indicator { font-size: 0.75rem; color: #9ca3af; font-style: italic; margin-left: 0.5rem; }
-  .games-cell, .date-cell { color: #6b7280; font-size: 0.875rem; }
+  .stripe-cell .stripe-id.sub { color: rgba(255, 255, 255, 0.9); }
+  .updating-indicator { font-size: 0.75rem; color: rgba(255, 255, 255, 0.9); font-style: italic; margin-left: 0.5rem; }
+  .games-cell, .date-cell { color: #fff; font-size: 0.875rem; }
   .action-buttons { display: flex; gap: 0.5rem; align-items: center; }
   .friends-btn { padding: 0.375rem 0.75rem; border-radius: 4px; border: 1px solid #e5e7eb; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .friends-btn:hover { background: linear-gradient(135deg, #fde68a, #fcd34d); border-color: #f59e0b; transform: translateY(-1px); }
@@ -787,7 +789,7 @@
   .pagination button { padding: 0.5rem 0.875rem; border-radius: 4px; border: 1px solid #e5e7eb; background: white; color: #4f46e5; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.15s; }
   .pagination button:hover:not(:disabled) { background: #4f46e5; color: white; border-color: #4f46e5; }
   .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .page-info { color: #6b7280; font-weight: 500; font-size: 0.875rem; }
+  .page-info { color: #fff; font-weight: 500; font-size: 0.875rem; }
 
   /* ===== Manage Friends Modal ===== */
   .modal-overlay {

@@ -1,0 +1,23 @@
+/* AboutFace theme – mirroring flow (matches iOS AboutFaceTheme) */
+:root {
+  --af-dark-navy: #0f142e;
+  --af-deep-blue: #1a1f47;
+  --af-mirroring-yellow: #fade38;
+  --af-glow-blue: #73a6f2;
+  --af-accent-blue: #4082f2;
+  --af-record-red: #ef4444;
+}
+
+/* Full-viewport dark background for mirroring pages */
+.mirroring-root {
+  position: fixed;
+  inset: 0;
+  min-height: 100vh;
+  background: linear-gradient(
+    180deg,
+    var(--af-dark-navy) 0%,
+    var(--af-deep-blue) 50%,
+    var(--af-dark-navy) 100%
+  );
+  overflow: hidden;
+}

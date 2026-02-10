@@ -54,14 +54,14 @@
   const nav = (p: string) => goto(p);
 
   const trainItems = [
-    { label: 'Facial Recognition',           action: () => nav('/facial-recognition/settings') },
+    { label: 'Facial Recognition',           action: () => nav('/facial-recognition/quiz/1') },
     { label: 'Emotion Training',             action: () => nav('/training/training-pick-emotion') },
-    { label: 'Transition Recognition',       action: () => nav('/transition-recognition/settings') }
+    { label: 'Transition Recognition',       action: () => nav('/transition-recognition/quiz/Normal') }
   ];
   const testItems = [
-    { label: 'Timed Facial Recognition',     action: () => nav('/facial-recognition/settings?level=5') },
+    { label: 'Timed Facial Recognition',     action: () => nav('/facial-recognition/quiz/5') },
     { label: 'Mirroring Game',               action: () => nav('/mirroring/settings') },
-    { label: 'Timed Transition Recognition', action: () => nav('/transition-recognition/settings?level=challenge') }
+    { label: 'Timed Transition Recognition', action: () => nav('/transition-recognition/quiz/Challenge') }
   ];
 
   function exitPersonal() {
@@ -225,20 +225,20 @@
 
   .journey-btn{
     position: fixed;
-    top: 80px;
-    left: 22px;
-    width: 50px;
-    height: 50px;
+    right: 19px;
+    bottom: 96px;
+    width: 58px;
+    height: 58px;
     border-radius: 9999px;
     border: 0;
     color: #fff;
     background: linear-gradient(135deg, #4f46e5, #22d3ee);
     box-shadow: 0 8px 20px rgba(79,70,229,.3);
     cursor: pointer;
-    z-index: 1001;
+    z-index: 30;
     display: grid;
     place-items: center;
-    font-size: 24px;
+    font-size: 28px;
     font-weight: 900;
     line-height: 1;
     transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
@@ -387,7 +387,7 @@
   <span class="label">Friends</span>
 </button>
 
-<!-- Journey Button (top left, below profile) -->
+<!-- Journey Button (bottom right, next to upload) -->
 <button
   class="journey-btn"
   aria-label="Journey"

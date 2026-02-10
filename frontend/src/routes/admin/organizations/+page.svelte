@@ -342,13 +342,13 @@
 
   // Photo sources modal for organizations
   let photoSourcesModalOrgId: string | null = null;
-  let orgPhotoSourceSettings = { ekman: true, own: true, synthetic: true };
+  let orgPhotoSourceSettings = { ekman: false, own: true, synthetic: true };
   let loadingOrgPhotoSources = false;
   let savingOrgPhotoSources = false;
 
   async function openPhotoSourcesModal(orgId: string) {
     photoSourcesModalOrgId = orgId;
-    orgPhotoSourceSettings = { ekman: true, own: true, synthetic: true };
+    orgPhotoSourceSettings = { ekman: false, own: true, synthetic: true };
     loadingOrgPhotoSources = true;
     try {
       const res = await apiFetch(`/api/admin/organizations/${orgId}/photo-sources`);

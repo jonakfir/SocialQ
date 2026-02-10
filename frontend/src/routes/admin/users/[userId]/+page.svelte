@@ -201,7 +201,7 @@
   }
   
   // Photo sources for facial recognition
-  let photoSourceSettings = { ekman: true, own: true, synthetic: true };
+  let photoSourceSettings = { ekman: false, own: true, synthetic: true };
   let savingPhotoSources = false;
   let loadingPhotoSources = false;
 

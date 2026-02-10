@@ -129,7 +129,7 @@
     }
   function fmtPick(v) { return v === '__timeout__' ? '(timeout)' : (v ?? '(unknown)'); }
 
-  function playAgain() { goto('/transition-recognition/settings'); }
+  function playAgain() { goto('/transition-recognition/quiz/Normal'); }
 </script>
 
 <style>

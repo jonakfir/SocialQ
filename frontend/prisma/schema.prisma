@@ -17,6 +17,7 @@ model User {
   accessLevel           String?   @map("access_level")
   createdAt             DateTime  @default(now()) @map("created_at")
   darkMode              Boolean?  @map("dark_mode")
+  photoSourceSettings   String?
   stripeCustomerId      String?   @map("stripe_customer_id")
   stripeSubscriptionId  String?   @map("stripe_subscription_id")
   trialEndsAt           DateTime? @map("trial_ends_at")
@@ -111,10 +112,11 @@ model Organization {
   id                Int       @id @default(autoincrement())
   name              String   @unique
   description       String?
-  status            String   @default("pending")
-  createdByUserId   Int      @map("created_by_user_id")
-  createdAt         DateTime @default(now()) @map("created_at")
-  memberships       OrganizationMembership[]
+  status                String   @default("pending")
+  photoSourceSettings   String?
+  createdByUserId       Int      @map("created_by_user_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+  memberships           OrganizationMembership[]
   createdBy         User     @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
   ekmanImageVisibility EkmanImageOrganizationVisibility[]
 
