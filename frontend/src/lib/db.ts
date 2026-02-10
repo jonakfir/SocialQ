@@ -221,10 +221,19 @@ function getPrisma(): any {
 // The proxy ensures Prisma is loaded before accessing any property
 export const prisma = new Proxy({} as any, {
   get(_target, prop) {
+    const propStr = String(prop);
+    // Forward $transaction, $executeRaw, etc. to real client so same-connection flows work
+    if (propStr.startsWith('$')) {
+      return async (...args: any[]) => {
+        const client = await loadPrismaClient();
+        const fn = client[prop];
+        if (typeof fn === 'function') return fn.apply(client, args);
+        throw new Error(`Prisma.${propStr} is not a function`);
+      };
+    }
     // For model access (like prisma.user), return a proxy that waits for client
     return new Proxy({}, {
       get(_modelTarget, modelProp) {
-        // Return async function that waits for Prisma to load
         return async (...args: any[]) => {
           const client = await loadPrismaClient();
           const model = client[prop];
