@@ -249,49 +249,44 @@ export const POST: RequestHandler = async (event) => {
     const effectiveIdNum = typeof effectiveUserId === 'string' ? parseInt(effectiveUserId, 10) : Number(effectiveUserId);
     const emailNorm = effectiveUserEmail?.trim()?.toLowerCase() || '';
 
-    // Same connection = FK visible: run user upsert + collage create in one transaction
     const uid = Number.isInteger(effectiveIdNum) && effectiveIdNum > 0 ? effectiveIdNum : userIdNum;
     if (!Number.isInteger(uid) || uid <= 0) {
       return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
     }
+    const collageData = {
+      userId: uid,
+      imageUrl: dataUrl,
+      emotions: emotionsJson,
+      folder,
+      approvedAnyway: approvedAnywayVal
+    };
     let collage: { id: string; userId: number; imageUrl: string; emotions: string | null; folder: string | null; createdAt: Date };
-    try {
-      collage = await prisma.$transaction(async (tx: any) => {
-        if (emailNorm) {
-          const bcrypt = await import('bcryptjs');
-          // Prisma upsert = correct columns + same tx so FK sees row
-          await tx.user.upsert({
+    if (emailNorm) {
+      const bcrypt = await import('bcryptjs');
+      const hash = await bcrypt.hash('upload-placeholder', 10);
+      // Batch transaction: both ops run in order on one connection (avoids pooler splitting interactive tx)
+      try {
+        const [, created] = await prisma.$transaction([
+          prisma.user.upsert({
             where: { id: uid },
-            create: {
-              id: uid,
-              username: emailNorm,
-              password: await bcrypt.hash('upload-placeholder', 10),
-              role: 'personal'
-            },
+            create: { id: uid, username: emailNorm, password: hash, role: 'personal' },
             update: {}
-          });
-          console.log('[POST /api/collages] User ensured in tx:', uid);
-        } else {
-          const u = await tx.user.findUnique({ where: { id: uid }, select: { id: true } });
-          if (!u) throw new Error('User not found. Please log in again.');
-        }
-        return tx.collage.create({
-          data: {
-            userId: uid,
-            imageUrl: dataUrl,
-            emotions: emotionsJson,
-            folder,
-            approvedAnyway: approvedAnywayVal
-          }
-        });
-      });
-    } catch (txErr: any) {
-      const msg = txErr?.message ?? String(txErr);
-      console.error('[POST /api/collages] transaction failed:', msg);
-      return json(
-        { ok: false, error: msg.includes('User not found') ? msg : 'User not found. Please log in again.' },
-        { status: 500 }
-      );
+          }),
+          prisma.collage.create({ data: collageData })
+        ]);
+        collage = created;
+        console.log('[POST /api/collages] User + collage in batch tx:', uid);
+      } catch (txErr: any) {
+        const msg = txErr?.message ?? String(txErr);
+        console.error('[POST /api/collages] batch tx failed:', msg);
+        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+      }
+    } else {
+      const u = await prisma.user.findUnique({ where: { id: uid }, select: { id: true } });
+      if (!u) {
+        return json({ ok: false, error: 'User not found. Please log in again.' }, { status: 500 });
+      }
+      collage = await prisma.collage.create({ data: collageData });
     }
 
     console.log('[POST /api/collages] Saving collage with userId:', collage.userId, 'folder:', folder, 'imageUrl length:', dataUrl.length);
