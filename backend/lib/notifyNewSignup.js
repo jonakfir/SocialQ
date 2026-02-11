@@ -114,33 +114,74 @@ async function notifyNewSignup(user, profile) {
   let transporter;
   try {
     const nodemailer = require('nodemailer');
-    transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      secure: SMTP_SECURE,
-      auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined
-    });
+    function makeTransport({ host, port, secure }) {
+      return nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
+        // Fail fast in hosted envs where SMTP is blocked.
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 20_000,
+        tls: { servername: host }
+      });
+    }
+
+    async function trySend({ host, port, secure, label }) {
+      const t = makeTransport({ host, port, secure });
+      // Fail fast with a clearer error if SMTP credentials/host are wrong.
+      await t.verify();
+      await t.sendMail({
+        from: SMTP_FROM,
+        to: NOTIFY_EMAIL,
+        subject: `New signup: ${email}`,
+        text: `New registration – form submission\n\n${text}`,
+        html: html
+      });
+      console.log('[notifyNewSignup] Email sent to', NOTIFY_EMAIL, 'for new signup:', email, `(${label || `${host}:${port}`})`);
+    }
+
+    function isTimeoutError(err) {
+      const msg = String(err?.message || '').toLowerCase();
+      const code = String(err?.code || '').toUpperCase();
+      return (
+        code === 'ETIMEDOUT' ||
+        code === 'ESOCKET' ||
+        msg.includes('timeout') ||
+        msg.includes('timed out')
+      );
+    }
+
+    const { text, html } = buildBodies(user, profile);
+    const email = (user && user.email) ? String(user.email).trim() : '';
+
+    // Attempt 1: configured SMTP_* (usually 587 STARTTLS for Gmail)
+    try {
+      await trySend({ host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, label: 'primary' });
+      return;
+    } catch (err) {
+      // If primary times out and host looks like Gmail, try the alternate port (465 SSL) once.
+      const isGmail = SMTP_HOST.includes('gmail.com');
+      const canFallback = isGmail && isTimeoutError(err) && (SMTP_PORT === 587 || SMTP_PORT === 465);
+      if (!canFallback) {
+        console.error('[notifyNewSignup] Failed to send email (primary):', err.message || err);
+        throw err;
+      }
+      const altPort = SMTP_PORT === 587 ? 465 : 587;
+      const altSecure = altPort === 465;
+      console.warn('[notifyNewSignup] Primary SMTP timed out; retrying on', `${SMTP_HOST}:${altPort}`, 'secure=', altSecure);
+      try {
+        await trySend({ host: SMTP_HOST, port: altPort, secure: altSecure, label: 'fallback' });
+        return;
+      } catch (err2) {
+        console.error('[notifyNewSignup] Failed to send email (fallback):', err2.message || err2);
+        throw err2;
+      }
+    }
   } catch (err) {
     console.warn('[notifyNewSignup] nodemailer not available:', err.message);
     return;
-  }
-
-  const { text, html } = buildBodies(user, profile);
-
-  try {
-    // Fail fast with a clearer error if SMTP credentials/host are wrong.
-    await transporter.verify();
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: NOTIFY_EMAIL,
-      subject: `New signup: ${email}`,
-      text: `New registration – form submission\n\n${text}`,
-      html: html
-    });
-    console.log('[notifyNewSignup] Email sent to', NOTIFY_EMAIL, 'for new signup:', email);
-  } catch (err) {
-    console.error('[notifyNewSignup] Failed to send email:', err.message);
-    throw err;
   }
 }
 
