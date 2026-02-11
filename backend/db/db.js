@@ -42,6 +42,10 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   }
 
   const ssl = sslForRailway();
+  // Ensure SNI uses the original hostname (some TCP proxies require it).
+  if (ssl && typeof ssl === 'object') {
+    ssl.servername = ssl.servername || dbHost || undefined;
+  }
 
   pool = new Pool({
     connectionString: DATABASE_URL,
@@ -56,7 +60,7 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   console.log('[DB] Using PostgreSQL');
   console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
   console.log('[DB] PGSSLMODE:', PGSSLMODE || '(auto)');
-  console.log('[DB] PostgreSQL host:', dbHost || '(unknown)', 'port:', dbPort || '(unknown)', 'ssl:', ssl ? 'enabled' : 'disabled');
+  console.log('[DB] PostgreSQL host:', dbHost || '(unknown)', 'port:', dbPort || '(unknown)', 'ssl:', ssl ? 'enabled' : 'disabled', (ssl && typeof ssl === 'object' && ssl.servername ? `(SNI: ${ssl.servername})` : ''));
   
   // Test connection asynchronously (non-blocking)
   setImmediate(() => {
