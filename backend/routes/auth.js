@@ -27,6 +27,38 @@ const JWT_SECRET     = process.env.AUTH_SECRET || 'dev-change-this';
 const JWT_TTL        = '7d';                      // token lifetime
 const isProd         = process.env.NODE_ENV === 'production';
 
+// Server-to-server helper (node-fetch v3 is ESM)
+const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+
+// Optional: also create/update the user in the SvelteKit/Prisma "platform" DB
+// (used by the web app) so mobile signups become real platform customers too.
+const FRONTEND_URL = String(process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || '').trim().replace(/\/$/, '');
+const PROXY_SECRET = String(process.env.PROXY_SECRET || process.env.BACKEND_PROXY_SECRET || '').trim();
+
+async function syncPlatformUser({ email, password, backendUserId }) {
+  if (!FRONTEND_URL) return null;
+  // Use existing SvelteKit endpoint that creates/updates the Prisma user
+  const url = `${FRONTEND_URL}/api/sync-user`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (PROXY_SECRET) headers['X-Proxy-Secret'] = PROXY_SECRET;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email, backendUserId, password })
+  });
+
+  const text = await res.text().catch(() => '');
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* ignore */ }
+
+  if (!res.ok || !data?.ok) {
+    const msg = (data && (data.error || data.details)) || text || `HTTP ${res.status}`;
+    throw new Error(`sync-user failed: ${msg}`);
+  }
+  return data.user || null;
+}
+
 // --------------- Helpers ----------------
 /** Returns effective access level and trialEndsAt (ISO string or null). If free_trial is expired, updates user to none and returns none. */
 async function getEffectiveAccessAndTrial(user) {
@@ -257,7 +289,27 @@ router.post('/register', async (req, res) => {
     const { notifyNewSignup } = require('../lib/notifyNewSignup');
     notifyNewSignup(user, profile).catch((err) => console.error('[register] notify signup email failed:', err?.message || err));
 
-    return res.status(201).json({ ok: true, user: { ...user, role: user.role, accessLevel: user.access_level || 'none', trialEndsAt: null }, token });
+    // Also sync to platform (Prisma) so mobile signups exist in the web app DB too.
+    // Fire-and-forget by default; add ?waitSync=1 for debugging.
+    const waitSync = String(req.query?.waitSync || '').toLowerCase() === '1' || String(req.query?.waitSync || '').toLowerCase() === 'true';
+    const syncPromise = syncPlatformUser({ email, password, backendUserId: user.id })
+      .then((platformUser) => {
+        console.log('[register] ✅ platform sync ok for', email, 'platformUserId:', platformUser?.id || '—');
+        return platformUser;
+      })
+      .catch((err) => {
+        console.warn('[register] platform sync failed for', email, '-', err?.message || err);
+        return null;
+      });
+
+    const platformUser = waitSync ? await syncPromise : undefined;
+
+    return res.status(201).json({
+      ok: true,
+      user: { ...user, role: user.role, accessLevel: user.access_level || 'none', trialEndsAt: null },
+      token,
+      ...(platformUser !== undefined ? { platformUser } : {})
+    });
   } catch (e) {
     console.error('[register] error', e);
     console.error('[register] error details:', e.message);
