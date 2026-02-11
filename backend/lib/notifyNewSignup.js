@@ -14,6 +14,10 @@ const SMTP_USER = (process.env.SMTP_USER || '').trim();
 const SMTP_PASS = normalizeSmtpPass(process.env.SMTP_PASS || '');
 const SMTP_FROM = (process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@socialq.app').trim();
 
+// Optional HTTPS email fallback (works even when SMTP ports are blocked on hosting providers)
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || '').trim();
+const RESEND_FROM = String(process.env.RESEND_FROM || '').trim(); // e.g. "SocialQ <onboarding@resend.dev>"
+
 function normalizeSmtpPass(raw) {
   const p = String(raw || '').trim();
   if (!p) return '';
@@ -29,6 +33,37 @@ function normalizeSmtpPass(raw) {
 
 function isConfigured() {
   return NOTIFY_EMAIL.length > 0 && SMTP_HOST.length > 0 && SMTP_USER.length > 0 && SMTP_PASS.length > 0;
+}
+
+function isResendConfigured() {
+  return NOTIFY_EMAIL.length > 0 && RESEND_API_KEY.length > 0 && RESEND_FROM.length > 0;
+}
+
+async function sendViaResend({ to, subject, text, html }) {
+  // node-fetch v3 is ESM — dynamic import wrapper:
+  const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM,
+      to: [to],
+      subject,
+      text,
+      html
+    })
+  });
+  const bodyText = await res.text().catch(() => '');
+  let body = null;
+  try { body = bodyText ? JSON.parse(bodyText) : null; } catch { /* ignore */ }
+  if (!res.ok) {
+    const msg = (body && (body.message || body.error)) || bodyText || `HTTP ${res.status}`;
+    throw new Error(`Resend failed: ${msg}`);
+  }
+  return body;
 }
 
 const GOAL_LABELS = {
@@ -103,13 +138,28 @@ function buildBodies(user, profile) {
  * @returns {Promise<void>}
  */
 async function notifyNewSignup(user, profile) {
+  const email = (user && user.email) ? String(user.email).trim() : '';
+  const { text, html } = buildBodies(user, profile);
+
+  // If SMTP isn't configured but Resend is, still send the notification.
+  if (!isConfigured() && isResendConfigured()) {
+    await sendViaResend({
+      to: NOTIFY_EMAIL,
+      subject: `New signup: ${email}`,
+      text: `New registration – form submission\n\n${text}`,
+      html
+    });
+    console.log('[notifyNewSignup] Email sent to', NOTIFY_EMAIL, 'for new signup:', email, '(resend)');
+    return;
+  }
+
   if (!isConfigured()) {
     const { text } = buildBodies(user, profile);
     console.log('[notifyNewSignup] Signup notification skipped (SMTP not configured). Set SMTP_HOST, SMTP_USER, SMTP_PASS and optionally NOTIFY_EMAIL to receive signup emails.');
     console.log('[notifyNewSignup] Signup details:', text.replace(/\n/g, ' | '));
     return;
   }
-  const email = (user && user.email) ? String(user.email).trim() : '';
+  // SMTP configured; attempt SMTP first, then fallback to Resend on timeout/connection issues.
 
   let transporter;
   try {
@@ -153,14 +203,24 @@ async function notifyNewSignup(user, profile) {
       );
     }
 
-    const { text, html } = buildBodies(user, profile);
-    const email = (user && user.email) ? String(user.email).trim() : '';
-
     // Attempt 1: configured SMTP_* (usually 587 STARTTLS for Gmail)
     try {
       await trySend({ host: SMTP_HOST, port: SMTP_PORT, secure: SMTP_SECURE, label: 'primary' });
       return;
     } catch (err) {
+      // Optional: fallback to Resend (HTTPS) if SMTP is blocked/timing out on the host.
+      if (isResendConfigured() && isTimeoutError(err)) {
+        console.warn('[notifyNewSignup] SMTP timed out; falling back to Resend');
+        await sendViaResend({
+          to: NOTIFY_EMAIL,
+          subject: `New signup: ${email}`,
+          text: `New registration – form submission\n\n${text}`,
+          html
+        });
+        console.log('[notifyNewSignup] Email sent to', NOTIFY_EMAIL, 'for new signup:', email, '(resend-fallback)');
+        return;
+      }
+
       // If primary times out and host looks like Gmail, try the alternate port (465 SSL) once.
       const isGmail = SMTP_HOST.includes('gmail.com');
       const canFallback = isGmail && isTimeoutError(err) && (SMTP_PORT === 587 || SMTP_PORT === 465);
@@ -175,6 +235,18 @@ async function notifyNewSignup(user, profile) {
         await trySend({ host: SMTP_HOST, port: altPort, secure: altSecure, label: 'fallback' });
         return;
       } catch (err2) {
+        // If Gmail fallback also times out and Resend is configured, use it.
+        if (isResendConfigured() && isTimeoutError(err2)) {
+          console.warn('[notifyNewSignup] SMTP fallback timed out; falling back to Resend');
+          await sendViaResend({
+            to: NOTIFY_EMAIL,
+            subject: `New signup: ${email}`,
+            text: `New registration – form submission\n\n${text}`,
+            html
+          });
+          console.log('[notifyNewSignup] Email sent to', NOTIFY_EMAIL, 'for new signup:', email, '(resend-fallback)');
+          return;
+        }
         console.error('[notifyNewSignup] Failed to send email (fallback):', err2.message || err2);
         throw err2;
       }
