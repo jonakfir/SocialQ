@@ -285,9 +285,26 @@ router.post('/register', async (req, res) => {
     // Sign them in immediately - get JWT token
     const token = setSessionCookies(res, user);
 
-    // Notify admin of new signup with full flow details (fire-and-forget)
+    // Notify admin of new signup with full flow details.
+    // Default: fire-and-forget (doesn't block registration).
+    // Debug: pass ?waitEmail=1 to await SMTP and return emailStatus.
     const { notifyNewSignup } = require('../lib/notifyNewSignup');
-    notifyNewSignup(user, profile).catch((err) => console.error('[register] notify signup email failed:', err?.message || err));
+    const waitEmail =
+      String(req.query?.waitEmail || '').toLowerCase() === '1' ||
+      String(req.query?.waitEmail || '').toLowerCase() === 'true';
+    let emailStatus = undefined;
+    if (waitEmail) {
+      try {
+        await notifyNewSignup(user, profile);
+        emailStatus = { ok: true };
+      } catch (err) {
+        emailStatus = { ok: false, error: err?.message || String(err) };
+      }
+    } else {
+      notifyNewSignup(user, profile).catch((err) =>
+        console.error('[register] notify signup email failed:', err?.message || err)
+      );
+    }
 
     // Also sync to platform (Prisma) so mobile signups exist in the web app DB too.
     // Fire-and-forget by default; add ?waitSync=1 for debugging.
@@ -308,6 +325,7 @@ router.post('/register', async (req, res) => {
       ok: true,
       user: { ...user, role: user.role, accessLevel: user.access_level || 'none', trialEndsAt: null },
       token,
+      ...(emailStatus !== undefined ? { emailStatus } : {}),
       ...(platformUser !== undefined ? { platformUser } : {})
     });
   } catch (e) {
