@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 // -------------------------
 // Use DATABASE_URL if available (Railway provides this), otherwise fall back to SQLite
 const DATABASE_URL = process.env.DATABASE_URL;
+const PGSSLMODE = String(process.env.PGSSLMODE || '').trim().toLowerCase(); // e.g. "require" | "disable"
 
 let db = null;
 let pool = null;
@@ -16,10 +17,35 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   usePostgres = true;
   
   // Create pool immediately (not deferred) so schema initialization can use it
-  // Railway PostgreSQL requires SSL, so enable it for all environments
+  // Railway has two common connection modes:
+  // - Internal: postgres.railway.internal:5432 (often requires SSL)
+  // - Public TCP proxy: *.proxy.rlwy.net:<port> (often expects non-SSL; SSL can cause ECONNRESET)
+  // We pick a sane default based on host/port, but allow override via PGSSLMODE.
+  let parsed;
+  try { parsed = new URL(DATABASE_URL); } catch { parsed = null; }
+  const dbHost = parsed?.hostname || '';
+  const dbPort = Number(parsed?.port || '5432');
+
+  function sslForRailway() {
+    // Explicit override via PGSSLMODE
+    if (PGSSLMODE === 'disable') return false;
+    if (PGSSLMODE === 'require') return { rejectUnauthorized: false };
+
+    // Heuristics
+    if (dbHost.includes('railway.internal')) return { rejectUnauthorized: false };
+    // Public TCP proxy ports (not 5432) commonly terminate/RESET when client attempts SSL.
+    if (dbPort && dbPort !== 5432) return false;
+    if (dbHost.includes('proxy.rlwy.net') || dbHost.endsWith('rlwy.net')) return false;
+
+    // Safe default
+    return { rejectUnauthorized: false };
+  }
+
+  const ssl = sslForRailway();
+
   pool = new Pool({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }, // Railway requires SSL
+    ssl,
     // Add connection retry settings
     max: 20,
     idleTimeoutMillis: 30000,
@@ -29,6 +55,8 @@ if (DATABASE_URL && DATABASE_URL.startsWith('postgresql://')) {
   
   console.log('[DB] Using PostgreSQL');
   console.log('[DB] DATABASE_URL:', DATABASE_URL.replace(/:[^:@]+@/, ':****@')); // Hide password
+  console.log('[DB] PGSSLMODE:', PGSSLMODE || '(auto)');
+  console.log('[DB] PostgreSQL host:', dbHost || '(unknown)', 'port:', dbPort || '(unknown)', 'ssl:', ssl ? 'enabled' : 'disabled');
   
   // Test connection asynchronously (non-blocking)
   setImmediate(() => {
