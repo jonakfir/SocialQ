@@ -6,12 +6,26 @@
  */
 
 const NOTIFY_EMAIL = (process.env.NOTIFY_EMAIL || 'jonakfir@gmail.com').trim().toLowerCase();
-const SMTP_HOST = process.env.SMTP_HOST || '';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
+const SMTP_HOST = (process.env.SMTP_HOST || '').trim();
+const SMTP_PORT = parseInt(String(process.env.SMTP_PORT || '587').trim(), 10);
 const SMTP_SECURE = process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1';
-const SMTP_USER = process.env.SMTP_USER || '';
-const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_USER = (process.env.SMTP_USER || '').trim();
+// Gmail "App Password" is often pasted with spaces (xxxx xxxx xxxx xxxx). Normalize that safely.
+const SMTP_PASS = normalizeSmtpPass(process.env.SMTP_PASS || '');
 const SMTP_FROM = (process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@socialq.app').trim();
+
+function normalizeSmtpPass(raw) {
+  const p = String(raw || '').trim();
+  if (!p) return '';
+  // Only strip whitespace if it looks like a grouped app password.
+  // Example: "abcd efgh ijkl mnop" -> "abcdefghijklmnop"
+  if (/\s/.test(p)) {
+    const compact = p.replace(/\s+/g, '');
+    // If compact looks like a reasonable app password length, prefer it.
+    if (compact.length >= 12) return compact;
+  }
+  return p;
+}
 
 function isConfigured() {
   return NOTIFY_EMAIL.length > 0 && SMTP_HOST.length > 0 && SMTP_USER.length > 0 && SMTP_PASS.length > 0;
@@ -114,6 +128,8 @@ async function notifyNewSignup(user, profile) {
   const { text, html } = buildBodies(user, profile);
 
   try {
+    // Fail fast with a clearer error if SMTP credentials/host are wrong.
+    await transporter.verify();
     await transporter.sendMail({
       from: SMTP_FROM,
       to: NOTIFY_EMAIL,
