@@ -101,13 +101,24 @@ function buildBodies(user, profile) {
   const userTypeRaw = (p.user_type || 'myself').toString().replace(/-/g, '_').toLowerCase();
   const userTypeLabel = USER_TYPE_LABELS[userTypeRaw] || (p.user_type ? String(p.user_type) : '—');
 
-  const rows = [
+  const now = new Date();
+  const ts = now.toISOString();
+  const env = (process.env.NODE_ENV || 'production').trim();
+
+  const accountRows = [
     ['Email', email],
     ['User ID', String(id)],
     ['Role', role],
-    ['———', '———'],
-    ['Goal selected (what they clicked)', goalLabel],
-    ['Account type', userTypeLabel],
+    ['Environment', env],
+    ['Timestamp (UTC)', ts]
+  ];
+
+  const selectionRows = [
+    ['Goal selected', goalLabel],
+    ['Account type', userTypeLabel]
+  ];
+
+  const detailRows = [
     ['Beneficiary / Name', formatValue(p.beneficiary_name)],
     ['Over 18?', formatValue(p.is_over_18)],
     ['Birthday', formatValue(p.birthday)],
@@ -120,13 +131,109 @@ function buildBodies(user, profile) {
     ['Parent email', formatValue(p.parent_email)]
   ];
 
-  const text = rows.map(([k, v]) => `${k}: ${v}`).join('\n');
-  const html = [
-    '<p><strong>New registration – form submission</strong></p>',
-    '<table style="border-collapse: collapse; max-width: 480px;">',
-    ...rows.map(([k, v]) => `<tr><td style="padding: 6px 12px 6px 0; vertical-align: top; color: #64748b;">${escapeHtml(k)}</td><td style="padding: 6px 0;">${escapeHtml(v)}</td></tr>`),
-    '</table>'
-  ].join('');
+  // Plain text (nice for quick scanning + email clients that strip HTML)
+  const text = [
+    'New registration – form submission',
+    '',
+    'Account',
+    ...accountRows.map(([k, v]) => `- ${k}: ${v}`),
+    '',
+    'Selection',
+    ...selectionRows.map(([k, v]) => `- ${k}: ${v}`),
+    '',
+    'Details',
+    ...detailRows.map(([k, v]) => `- ${k}: ${v}`)
+  ].join('\n');
+
+  // HTML (simple, modern, email-client-friendly)
+  const preheader = `New signup: ${email || '—'} • ${userTypeLabel} • ${goalLabel}`;
+  const servicesUrl = 'https://www.social-q.net/services';
+
+  const section = (title, rows) => {
+    const renderedRows = rows.map(([k, v]) => (
+      `<tr>
+        <td style="padding:10px 0; width: 38%; color:#64748b; font-size:12px; letter-spacing:0.02em; text-transform:uppercase; vertical-align:top;">
+          ${escapeHtml(k)}
+        </td>
+        <td style="padding:10px 0; color:#0f172a; font-size:14px; font-weight:600; vertical-align:top;">
+          ${escapeHtml(v)}
+        </td>
+      </tr>
+      <tr><td colspan="2" style="border-bottom:1px solid #e2e8f0;"></td></tr>`
+    )).join('');
+
+    return `
+      <div style="margin: 18px 0 10px; font-size: 13px; font-weight: 800; letter-spacing: 0.02em; color: #334155; text-transform: uppercase;">
+        ${escapeHtml(title)}
+      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;">
+        ${renderedRows}
+      </table>
+    `;
+  };
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>New signup</title>
+    </head>
+    <body style="margin:0; padding:0; background:#0b1220;">
+      <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+        ${escapeHtml(preheader)}
+      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse; background:#0b1220; padding: 24px 12px;">
+        <tr>
+          <td align="center" style="padding:24px 12px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:640px; border-collapse:collapse;">
+              <tr>
+                <td style="padding: 0 0 14px;">
+                  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, Arial, sans-serif; color:#e2e8f0; font-size:14px;">
+                    <span style="font-weight: 900; letter-spacing: 0.04em;">ABOUTFACE</span>
+                    <span style="opacity: 0.7;"> · signup notification</span>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="background:#ffffff; border-radius:16px; overflow:hidden; box-shadow: 0 12px 30px rgba(0,0,0,0.35);">
+                  <div style="padding: 18px 20px; background: linear-gradient(90deg, #4f46e5, #2563eb);">
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, Arial, sans-serif; color:#ffffff; font-size:18px; font-weight: 900;">
+                      New registration
+                    </div>
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, Arial, sans-serif; color: rgba(255,255,255,0.9); font-size: 13px; margin-top: 6px;">
+                      Captured from the in-app onboarding flow.
+                    </div>
+                  </div>
+
+                  <div style="padding: 18px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, Arial, sans-serif;">
+                    ${section('Account', accountRows)}
+                    ${section('Selection', selectionRows)}
+                    ${section('Details', detailRows)}
+
+                    <div style="margin-top: 18px;">
+                      <a href="${servicesUrl}" style="display:inline-block; background:#0f172a; color:#ffffff; text-decoration:none; padding:12px 14px; border-radius:12px; font-weight:800; font-size:14px;">
+                        View Services Page
+                      </a>
+                    </div>
+
+                    <div style="margin-top: 14px; color:#64748b; font-size:12px; line-height: 1.5;">
+                      This email was generated automatically by the AboutFace backend on signup.
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 14px 6px 0; color:#94a3b8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, Arial, sans-serif; font-size:12px; text-align:center;">
+                  SocialQ · ${escapeHtml(env)} · ${escapeHtml(ts)}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+  </html>`;
 
   return { text, html };
 }
