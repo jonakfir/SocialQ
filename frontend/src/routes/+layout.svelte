@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import Header from '$lib/components/Header.svelte';
+  import { preloadHuman } from '$lib/human';
 
   // 👇 import your global Tailwind file (at src/app.css)
   import '../app.css';
@@ -33,6 +34,8 @@
   onMount(() => {
     const darkMode = data?.user?.darkMode ?? false;
     applyDarkMode(darkMode);
+    // Preload Human.js so mirroring/training games open instantly after first load
+    preloadHuman();
   });
 
   // Reactively apply dark mode when user data changes

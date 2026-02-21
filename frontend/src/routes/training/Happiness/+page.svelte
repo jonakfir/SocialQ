@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { markPlayedIfPending } from '$lib/dailyFreePlay';
+  import { getHuman } from '$lib/human';
   import helperUrl from '$lib/assets/helper.png';           // still used in the top banners
   import HappyClip from '$lib/assets/ekman/HappyPractice.mp4';
 
@@ -98,49 +99,19 @@
   }
   function goDashboard() { goto('/dashboard'); }
 
-  // ------- mount: webcam + Human -------
+  // ------- mount: webcam + Human (cached) -------
   onMount(async () => {
-    // 1) load Human.js
-    await new Promise<void>((res, rej) => {
-      // @ts-ignore
-      if ((window as any).Human) return res();
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
-      s.onload = () => res();
-      s.onerror = rej;
-      document.head.append(s);
-    });
+    human = await getHuman();
 
-    // 2) webcam
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
     video.srcObject = stream;
     await new Promise<void>((r) => { video.onloadedmetadata = () => r(); });
     await video.play();
 
-    // 3) canvas
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     ctx = canvas.getContext('2d')!;
 
-    // 4) Human init
-    // @ts-ignore
-    human = new (window as any).Human.Human({
-      backend: 'webgl',
-      modelBasePath: 'https://vladmandic.github.io/human/models',
-      face: {
-        enabled: true,
-        detector: { enabled: true, maxFaces: 1 },
-        mesh: { enabled: true },
-        iris: { enabled: true },
-        description: { enabled: true },
-        emotion: { enabled: true }
-      },
-      body: false, hand: false, object: false, gesture: false
-    });
-    await human.load();
-    await human.warmup();
-
-    // 5) draw loop
     (async function drawLoop() {
       try { lastResult = await human.detect(video); } catch {}
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -151,7 +122,7 @@
       requestAnimationFrame(drawLoop);
     })();
 
-    // 6) ensure the practice clip tries to play
+    // ensure the practice clip tries to play
     try { clipEl?.play(); } catch {}
   });
 </script>
