@@ -3,7 +3,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  
+  import { getHuman } from '$lib/human';
+
   // Get user from page data
   let userFromData: { id?: number; email?: string } | null = null;
   $: {
@@ -84,29 +85,11 @@
   }
 
   // ───────────────────────────────────────────────────────────
-  // Human.js
+  // Human.js (cached singleton)
   // ───────────────────────────────────────────────────────────
-  async function loadHuman() {
-    if ((window as any).Human?.Human) return (window as any).Human.Human;
-    await new Promise<void>((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
-      s.onload = () => res();
-      s.onerror = rej;
-      document.head.append(s);
-    });
-    return (window as any).Human.Human;
-  }
   async function ensureHuman() {
     if (humanReady) return;
-    const HumanCtor = await loadHuman();
-    human = new HumanCtor({
-      backend: 'webgl',
-      modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
-      face: { enabled: true, detector: { enabled: true, maxDetected: 1 }, mesh: { enabled: true }, emotion: { enabled: true } },
-      body: false, hand: false, object: false, gesture: false
-    });
-    await human.load(); try { await human.warmup(); } catch {}
+    human = await getHuman();
     humanReady = true;
   }
 

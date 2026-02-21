@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { get } from 'svelte/store';
+  import { getHuman } from '$lib/human';
 
   const EMOTIONS = ['Angry','Disgust','Fear','Happy','Sad','Surprise'] as const;
   type Emotion = typeof EMOTIONS[number];
@@ -116,31 +117,11 @@
     ctx.restore();
   }
 
-  // ─────────────────────── Human.js ─────────────────────────
-  async function loadHuman() {
-    if ((window as any).Human?.Human) return (window as any).Human.Human;
-    await new Promise<void>((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
-      s.onload = () => res();
-      s.onerror = rej;
-      document.head.append(s);
-    });
-    return (window as any).Human.Human;
-  }
-
+  // ─────────────────────── Human.js (cached singleton) ───────
   async function ensureHuman() {
     if (humanReady) return;
     statusMsg = statusMsg || 'Loading models…';
-    const HumanCtor = await loadHuman();
-    human = new HumanCtor({
-      backend: 'webgl',
-      modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models',
-      face: { enabled: true, detector: { enabled: true, maxDetected: 1 }, mesh: { enabled: true }, emotion: { enabled: true } },
-      body: false, hand: false, object: false, gesture: false
-    });
-    await human.load();
-    try { await human.warmup(); } catch {}
+    human = await getHuman();
     humanReady = true;
     if (!scoring) statusMsg = '';
   }

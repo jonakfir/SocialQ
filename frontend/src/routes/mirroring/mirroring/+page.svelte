@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
+  import { getHuman } from '$lib/human';
 
   // ---------- NATIVE APP BRIDGE ----------
   const isNative =
@@ -32,6 +33,8 @@
   let evaluating = false;
   let lastResult: any = null;
   let loading = true;
+  let cameraError = false;
+  let currentTargetImg = ''; // reactive target image URL for the box
 
   // instructions modal
   let instructionsOpen = true;
@@ -48,6 +51,19 @@
   };
   $: difficulty = $page.url.searchParams.get('difficulty') || '1';
   let targets: Target[] = [];
+
+  /** Data URL for a placeholder face so target box always shows something without external assets. */
+  function placeholderFaceDataUrl(emotion: string): string {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="140" height="140">
+      <rect width="100" height="100" fill="#2a3250"/>
+      <ellipse cx="50" cy="55" rx="28" ry="32" fill="#4a5568" stroke="#73a6f2" stroke-width="2"/>
+      <circle cx="38" cy="48" r="4" fill="#e2e8f0"/>
+      <circle cx="62" cy="48" r="4" fill="#e2e8f0"/>
+      <path d="M 35 68 Q 50 78 65 68" stroke="#e2e8f0" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <text x="50" y="92" font-size="10" fill="#94a3b8" text-anchor="middle">${emotion}</text>
+    </svg>`;
+    return 'data:image/svg+xml,' + encodeURIComponent(svg);
+  }
 
   // scoring
   let results: boolean[] = [];
@@ -153,23 +169,32 @@
   }
 
   async function ensureCamera(): Promise<void> {
-    // attributes required by iOS/WKWebView for inline playback
+    if (!video) return;
     video.setAttribute('playsinline', '');
     video.setAttribute('autoplay', '');
     video.setAttribute('muted', '');
 
     if (video.srcObject) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width:  { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-      audio: false
-    });
-    video.srcObject = stream;
-    await new Promise<void>((r) => { video.onloadedmetadata = () => r(); });
-    await video.play();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'user',
+          width:  { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+      await new Promise<void>((r, rej) => {
+        video.onloadedmetadata = () => r();
+        video.onerror = () => rej(new Error('Video failed to load'));
+        if (video.readyState >= 1) r();
+      });
+      await video.play();
+    } catch (e) {
+      console.error('[mirroring] Camera error:', e);
+      cameraError = true;
+    }
   }
 
   onMount(async () => {
@@ -179,69 +204,54 @@
         document.body.classList.add('native');
       }
 
-      // 1) load targets
-      try {
-        const { apiFetch } = await import('$lib/api');
-        const res = await apiFetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=8`);
-        const rows = await res.json();
-        if (!Array.isArray(rows) || rows.length === 0) throw new Error('No images');
-        targets = rows;
-      } catch (e) {
-        console.error('Failed to load ekman targets:', e);
-        targets = [
-          { img: '/target1.png', label: 'happy' },
-          { img: '/target2.png', label: 'angry' },
-          { img: '/target3.png', label: 'surprise' }
-        ];
-      }
+      // 1) Load shared Human (cached) and targets in parallel
+      const fallbackTargets: Target[] = [
+        { img: placeholderFaceDataUrl('Happy'), label: 'Happy' },
+        { img: placeholderFaceDataUrl('Anger'), label: 'Anger' },
+        { img: placeholderFaceDataUrl('Surprise'), label: 'Surprise' }
+      ];
 
-      // 2) load Human only once
-      await new Promise<void>((res, rej) => {
-      // @ts-ignore
-      if ((window as any).Human) return res();
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/human/dist/human.js';
-      s.onload = () => res();
-      s.onerror = rej;
-      document.head.append(s);
-      });
+      const targetsPromise = (async () => {
+        try {
+          const { apiFetch } = await import('$lib/api');
+          const res = await apiFetch(`/ekman?difficulty=${encodeURIComponent(difficulty)}&count=8&ekmanOnly=1`);
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            targets = rows;
+          } else {
+            targets = fallbackTargets;
+          }
+        } catch (e) {
+          console.error('Failed to load ekman targets:', e);
+          targets = fallbackTargets;
+        }
+        currentTargetImg = targets[0]?.img ?? '';
+        await tick();
+      })();
 
-      // 3) webcam
+      const [humanInstance] = await Promise.all([getHuman(), targetsPromise]);
+      human = humanInstance;
+
+      // 2) webcam
       await ensureCamera();
 
-      // 4) canvas and resize handling
+      // 3) canvas and resize handling
+      if (!canvas) throw new Error('Canvas ref missing');
       sizeCanvasToArea();
       ctx = canvas.getContext('2d')!;
       const onResize = () => sizeCanvasToArea();
       window.addEventListener('resize', onResize);
 
-      // 5) Human init
-      // @ts-ignore
-      human = new (window as any).Human.Human({
-      backend: 'webgl',
-      modelBasePath: 'https://vladmandic.github.io/human/models',
-      face: {
-        enabled: true,
-        detector: { enabled: true, maxFaces: 1 },
-        mesh: { enabled: true },
-        iris: { enabled: true },
-        description: { enabled: true },
-        emotion: { enabled: true }
-      },
-      body: false, hand: false, object: false, gesture: false
-      });
-      await human.load();
-      await human.warmup();
-
-      // 6) UI bits
+      // 4) UI bits
       renderDots();
       setTargetImage(0);
+      currentTargetImg = targets[0]?.img ?? '';
 
-      // 7) let native app know the page is ready; hide loading animation
+      // 5) ready: hide loading, start draw loop
       loading = false;
       postToApp({ type: 'ready' });
 
-      // 8) main loop
+      // 6) main loop
       (async function drawLoop() {
       try { lastResult = await human.detect(video); } catch {}
 
@@ -265,7 +275,17 @@
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      if (video.srcObject && video.videoWidth > 0) {
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = 'rgba(26, 31, 71, 0.95)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'min(4vw, 18px) sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(cameraError ? 'Camera unavailable. Allow access and refresh.' : 'Starting camera…', canvas.width / 2, canvas.height / 2);
+      }
 
       if (showOverlay && lastResult) {
         const sxScale = canvas.width / sw;
@@ -290,8 +310,10 @@
 
   // ---------- UI helpers ----------
   function setTargetImage(i: number) {
+    const url = targets[i]?.img ?? '';
+    currentTargetImg = url;
     const el = document.querySelector<HTMLImageElement>('.target-face');
-    if (el && targets[i]) el.src = targets[i].img;
+    if (el) el.src = url;
   }
 
   function logFramesFor(ms: number) {
@@ -326,13 +348,13 @@
   async function evaluateCurrent() {
     const result = await human.detect(video);
 
-    const t = targets[currentIndex] || {};
+    const t: Target | undefined = targets[currentIndex];
     const labelRaw =
-      (t as any).correct ??
-      t.label ??
-      t.emotion ??
-      t.name ??
-      t.answer ??
+      t?.correct ??
+      t?.label ??
+      t?.emotion ??
+      t?.name ??
+      t?.answer ??
       '';
     const target = normEmotion(labelRaw);
 
@@ -441,16 +463,18 @@
   function goDashboard() { goto('/dashboard'); }
   function goSettings() { goto('/mirroring/settings'); }
 
-  $: statusText = lastResult?.face?.[0]
-    ? (() => {
-        const emo = lastResult.face[0].emotion;
-        if (Array.isArray(emo) && emo.length) {
-          const top = emo.reduce((a: any, b: any) => (b.score > a.score ? b : a), emo[0]);
-          return `Detecting… ${top.emotion} ${Math.round((top.score || 0) * 100)}%`;
-        }
-        return 'Detecting…';
-      })()
-    : 'Detecting…';
+  $: statusText = loading
+    ? 'Loading camera & face detection…'
+    : lastResult?.face?.[0]
+      ? (() => {
+          const emo = lastResult.face[0].emotion;
+          if (Array.isArray(emo) && emo.length) {
+            const top = emo.reduce((a: any, b: any) => (b.score > a.score ? b : a), emo[0]);
+            return `Detecting… ${top.emotion} ${Math.round((top.score || 0) * 100)}%`;
+          }
+          return 'Detecting…';
+        })()
+      : 'Detecting…';
 </script>
 
 <svelte:head>
@@ -490,7 +514,7 @@
   <div class="camera-area">
     <video bind:this={video} autoplay playsinline muted style="display:none;"></video>
     <canvas bind:this={canvas}></canvas>
-    <img class="target-face" alt="Target Face" />
+    <img class="target-face" alt="Target Face" src={currentTargetImg} />
     <div bind:this={countdown} class="countdown"></div>
   </div>
 
@@ -778,26 +802,17 @@
   @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes modalPop { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-  /* Desktop */
+  /* Desktop: camera still full-screen below header */
   @media (min-width: 768px) {
     .top-bar-title { font-size: clamp(24px, 3vw, 34px); }
-    .stage-wrap {
-      left: 50%;
-      transform: translateX(-50%);
-      max-width: 1200px;
-      max-height: 70vh;
-      top: calc(76px + env(safe-area-inset-top, 0px));
-      bottom: auto;
-      height: 70vh;
-    }
     .target-face {
       width: 160px;
       height: 160px;
       top: 24px;
       right: 24px;
     }
-    .status-pill { left: 24px; bottom: 2vh; }
-    .progress-dots { bottom: 14vh; }
-    .mesh-pill { right: 24px; bottom: 2vh; }
+    .status-pill { left: 24px; bottom: 24px; }
+    .progress-dots { bottom: 100px; }
+    .mesh-pill { right: 24px; bottom: 24px; }
   }
 </style>
