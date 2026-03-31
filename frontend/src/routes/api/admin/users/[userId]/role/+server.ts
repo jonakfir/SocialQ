@@ -1,6 +1,5 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { toPrismaUserId } from '$lib/userId';
 
 /**
  * Get current user and check if admin
@@ -15,7 +14,7 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
         where: { username: mockUserEmail.trim().toLowerCase() },
         select: { id: true, role: true }
       });
-      if (user && user.role === 'admin') return { id: String(user.id) };
+      if (user && user.role === 'admin') return { id: user.id };
       return null;
     }
     
@@ -57,7 +56,9 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const PATCH: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    const userId = event.params.userId;
+    // Always coerce the incoming route param to a string to avoid
+    // Prisma type errors when numeric IDs are accidentally passed through.
+    const userId = String(event.params.userId);
     const body = await event.request.json();
     const { role } = body;
     
@@ -72,7 +73,7 @@ export const PATCH: RequestHandler = async (event) => {
     // Check if this is the last admin being downgraded
     if (role === 'personal') {
       const currentUser = await prisma.user.findUnique({
-        where: { id: toPrismaUserId(userId) },
+        where: { id: userId },
         select: { role: true }
       });
       
@@ -96,7 +97,7 @@ export const PATCH: RequestHandler = async (event) => {
       
       // Get user email from Prisma to find in backend
       const prismaUser = await prisma.user.findUnique({
-        where: { id: toPrismaUserId(userId) },
+        where: { id: userId },
         select: { username: true }
       });
       
@@ -158,7 +159,7 @@ export const PATCH: RequestHandler = async (event) => {
     
     // SECOND: Update Prisma database (for frontend features)
     const updatedUser = await prisma.user.update({
-      where: { id: toPrismaUserId(userId) },
+      where: { id: userId },
       data: { role },
       select: {
         id: true,
