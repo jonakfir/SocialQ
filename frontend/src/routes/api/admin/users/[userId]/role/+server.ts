@@ -56,14 +56,14 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const PATCH: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    // Always coerce the incoming route param to a string to avoid
-    // Prisma type errors when numeric IDs are accidentally passed through.
-    const userId = String(event.params.userId);
+    // Parse the incoming route param as an integer for Prisma (User.id is Int)
+    const userIdParam = event.params.userId;
+    const userId = Number(userIdParam);
     const body = await event.request.json();
     const { role } = body;
     
-    if (!userId) {
-      return json({ ok: false, error: 'User ID required' }, { status: 400 });
+    if (!Number.isInteger(userId)) {
+      return json({ ok: false, error: 'Valid numeric user ID required' }, { status: 400 });
     }
     
     if (role !== 'admin' && role !== 'personal') {
@@ -73,7 +73,7 @@ export const PATCH: RequestHandler = async (event) => {
     // Check if this is the last admin being downgraded
     if (role === 'personal') {
       const currentUser = await prisma.user.findUnique({
-        where: { id: userId },
+      where: { id: userId },
         select: { role: true }
       });
       
@@ -97,7 +97,7 @@ export const PATCH: RequestHandler = async (event) => {
       
       // Get user email from Prisma to find in backend
       const prismaUser = await prisma.user.findUnique({
-        where: { id: userId },
+      where: { id: userId },
         select: { username: true }
       });
       
