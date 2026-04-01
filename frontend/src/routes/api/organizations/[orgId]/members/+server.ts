@@ -45,7 +45,7 @@ async function getCurrentUser(event: { request: Request }) {
 
 function isGlobalAdmin(u: { role: string } | null | undefined) { return !!u && u.role === 'admin'; }
 
-async function isOrgAdmin(userId: string, orgId: string) {
+async function isOrgAdmin(userId: number, orgId: number) {
   const membership = await prisma.organizationMembership.findFirst({
     where: { organizationId: orgId, userId, status: 'approved', role: 'org_admin' },
     select: { id: true }
@@ -58,7 +58,11 @@ export const GET: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    const orgId = event.params.orgId!;
+
+    const orgId = Number(event.params.orgId);
+    if (!Number.isInteger(orgId)) {
+      return json({ ok: false, error: 'Invalid organization id' }, { status: 400 });
+    }
 
     // visibility: org admins and global admins can view all; members can only see approved list (still ok)
     const members = await prisma.organizationMembership.findMany({
@@ -82,11 +86,13 @@ export const POST: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-    const orgId = event.params.orgId!;
+
+    const orgId = Number(event.params.orgId);
     const body = await event.request.json();
-    const targetUserId = String(body?.userId || '').trim();
+    const targetUserId = Number(String(body?.userId ?? '').trim());
     const action = String(body?.action || '').toLowerCase();
-    if (!targetUserId || !['approve', 'remove', 'promote', 'demote'].includes(action)) {
+
+    if (!Number.isInteger(orgId) || !Number.isInteger(targetUserId) || !['approve', 'remove', 'promote', 'demote'].includes(action)) {
       return json({ ok: false, error: 'Invalid request' }, { status: 400 });
     }
 
