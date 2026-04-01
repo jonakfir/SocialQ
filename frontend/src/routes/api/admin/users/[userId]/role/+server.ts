@@ -157,23 +157,37 @@ export const PATCH: RequestHandler = async (event) => {
       // Don't throw - we'll still update Prisma, but log the error
     }
     
-    // SECOND: Update Prisma database (for frontend features)
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: { role },
-      select: {
-        id: true,
-        username: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true
-      }
-    });
-    
-    return json({
-      ok: true,
-      user: updatedUser
-    });
+    // SECOND: Update Prisma database (for frontend features).
+    // If this fails for any reason, log it but don't block the backend role change.
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: { role },
+        select: {
+          id: true,
+          username: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+      
+      return json({
+        ok: true,
+        user: updatedUser
+      });
+    } catch (prismaError: any) {
+      console.error('[PATCH /api/admin/users/[userId]/role] Prisma update failed, but backend role was updated:', prismaError);
+      return json({
+        ok: true,
+        // Minimal payload so the UI can proceed even if Prisma is out of sync
+        user: {
+          id: userId,
+          role
+        },
+        prismaSyncWarning: prismaError?.message || 'Prisma user update failed; backend role updated only'
+      });
+    }
   } catch (error: any) {
     console.error('[PATCH /api/admin/users/[userId]/role] error:', error);
     return json(
