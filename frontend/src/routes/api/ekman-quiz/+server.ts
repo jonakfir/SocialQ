@@ -53,7 +53,8 @@ export const GET: RequestHandler = async (event) => {
 
     const rows = await prisma.ekmanImage.findMany({
       where,
-      select: { imageData: true, label: true, difficulty: true }
+      select: { imageData: true, label: true, difficulty: true },
+      take: Math.min(count * 4, 200)
     });
 
     const pool = rows
