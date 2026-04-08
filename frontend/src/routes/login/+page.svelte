@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
   import { apiFetch } from '$lib/api';
 
   let email = '';
@@ -54,7 +53,8 @@
     loading = true;
     try {
       const emailTrimmed = email.trim().toLowerCase();
-
+      console.log('[Login] Attempting login for:', emailTrimmed);
+      
       const res = await apiFetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,15 +62,22 @@
         body: JSON.stringify({ email: emailTrimmed, password })
       });
 
-      let data: { ok?: boolean; user?: { email?: string; id?: number; role?: string }; token?: string; error?: string } = {};
+      console.log('[Login] Response status:', res.status, 'ok:', res.ok);
+      
+      let data = {};
       try {
         const text = await res.text();
+        console.log('[Login] Response text:', text.substring(0, 200));
         data = JSON.parse(text);
       } catch (parseErr) {
+        console.error('[Login] Failed to parse response:', parseErr);
         error = 'Invalid response from server';
         return;
       }
 
+      console.log('[Login] Parsed data:', JSON.stringify(data).substring(0, 200));
+
+      // Check if login was successful - be more lenient with the check
       const loginSuccess = res.ok && (data.ok === true || data.user);
       
       if (loginSuccess) {
@@ -78,44 +85,93 @@
         const id = data.user?.id ?? null;
         localStorage.setItem('email', u);
         if (id != null) localStorage.setItem('userId', String(id));
-
+        
+        // Store JWT token for Authorization header (works cross-origin)
         if (data.token) {
           const token = String(data.token).trim();
           localStorage.setItem('auth_token', token);
+          console.log('[Login] Stored JWT token in localStorage, length:', token.length);
+          console.log('[Login] Token preview (first 50 chars):', token.substring(0, 50));
+        } else {
+          console.error('[Login] ❌ NO TOKEN IN LOGIN RESPONSE!');
         }
-
+        
+        // Get role from login response (backend returns it)
         const userRole = data.user?.role || 'personal';
         const emailLower = u.toLowerCase().trim();
+        
+        // HARDCODE: jonakfir@gmail.com is ALWAYS admin
         const isAdmin = emailLower === 'jonakfir@gmail.com' || userRole === 'admin';
-
-        // Determine redirect URL (honour ?redirect= for e.g. /pricing)
-        const queryRedirect = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('redirect') : $page.url.searchParams.get('redirect');
-        const safeRedirect = queryRedirect && queryRedirect.startsWith('/') && !queryRedirect.startsWith('//') ? queryRedirect : null;
-
-        // Redirect immediately; org-status is fetched on dashboard if needed (avoids blocking login)
-        const redirectUrl = safeRedirect ?? (isAdmin ? '/admin/users' : '/dashboard');
-
+        
+        console.log('[Login] User role:', userRole, 'Email:', u, 'IsAdmin:', isAdmin);
+        
+        // Check if user is an org admin by checking their memberships
+        let isOrgAdmin = false;
+        let primaryOrgId = null;
+        
+        if (!isAdmin) {
+          try {
+            const orgStatusRes = await apiFetch('/api/user/org-status');
+            const orgStatusData = await orgStatusRes.json();
+            if (orgStatusData.ok && orgStatusData.isOrgAdmin) {
+              isOrgAdmin = true;
+              primaryOrgId = orgStatusData.primaryOrgId;
+              console.log('[Login] ✅ ORG ADMIN DETECTED - Primary org:', primaryOrgId);
+            }
+          } catch (orgErr) {
+            console.warn('[Login] Failed to check org status:', orgErr);
+          }
+        }
+        
+        // Determine redirect URL
+        let redirectUrl = '/dashboard';
+        if (isAdmin) {
+          console.log('[Login] ✅ ADMIN DETECTED - Redirecting to admin page');
+          redirectUrl = '/admin/users';
+        } else if (isOrgAdmin && primaryOrgId) {
+          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org dashboard:', primaryOrgId);
+          redirectUrl = `/org/${primaryOrgId}/dashboard`;
+        } else if (isOrgAdmin) {
+          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org hub');
+          redirectUrl = '/org';
+        } else {
+          console.log('[Login] Redirecting to dashboard');
+          redirectUrl = '/dashboard';
+        }
+        
+        console.log('[Login] FORCE REDIRECTING to:', redirectUrl);
+        
+        // Store admin flag in localStorage as backup for admin layout
         if (isAdmin) {
           localStorage.setItem('_admin_login', 'true');
           localStorage.setItem('_admin_email', u);
         }
-
+        
+        // Wait a moment for cookies to be set, then redirect
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Use goto() for SvelteKit navigation, with window.location as fallback
         try {
           await goto(redirectUrl, { replaceState: true, invalidateAll: true, noScroll: true });
+          // If goto doesn't work, force with window.location
           setTimeout(() => {
-            if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+            if (window.location.pathname === '/login') {
+              console.warn('[Login] goto() may have failed, forcing window.location');
               window.location.href = redirectUrl;
             }
           }, 100);
-        } catch {
-          if (typeof window !== 'undefined') window.location.href = redirectUrl;
+        } catch (err) {
+          console.error('[Login] goto() error:', err);
+          window.location.href = redirectUrl;
         }
         return;
       } else {
+        console.error('[Login] Login failed - res.ok:', res.ok, 'data.ok:', data.ok, 'data.user:', !!data.user);
         error = data.error || `Login failed (HTTP ${res.status})`;
       }
     } catch (err) {
-      error = 'Network error: ' + (err?.message || 'Unknown error');
+      console.error('[Login] Error:', err);
+      error = 'Network error: ' + (err.message || 'Unknown error');
     } finally {
       loading = false;
     }

@@ -1,10 +1,36 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { getAdminUserFromRequest } from '$lib/utils/syncUser';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
-  return getAdminUserFromRequest(event.request);
+  try {
+    const mockUserId = event.request.headers.get('X-User-Id');
+    const mockUserEmail = event.request.headers.get('X-User-Email');
+    if (mockUserId && mockUserEmail) {
+      const user = await prisma.user.findFirst({
+        where: { username: mockUserEmail.trim().toLowerCase() },
+        select: { id: true, role: true }
+      });
+      return user ? { id: String(user.id), role: user.role } : null;
+    }
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) headers['Authorization'] = authHeader;
+    const response = await fetch(`${base}/auth/me`, { method: 'GET', headers, credentials: 'include' });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const backendUser = data?.user;
+    if (!backendUser?.email) return null;
+    const prismaUser = await ensurePrismaUser(backendUser.email);
+    return prismaUser;
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
+    return null;
+  }
 }
 
 function parsePhotoSourceSettings(raw: string | null): { ekman: boolean; own: boolean; synthetic: boolean } {
@@ -31,12 +57,10 @@ export const GET: RequestHandler = async (event) => {
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
 
-    const orgIdParam = event.params.orgId;
-    if (!orgIdParam) return json({ ok: false, error: 'orgId required' }, { status: 400 });
-    const orgIdNum = parseInt(orgIdParam, 10);
-    if (isNaN(orgIdNum)) return json({ ok: false, error: 'Invalid orgId' }, { status: 400 });
+    const orgId = event.params.orgId;
+    if (!orgId) return json({ ok: false, error: 'orgId required' }, { status: 400 });
     const org = await prisma.organization.findUnique({
-      where: { id: orgIdNum },
+      where: { id: orgId },
       select: { id: true, photoSourceSettings: true }
     });
     if (!org) return json({ ok: false, error: 'Organization not found' }, { status: 404 });
@@ -57,10 +81,8 @@ export const PATCH: RequestHandler = async (event) => {
     const isAdmin = email === 'jonakfir@gmail.com' || me?.role === 'admin';
     if (!isAdmin) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
 
-    const orgIdParam2 = event.params.orgId;
-    if (!orgIdParam2) return json({ ok: false, error: 'orgId required' }, { status: 400 });
-    const orgIdNum2 = parseInt(orgIdParam2, 10);
-    if (isNaN(orgIdNum2)) return json({ ok: false, error: 'Invalid orgId' }, { status: 400 });
+    const orgId = event.params.orgId;
+    if (!orgId) return json({ ok: false, error: 'orgId required' }, { status: 400 });
     const body = await event.request.json().catch(() => ({}));
     const ekman = typeof body.ekman === 'boolean' ? body.ekman : undefined;
     const own = typeof body.own === 'boolean' ? body.own : undefined;
@@ -69,7 +91,7 @@ export const PATCH: RequestHandler = async (event) => {
       return json({ ok: false, error: 'At least one of ekman, own, synthetic required' }, { status: 400 });
     }
     const org = await prisma.organization.findUnique({
-      where: { id: orgIdNum2 },
+      where: { id: orgId },
       select: { id: true, photoSourceSettings: true }
     });
     if (!org) return json({ ok: false, error: 'Organization not found' }, { status: 404 });
@@ -80,7 +102,7 @@ export const PATCH: RequestHandler = async (event) => {
       synthetic: synthetic !== undefined ? synthetic : current.synthetic
     };
     await prisma.organization.update({
-      where: { id: orgIdNum2 },
+      where: { id: orgId },
       data: { photoSourceSettings: JSON.stringify(next) }
     });
     return json({ ok: true, photoSourceSettings: next });

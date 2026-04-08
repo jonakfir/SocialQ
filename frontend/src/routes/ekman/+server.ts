@@ -1,20 +1,24 @@
 // src/routes/ekman/+server.ts
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { toPrismaUserId } from '$lib/userId';
+import { generateUserId, toPrismaUserId } from '$lib/userId';
 import { PUBLIC_API_URL } from '$env/static/public';
 
-/** Generate a unique numeric user id using raw SQL (avoids touching User columns that may not exist). */
-async function generateUserIdRaw(): Promise<number> {
-  for (let attempts = 0; attempts < 100; attempts++) {
-    const id = Math.floor(100000000 + Math.random() * 900000000);
-    const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>('SELECT id FROM users WHERE id = $1 LIMIT 1', id);
-    if (!rows?.length) return id;
-  }
-  throw new Error('Failed to generate unique user ID');
-}
-
 const EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'];
+
+// Fallback face image URLs when DB/canonical pool is empty (mirroring & quiz). Real face photos for mirroring targets.
+const FALLBACK_FACE_IMAGES: Array<{ url: string; label: string }> = [
+  { url: 'https://randomuser.me/api/portraits/women/32.jpg', label: 'Happy' },
+  { url: 'https://randomuser.me/api/portraits/men/22.jpg', label: 'Anger' },
+  { url: 'https://randomuser.me/api/portraits/women/44.jpg', label: 'Surprise' },
+  { url: 'https://randomuser.me/api/portraits/men/46.jpg', label: 'Sad' },
+  { url: 'https://randomuser.me/api/portraits/women/65.jpg', label: 'Fear' },
+  { url: 'https://randomuser.me/api/portraits/men/75.jpg', label: 'Disgust' },
+  { url: 'https://randomuser.me/api/portraits/women/88.jpg', label: 'Neutral' },
+  { url: 'https://randomuser.me/api/portraits/men/12.jpg', label: 'Happy' },
+  { url: 'https://randomuser.me/api/portraits/women/91.jpg', label: 'Anger' },
+  { url: 'https://randomuser.me/api/portraits/men/33.jpg', label: 'Surprise' }
+];
 
 // Map emotion names from saved collages to ekman format
 const EMOTION_MAP: Record<string, string> = {
@@ -172,31 +176,44 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       if (response.ok) {
         const data = await response.json();
         if (data?.user?.id) {
+          // Find or create Prisma user
           const userId = String(data.user.id);
-          const email = (data.user.email || data.user.username || `user_${userId}`).trim();
-          // Raw SQL so we never SELECT missing columns (e.g. photoSourceSettings)
-          const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
-            'SELECT id FROM users WHERE email = $1 LIMIT 1',
-            email
-          );
-          let prismaId: number;
-          if (rows?.[0]) {
-            prismaId = rows[0].id;
-          } else {
+          let prismaUser = await prisma.user.findFirst({
+            where: { username: data.user.email || data.user.username || `user_${userId}` },
+            select: { id: true }
+          });
+          
+          if (!prismaUser) {
             const bcrypt = await import('bcryptjs');
             const defaultPassword = await bcrypt.hash('temp', 10);
-            const newUserId = await generateUserIdRaw();
-            // Only columns that exist in backend users table (no invitationCode/photoSourceSettings)
-            await prisma.$executeRawUnsafe(
-              'INSERT INTO users (id, email, password, role) VALUES ($1, $2, $3, $4)',
-              newUserId,
-              email,
-              defaultPassword,
-              'personal'
-            );
-            prismaId = newUserId;
+            const { randomBytes } = await import('crypto');
+            
+            // Generate unique 9-digit user ID
+            const newUserId = await generateUserId();
+            
+            // Generate unique invitation code
+            let invitationCode: string;
+            let attempts = 0;
+            do {
+              invitationCode = randomBytes(8).toString('hex').toUpperCase();
+              attempts++;
+              if (attempts > 10) {
+                throw new Error('Failed to generate unique invitation code');
+              }
+            } while (await prisma.user.findUnique({ where: { invitationCode }, select: { id: true } }));
+            
+            prismaUser = await prisma.user.create({
+              data: {
+                id: newUserId,
+                username: data.user.email || data.user.username || `user_${userId}`,
+                password: defaultPassword,
+                invitationCode
+              },
+              select: { id: true }
+            });
           }
-          return { id: String(prismaId) };
+          
+          return { id: prismaUser.id };
         }
       }
     } catch {
@@ -209,12 +226,12 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
   }
 }
 
-// Load static assets (works in Vercel). Canonical = all ekman folder except generated.
+// Load static assets as fallback (works in Vercel)
 let staticImageModules: Record<string, string> | null = null;
 function getStaticImages() {
   if (!staticImageModules) {
     try {
-      staticImageModules = import.meta.glob('$lib/assets/ekman/**/*.{png,jpg,jpeg,webp}', {
+      staticImageModules = import.meta.glob('$lib/assets/ekman/**/*.{png,jpg,jpeg,webp}', { 
         eager: true,
         query: '?url'
       }) as Record<string, string>;
@@ -226,61 +243,14 @@ function getStaticImages() {
   return staticImageModules;
 }
 
-// Generated photos folder: $lib/assets/ekman/generated/Label_difficulty/*.jpg — used as fallback instead of external URLs
-let generatedImageModules: Record<string, string> | null = null;
-function getStaticGeneratedImages(): Array<{ img: string; label: string; difficulty: string }> {
-  if (!generatedImageModules) {
-    try {
-      generatedImageModules = import.meta.glob('$lib/assets/ekman/generated/**/*.{png,jpg,jpeg,webp}', {
-        eager: true,
-        query: '?url'
-      }) as Record<string, string>;
-    } catch {
-      generatedImageModules = {};
-    }
-  }
-  const images: Array<{ img: string; label: string; difficulty: string }> = [];
-  for (const [path, url] of Object.entries(generatedImageModules)) {
-    const parts = path.split('/');
-    const folder = parts[parts.length - 2]; // e.g. Anger_1
-    if (folder) {
-      const [label, difficulty] = folder.split('_');
-      if (label && EMOTIONS.includes(label)) {
-        const imageUrl = typeof url === 'string' ? url : (url as any)?.default ?? '';
-        if (imageUrl) images.push({ img: imageUrl, label, difficulty: difficulty || '1' });
-      }
-    }
-  }
-  return images;
-}
-
-function getFallbackPoolFromStatic(): Array<{ img: string; label: string; difficulty: string }> {
-  const generated = getStaticGeneratedImages();
-  if (generated.length > 0) return generated;
-  const imageModules = getStaticImages();
-  const canonical: Array<{ img: string; label: string; difficulty: string }> = [];
-  for (const [path, url] of Object.entries(imageModules)) {
-    const parts = path.split('/');
-    const folder = parts[parts.length - 2];
-    if (folder && !folder.startsWith('Transition') && !path.includes('/generated/')) {
-      const [label, difficulty] = folder.split('_');
-      if (label && EMOTIONS.includes(label)) {
-        const imageUrl = typeof url === 'string' ? url : (url as any)?.default ?? '';
-        if (imageUrl) canonical.push({ img: imageUrl, label, difficulty: difficulty || '1' });
-      }
-    }
-  }
-  return canonical;
-}
-
 // Get user's organization IDs
 async function getUserOrganizationIds(userId: string | null): Promise<string[]> {
   if (!userId) return [];
+  
   try {
-    const uid = toPrismaUserId(userId);
     const memberships = await prisma.organizationMembership.findMany({
       where: {
-        userId: uid,
+        userId,
         status: 'approved'
       },
       select: {
@@ -315,27 +285,23 @@ async function getEffectivePhotoSourceSettings(userId: string | null): Promise<{
   const defaults = { ekman: false, own: true, synthetic: true };
   if (!userId) return defaults;
   try {
-    const id = toPrismaUserId(userId);
-    const rows = await prisma.$queryRawUnsafe<Array<{ id: number }>>(
-      'SELECT id FROM users WHERE id = $1 LIMIT 1',
-      id
-    );
-    if (!rows?.[0]) return defaults;
+    const user = await prisma.user.findUnique({
+      where: { id: toPrismaUserId(userId) },
+      select: { id: true }
+    });
+    if (!user) return defaults;
+    // Skip reading photoSourceSettings when column may not exist (migration not run). Use defaults so ekman/quiz/mirroring still get images.
     return defaults;
   } catch {
     return defaults;
   }
 }
 
-type PoolItem = { id?: string; img: string; label: string; difficulty: string };
-
 // photoTypeFilter: 'ekman' = ekman+other, 'synthetic' = synthetic, 'canonical' = only from assets/ekman folder (folder = 'canonical')
-// lightMode: when true, do NOT select imageData (huge) — only id, label, difficulty for fast quiz loading
 async function getAllImages(
   userOrganizationIds: string[] = [],
-  photoTypeFilter?: 'ekman' | 'synthetic' | 'canonical',
-  lightMode = false
-): Promise<PoolItem[]> {
+  photoTypeFilter?: 'ekman' | 'synthetic' | 'canonical'
+): Promise<Array<{ img: string; label: string; difficulty: string }>> {
   try {
     const whereClause: any = {};
     if (photoTypeFilter === 'canonical') {
@@ -346,12 +312,11 @@ async function getAllImages(
       whereClause.photoType = 'synthetic';
     }
 
-    const selectImageData = !lightMode;
     const allImages = await prisma.ekmanImage.findMany({
       where: Object.keys(whereClause).length ? whereClause : undefined,
       select: {
         id: true,
-        ...(selectImageData ? { imageData: true } : {}),
+        imageData: true,
         label: true,
         difficulty: true,
         organizationVisibility: {
@@ -363,15 +328,14 @@ async function getAllImages(
     });
 
     if (allImages.length > 0) {
-      const filteredImages = allImages.filter((img: any) => {
+      const filteredImages = allImages.filter(img => {
         if (img.organizationVisibility.length === 0) return true;
         if (userOrganizationIds.length === 0) return false;
-        const imageOrgIds = img.organizationVisibility.map((v: any) => v.organizationId);
+        const imageOrgIds = img.organizationVisibility.map(v => v.organizationId);
         return userOrganizationIds.some(orgId => imageOrgIds.includes(orgId));
       });
-      return filteredImages.map((img: any) => ({
-        id: img.id,
-        img: selectImageData && img.imageData != null ? img.imageData : '',
+      return filteredImages.map(img => ({
+        img: img.imageData,
         label: img.label,
         difficulty: img.difficulty
       }));
@@ -436,10 +400,9 @@ export const GET: RequestHandler = async (event) => {
   const photoTypeParam = (event.url.searchParams.get('photoType') ?? '').toLowerCase();
   const ekmanOnly = (event.url.searchParams.get('ekmanOnly') ?? '').toLowerCase() === '1' || photoTypeParam === 'ekman';
   const generatedOnly = photoTypeParam === 'synthetic' || photoTypeParam === 'generated';
-  const light = event.url.searchParams.get('light') === '1';
   const count = Number(event.url.searchParams.get('count') ?? '12');
 
-  let pool: PoolItem[] = [];
+  let pool: Array<{ img: string; label: string; difficulty: string }> = [];
 
   try {
     console.log(`[ekman] Fetching images for difficulty: ${diff}, ekmanOnly: ${ekmanOnly}, generatedOnly: ${generatedOnly}`);
@@ -449,16 +412,11 @@ export const GET: RequestHandler = async (event) => {
       pool = [...canonicalImages];
       console.log(`[ekman] Canonical only: ${pool.length} images from assets/ekman`);
     } else if (generatedOnly) {
-      // Facial recognition: static generated folder first, then DB synthetic (e.g. from generate-synthetic-photos script)
-      pool = getStaticGeneratedImages();
-      if (pool.length === 0) {
-        // When light=1, do NOT load imageData from DB (saves 30+ seconds with 78 images)
-        const dbSynthetic = await getAllImages([], 'synthetic', light);
-        pool = dbSynthetic;
-        console.log(`[ekman] Generated folder empty; using ${pool.length} synthetic images from DB`);
-      } else {
-        console.log(`[ekman] Generated folder: ${pool.length} images`);
-      }
+      const user = await getCurrentUser(event);
+      const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
+      const syntheticImages = await getAllImages(userOrganizationIds, 'synthetic');
+      pool = [...syntheticImages];
+      console.log(`[ekman] Generated only: ${pool.length} synthetic images`);
     } else {
       const user = await getCurrentUser(event);
       const userOrganizationIds = user ? await getUserOrganizationIds(user.id) : [];
@@ -490,34 +448,24 @@ export const GET: RequestHandler = async (event) => {
   // Include images that match the requested difficulty OR have difficulty 'all'
   pool = pool
     .filter((row) => (diff === 'all' ? true : row.difficulty === diff || row.difficulty === 'all'))
-    .map((row) => ({ id: row.id, img: row.img, label: row.label, difficulty: row.difficulty }));
+    .map((row) => ({ img: row.img, label: row.label, difficulty: row.difficulty }));
 
   if (pool.length === 0) {
-    // Facial recognition (generatedOnly): only generated folder, never Ekman. Other modes: generated then canonical.
-    const fallback = generatedOnly
-      ? getStaticGeneratedImages()
-      : getFallbackPoolFromStatic();
-    pool = fallback.filter((row) =>
-      diff === 'all' ? true : row.difficulty === diff || row.difficulty === 'all'
-    );
-    if (pool.length > 0) {
-      console.log(`[ekman] Using ${generatedOnly ? 'generated' : 'generated/canonical'} static fallback: ${pool.length} images`);
-    } else if (generatedOnly) {
-      console.warn('[ekman] Generated folder empty; add images to src/lib/assets/ekman/generated/Label_difficulty/ (e.g. Anger_1/, Happy_2/).');
-    }
+    console.warn('[ekman] No images in pool, using fallback face images');
+    pool = FALLBACK_FACE_IMAGES.map(({ url, label }) => ({
+      img: url,
+      label,
+      difficulty: '1'
+    }));
   }
 
-  console.log(`[ekman] Total pool size: ${pool.length}, requested count: ${count}, light: ${light}`);
+  console.log(`[ekman] Total pool size: ${pool.length}, requested count: ${count}`);
   shuffle(pool);
   const picked = pool.slice(0, Math.min(count, pool.length));
   const rows = picked.map((p) => {
     const distractors = shuffle(EMOTIONS.filter((e) => e !== p.label)).slice(0, 2);
     const options = shuffle([p.label, ...distractors]);
-    // When light=1 and we have id, omit img so client uses /api/ekman-image/:id (cacheable, fast)
-    if (light && p.id) {
-      return { id: p.id, options, correct: p.label };
-    }
-    return { id: p.id, img: p.img, options, correct: p.label };
+    return { img: p.img, options, correct: p.label };
   });
 
   console.log(`[ekman] Returning ${rows.length} questions`);

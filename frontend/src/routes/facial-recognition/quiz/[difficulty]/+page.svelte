@@ -4,9 +4,8 @@
   import { page } from '$app/stores';
   import { getUserKey } from '$lib/userKey';
   import { lastFrQuizDetails } from '$lib/quizDetailsStore';
-  import { getCachedQuizRows, setCachedQuizRows } from '$lib/quizImageCache';
 
-  type Row = { id?: string; img?: string; options: string[]; correct: string };
+  type Row = { img: string; options: string[]; correct: string };
 
   const QUESTION_COUNT = 8;
 
@@ -35,17 +34,9 @@
   const normalizeImg = (u: unknown) =>
     typeof u === 'string' && !u.startsWith('blob:') ? u : undefined;
 
-  /** Image URL for display: use cacheable /api/ekman-image/:id when we have id, else inline img */
-  const rowImgSrc = (row: Row): string => {
-    if (row.id) return `/api/ekman-image/${row.id}`;
-    const s = normalizeImg(row.img);
-    return s ?? '';
-  };
-
   /** Only persist img when it's a URL (not base64) to avoid localStorage quota */
-  const safeToStoreImg = (row: Row): string | undefined => {
-    if (row.id) return `/api/ekman-image/${row.id}`;
-    const s = normalizeImg(row.img);
+  const safeToStoreImg = (u: unknown): string | undefined => {
+    const s = normalizeImg(u);
     if (!s || s.startsWith('data:')) return undefined;
     if (s.length > 8000) return undefined;
     return s;
@@ -102,50 +93,48 @@
 
   onMount(async () => {
     document.title = 'Facial Recognition Quiz';
-    const serverDiff = difficulty === '5' ? 'all' : difficulty;
-
-    // Use preloaded cache first (loaded when app opened) so quiz opens instantly
-    const cached = getCachedQuizRows(difficulty);
-    if (cached && cached.length > 0) {
-      quizData = cached;
-      userAnswers = Array(quizData.length).fill(null);
-      loadError = '';
-      loading = false;
-      localStorage.removeItem('fr_picks');
-      if (!instructionsOpen && quizStartedAt == null) quizStartedAt = performance.now();
-      if (difficulty === '5' && quizData.length && !instructionsOpen) startTimer();
-      return;
-    }
-
-    const { apiFetch } = await import('$lib/api');
-    const url = `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}&photoType=synthetic&light=1`;
-
     try {
-      const res = await apiFetch(url);
+      const serverDiff = difficulty === '5' ? 'all' : difficulty;
+
+      // Use apiFetch to include auth headers for user photos
+      const { apiFetch } = await import('$lib/api');
+      console.log('[facial-recognition] Fetching quiz data for difficulty:', serverDiff);
+      
+      // Load images based on user's checked photo sources (ekman, own, synthetic) per settings
+      const res = await apiFetch(
+        `/ekman?difficulty=${encodeURIComponent(serverDiff)}&count=${QUESTION_COUNT}`
+      );
+      
+      console.log('[facial-recognition] Response status:', res.status, res.ok);
+      
       if (!res.ok) {
-        loadError = 'Failed to load images. Try again.';
-        return;
-      }
-      const rows = await res.json();
-      const data = Array.isArray(rows) ? rows.slice(0, QUESTION_COUNT) : [];
-
-      if (!data.length) {
-        loadError = 'No images found for this difficulty. Try another level.';
-        return;
+        const errorText = await res.text().catch(() => 'Unknown error');
+        console.error('[facial-recognition] Server error:', res.status, errorText);
+        throw new Error(`Server returned ${res.status}: ${errorText}`);
       }
 
-      setCachedQuizRows(difficulty, data);
-      quizData = data;
+      const rows: Row[] = await res.json();
+      console.log('[facial-recognition] Received', rows?.length || 0, 'rows');
+      
+      quizData = (Array.isArray(rows) ? rows.slice(0, QUESTION_COUNT) : []);
+      if (!quizData.length) {
+        console.warn('[facial-recognition] No quiz data received');
+        throw new Error('No images found for this difficulty. Please try again or select a different difficulty level.');
+      }
+
       userAnswers = Array(quizData.length).fill(null);
       loadError = '';
+
+      // Do not store questions in localStorage here — image data can exceed quota and causes "setItem exceeded the quota"
       localStorage.removeItem('fr_picks');
+
       if (!instructionsOpen) {
         if (quizStartedAt == null) quizStartedAt = performance.now();
         startTimer();
       }
     } catch (err: any) {
       console.error('[facial-recognition] Error loading quiz:', err);
-      loadError = err?.message ?? 'Failed to load quiz. Check your connection and try again.';
+      loadError = err?.message ?? 'Failed to load quiz. Please check your connection and try again.';
     } finally {
       loading = false;
     }
@@ -212,14 +201,14 @@
     localStorage.setItem(
       `fr_questions_${userKey}`,
       JSON.stringify(quizData.map(q => {
-        const img = safeToStoreImg(q);
+        const img = safeToStoreImg(q.img);
         return img ? { correct: q.correct, img } : { correct: q.correct };
       }))
     );
 
     const detailsWithImg = quizData.map((q, i) => {
       const picked = picks[i];
-      const img = safeToStoreImg(q);
+      const img = safeToStoreImg(q.img);
       return {
         index: i,
         correct: q.correct,
@@ -232,7 +221,7 @@
     // In-memory store so "Your Answers" page can show thumbnails (avoids sessionStorage quota)
     const detailsFull = quizData.map((q, i) => ({
       index: i,
-      img: rowImgSrc(q),
+      img: normalizeImg(q.img),
       correct: q.correct,
       picked: picks[i],
       isCorrect: picks[i] === q.correct
@@ -286,17 +275,6 @@
 </script>
 
 <style>
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 
   .stage {
     position: fixed;
@@ -502,11 +480,6 @@
 
   /* modal */
   .modal-backdrop{
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    cursor: pointer;
     position: fixed; inset: 0;
     display: grid; place-items: center;
     background:
@@ -565,19 +538,6 @@
     to   { opacity: 1; }
   }
 
-  .retry-btn {
-    margin-top: 12px;
-    padding: 10px 24px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--af-dark-navy, #1a1f47);
-    background: var(--af-glow-blue, #73a6f2);
-    border: none;
-    border-radius: 12px;
-    cursor: pointer;
-  }
-  .retry-btn:hover { filter: brightness(1.1); }
-
   /* phones */
   @media (max-width: 640px) {
     .quiz-box {
@@ -600,10 +560,7 @@
   {#if loading}
     <div class="dashboard-box quiz-box">Loading…</div>
   {:else if loadError}
-    <div class="dashboard-box quiz-box">
-      <p>{loadError}</p>
-      <button type="button" class="retry-btn" on:click={() => window.location.reload()}>Retry</button>
-    </div>
+    <div class="dashboard-box quiz-box">Error: {loadError}</div>
   {:else}
     <!-- blobs -->
     <div class="blob blob1"></div><div class="blob blob2"></div><div class="blob blob3"></div><div class="blob blob4"></div>
@@ -634,11 +591,7 @@
 
     <h1 class="settings-title">Facial Recognition</h1>
 
-    <img id="emotion-img" src={rowImgSrc(quizData[currentIndex])} alt="Emotion Face" loading="eager" decoding="async" />
-    <!-- Preload next image so it's ready when user clicks Next -->
-    {#if quizData.length > 1 && currentIndex < quizData.length - 1}
-      <img src={rowImgSrc(quizData[currentIndex + 1])} alt="" role="presentation" loading="eager" decoding="async" class="sr-only" aria-hidden="true" />
-    {/if}
+    <img id="emotion-img" src={quizData[currentIndex].img} alt="Emotion Face" />
 
     <p>What emotion do you see?</p>
 
@@ -659,9 +612,7 @@
   </div>
 
   {#if instructionsOpen}
-    <button type="button" class="modal-backdrop" on:click={closeInstructions} aria-label="Close instructions">
-      <!-- Stop propagation so clicking modal content doesn't close; div needed for dialog layout -->
-      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -->
+    <div class="modal-backdrop" on:click={closeInstructions}>
       <div class="modal" role="dialog" aria-modal="true" aria-label="How to play" on:click|stopPropagation>
         <div class="modal-header">
           <div class="badge">🧠</div>
@@ -678,7 +629,7 @@
           <button class="action" type="button" on:click={closeInstructions}>Got it</button>
         </div>
       </div>
-    </button>
+    </div>
   {/if}
   {/if}
 </div>

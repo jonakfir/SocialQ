@@ -65,33 +65,16 @@ async function readJson(body: any): Promise<any> {
  *  - adds mock auth headers for /api/* endpoints in dev mode
  *  - /api/* routes always stay local (use SvelteKit routes, not backend)
  */
-const AUTH_ME_CACHE_MS = 4000;
-let authMeCache: { user: any; at: number } | null = null;
-
-/** Clear auth/me cache (e.g. after logout). */
-export function clearAuthMeCache() {
-  authMeCache = null;
-}
-
 export async function apiFetch(path: string, init: RequestInit = {}) {
-  const method = (init.method || 'GET').toUpperCase();
-
   // NEVER use mock auth when PUBLIC_API_URL is set (we have a real backend)
   const shouldMock = isLocalMock() && path.startsWith('/auth/') && !ABS_BASE;
   if (!shouldMock) {
-    if (path === '/auth/logout' && method === 'POST') {
-      authMeCache = null;
-    }
-    if (path === '/auth/me' && method === 'GET' && typeof window !== 'undefined' && authMeCache && Date.now() - authMeCache.at < AUTH_ME_CACHE_MS) {
-      return new Response(JSON.stringify({ user: authMeCache.user }), {
-        headers: { 'content-type': 'application/json' }
-      });
-    }
-
     // /api/* and /ekman routes should always use SvelteKit routes (stay on same origin)
+    // Don't send them to the backend via PUBLIC_API_URL
     const url = (path.startsWith('/api/') || path.startsWith('/ekman')) ? path : buildURL(path);
     const headers = new Headers(init.headers ?? {});
-
+    
+    // Add JWT token from localStorage to Authorization header (works cross-origin)
     if (typeof window !== 'undefined') {
       try {
         const token = localStorage.getItem('auth_token');
@@ -99,35 +82,40 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
           const trimmedToken = token.trim();
           if (trimmedToken) {
             headers.set('Authorization', `Bearer ${trimmedToken}`);
+            console.log('[apiFetch] Added JWT token to Authorization header for', path, 'Token length:', trimmedToken.length);
+          } else {
+            console.warn('[apiFetch] Token found but is empty after trimming');
           }
+        } else {
+          console.warn('[apiFetch] No auth_token found in localStorage for', path);
         }
-      } catch {
-        // Ignore
+      } catch (error) {
+        console.error('[apiFetch] Error reading auth token:', error);
+        // Ignore localStorage errors
       }
     }
-
+    
+    // Add mock auth headers for /api/*, /ekman, and /admin endpoints in dev mode if user is logged in via mock
     if (isLocalMock() && (path.startsWith('/api/') || path.startsWith('/ekman') || path.startsWith('/admin')) && typeof window !== 'undefined') {
       try {
         const mockUser = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
         if (mockUser && mockUser.id && mockUser.email) {
           headers.set('X-User-Id', String(mockUser.id));
           headers.set('X-User-Email', mockUser.email);
+          console.log('[apiFetch] Added mock auth headers for', path, 'User:', mockUser.email);
+        } else {
+          console.warn('[apiFetch] No mock user found for', path);
         }
-      } catch {
-        // Ignore
+      } catch (error) {
+        console.error('[apiFetch] Error reading mock user:', error);
+        // Ignore localStorage errors
       }
     }
-
+    
     if (!headers.has('content-type') && init.body && typeof init.body === 'string') {
       headers.set('content-type', 'application/json');
     }
-    const res = await fetch(url, { ...init, headers, credentials: 'include' });
-    if (path === '/auth/me' && method === 'GET' && res.ok && typeof window !== 'undefined') {
-      res.clone().json().then((body: any) => {
-        authMeCache = { user: body?.user ?? null, at: Date.now() };
-      }).catch(() => {});
-    }
-    return res;
+    return fetch(url, { ...init, headers, credentials: 'include' });
   }
 
   // -----------------------
@@ -138,6 +126,8 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   };
   const writeUser = (u: any) => localStorage.setItem(LS_KEY, JSON.stringify(u));
   const clearUser = () => localStorage.removeItem(LS_KEY);
+
+  const method = (init.method || 'GET').toUpperCase();
 
   if (path === '/auth/login' && method === 'POST') {
     const body = await readJson(init.body);

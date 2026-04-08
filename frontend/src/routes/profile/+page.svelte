@@ -25,7 +25,7 @@
     const ch = local.trim().charAt(0);
     return ch ? ch.toUpperCase() : '?';
   }
-  $: initial = initialFromEmail(displayEmail);
+  const initial = initialFromEmail(displayEmail);
 
   // Explicit navigation so SvelteKit handles it client-side (no SSR bounce)
   function goEditProfile() {

@@ -65,7 +65,7 @@
   }
   function startTimer() {
     // only timed for "challenge" mode
-    if (level !== 'Challenge') { timeLeft = LIMIT; return; }
+    if (level !== 'challenge') { timeLeft = LIMIT; return; }
     stopTimer();
     timeLeft = LIMIT;
     timerId = window.setInterval(() => {
@@ -302,26 +302,16 @@
       };
     });
 
-    try {
-      localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
-    } catch {
-      // Quota exceeded with thumbnails — store without image data so stats still work
-      const rowsNoImg = rows.map(r => ({ ...r, startImg: undefined, endImg: undefined }));
-      try { localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rowsNoImg)); } catch { /* ignore */ }
-    }
+    localStorage.setItem(`tr_details_${userKey}`, JSON.stringify(rows));
 
-    // Save last run raw data (optional convenience — omit media hrefs to avoid quota errors)
-    try {
-      localStorage.setItem(
-        `tr_last_run_${userKey}`,
-        JSON.stringify({
-          clips: clips.map(c => ({ from: c.from, to: c.to })),
-          guessFrom, guessTo
-        })
-      );
-    } catch {
-      // Quota exceeded — last_run is optional, skip it
-    }
+    // Save last run raw data (optional convenience)
+    localStorage.setItem(
+      `tr_last_run_${userKey}`,
+      JSON.stringify({
+        clips: clips.map(c => ({ href: c.media, from: c.from, to: c.to })),
+        guessFrom, guessTo
+      })
+    );
 
     // record elapsed time into per-user history
     const endedAt   = performance.now();
@@ -591,9 +581,9 @@
 
     <div class="media-row">
       <div class="media-frame">
-        {#key clips[current].media}
         <video
           bind:this={videoEl}
+          key={clips[current].media}
           class="clip"
           src={clips[current].media}
           preload="auto"
@@ -603,10 +593,9 @@
           on:loadedmetadata={ensurePlays}
           on:canplay={ensurePlays}
         ></video>
-        {/key}
       </div>
 
-      {#if level === 'Challenge'}
+      {#if level === 'challenge'}
         <div class="timer" aria-live="polite">{Math.ceil(timeLeft/1000)}s</div>
       {/if}
     </div>

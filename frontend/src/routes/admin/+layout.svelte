@@ -61,7 +61,6 @@
           localStorage.removeItem('mock_auth_user');
           localStorage.removeItem('email');
           localStorage.removeItem('userId');
-          localStorage.removeItem('auth_token');
           goto('/login');
         }}>Logout</button>
       </div>

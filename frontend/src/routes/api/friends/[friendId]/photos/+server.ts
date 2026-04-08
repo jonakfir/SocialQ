@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId, toPrismaUserId } from '$lib/userId';
+import { generateUserId } from '$lib/userId';
 // Lazy load env
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string } | null> {
@@ -12,15 +12,12 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     }
     
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const authHeader = event.request.headers.get('authorization') || '';
     const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
-
+    
     try {
-      const meHeaders: Record<string, string> = { cookie: cookieHeader };
-      if (authHeader) meHeaders['Authorization'] = authHeader;
       const response = await fetch(`${backendUrl}/auth/me`, {
-        headers: meHeaders
+        headers: { cookie: cookieHeader }
       });
       
       if (response.ok) {
@@ -62,7 +59,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
             });
           }
           
-          return { id: String(prismaUser.id) };
+          return { id: prismaUser.id };
         }
       }
     } catch {
@@ -87,15 +84,13 @@ export const GET: RequestHandler = async (event) => {
     }
 
     const friendId = event.params.friendId;
-    const userIdNum = toPrismaUserId(user.id);
-    const friendIdNum = toPrismaUserId(friendId);
 
     // Verify friendship exists
     const friendship = await prisma.friendship.findFirst({
       where: {
         OR: [
-          { userId1: userIdNum, userId2: friendIdNum },
-          { userId1: friendIdNum, userId2: userIdNum }
+          { userId1: user.id, userId2: friendId },
+          { userId1: friendId, userId2: user.id }
         ]
       }
     });
@@ -106,7 +101,7 @@ export const GET: RequestHandler = async (event) => {
 
     // Fetch friend's collages
     const collages = await prisma.collage.findMany({
-      where: { userId: friendIdNum },
+      where: { userId: friendId },
       orderBy: { createdAt: 'desc' }
     });
 

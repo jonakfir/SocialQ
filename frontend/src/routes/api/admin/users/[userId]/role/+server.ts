@@ -1,13 +1,52 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { getAdminUserFromRequest } from '$lib/utils/syncUser';
+import { toPrismaUserId } from '$lib/userId';
 
 /**
  * Get current user and check if admin
  */
 async function getCurrentAdmin(event: { request: Request }): Promise<{ id: string } | null> {
-  const user = await getAdminUserFromRequest(event.request);
-  return user ? { id: user.id } : null;
+  try {
+    const mockUserId = event.request.headers.get('X-User-Id');
+    const mockUserEmail = event.request.headers.get('X-User-Email');
+    
+    if (mockUserId && mockUserEmail) {
+      const user = await prisma.user.findFirst({
+        where: { username: mockUserEmail.trim().toLowerCase() },
+        select: { id: true, role: true }
+      });
+      if (user && user.role === 'admin') return { id: String(user.id) };
+      return null;
+    }
+    
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    const response = await fetch(`${base}/auth/me`, {
+      method: 'GET',
+      headers: { 'Cookie': cookieHeader },
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    const backendUser = data?.user;
+    
+    if (!backendUser || !backendUser.id) {
+      return null;
+    }
+    
+    const email = backendUser.email || backendUser.username;
+    const prismaUser = await prisma.user.findFirst({
+      where: { username: email },
+      select: { id: true, role: true }
+    });
+    
+    if (prismaUser && prismaUser.role === 'admin') return { id: prismaUser.id };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -18,14 +57,12 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
 export const PATCH: RequestHandler = async (event) => {
   try {
     // Admin check is handled by route guard - if user reaches this endpoint, they're already verified as admin
-    // Parse the incoming route param as an integer for Prisma (User.id is Int)
-    const userIdParam = event.params.userId;
-    const userId = Number(userIdParam);
+    const userId = event.params.userId;
     const body = await event.request.json();
     const { role } = body;
     
-    if (!Number.isInteger(userId)) {
-      return json({ ok: false, error: 'Valid numeric user ID required' }, { status: 400 });
+    if (!userId) {
+      return json({ ok: false, error: 'User ID required' }, { status: 400 });
     }
     
     if (role !== 'admin' && role !== 'personal') {
@@ -35,7 +72,7 @@ export const PATCH: RequestHandler = async (event) => {
     // Check if this is the last admin being downgraded
     if (role === 'personal') {
       const currentUser = await prisma.user.findUnique({
-      where: { id: userId },
+        where: { id: toPrismaUserId(userId) },
         select: { role: true }
       });
       
@@ -59,7 +96,7 @@ export const PATCH: RequestHandler = async (event) => {
       
       // Get user email from Prisma to find in backend
       const prismaUser = await prisma.user.findUnique({
-      where: { id: userId },
+        where: { id: toPrismaUserId(userId) },
         select: { username: true }
       });
       
@@ -119,37 +156,23 @@ export const PATCH: RequestHandler = async (event) => {
       // Don't throw - we'll still update Prisma, but log the error
     }
     
-    // SECOND: Update Prisma database (for frontend features).
-    // If this fails for any reason, log it but don't block the backend role change.
-    try {
-      const updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: { role },
-        select: {
-          id: true,
-          username: true,
-          role: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      });
-      
-      return json({
-        ok: true,
-        user: updatedUser
-      });
-    } catch (prismaError: any) {
-      console.error('[PATCH /api/admin/users/[userId]/role] Prisma update failed, but backend role was updated:', prismaError);
-      return json({
-        ok: true,
-        // Minimal payload so the UI can proceed even if Prisma is out of sync
-        user: {
-          id: userId,
-          role
-        },
-        prismaSyncWarning: prismaError?.message || 'Prisma user update failed; backend role updated only'
-      });
-    }
+    // SECOND: Update Prisma database (for frontend features)
+    const updatedUser = await prisma.user.update({
+      where: { id: toPrismaUserId(userId) },
+      data: { role },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    return json({
+      ok: true,
+      user: updatedUser
+    });
   } catch (error: any) {
     console.error('[PATCH /api/admin/users/[userId]/role] error:', error);
     return json(

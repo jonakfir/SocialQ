@@ -2,18 +2,6 @@ import { redirect } from '@sveltejs/kit';
 import type { LayoutLoad } from './$types';
 import { apiFetch } from '$lib/api';
 
-/** Decode JWT payload without verification (base64url decode the middle segment). */
-function decodeJwtPayload(token: string): Record<string, any> | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const raw = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(raw));
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Admin layout loader - protects admin routes
  * Redirects non-admin users to dashboard
@@ -63,30 +51,11 @@ export const load: LayoutLoad = async () => {
       console.error('[Admin Layout] Failed to parse response:', parseErr);
       throw redirect(302, '/login');
     }
-
-    let user = data?.user;
-
-    // Fallback: if backend returned ok but user=null (e.g. post-migration DB reset),
-    // decode the JWT to get the email so we can still validate admin access.
-    if (!user && typeof window !== 'undefined') {
-      try {
-        const token = localStorage.getItem('auth_token');
-        if (token) {
-          const payload = decodeJwtPayload(token);
-          // JWT payload uses 'un' (username/email) field
-          const email = payload?.un || payload?.email;
-          if (email) {
-            console.log('[Admin Layout] Backend returned null user, decoded JWT email:', email);
-            user = { email, role: null }; // role will be verified below via email check
-          }
-        }
-      } catch (jwtErr) {
-        console.warn('[Admin Layout] JWT decode failed:', jwtErr);
-      }
-    }
-
+    
+    const user = data?.user;
+    
     console.log('[Admin Layout] Auth check - user:', user ? `${user.email} (${user.role})` : 'null');
-
+    
     // Not authenticated - redirect to login
     if (!user) {
       console.log('[Admin Layout] No user found, redirecting to login');

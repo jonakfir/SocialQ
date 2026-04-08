@@ -19,7 +19,6 @@
     "populate-db": "node scripts/populate-db-direct.js",
     "check-assets": "node scripts/ensure-assets-in-db.js",
     "generate-synthetic-photos": "node scripts/generate-synthetic-photos.js",
-    "test:quiz-images": "node scripts/check-quiz-images.js",
     "migrate-project-art": "node scripts/migrate-project-art-to-db.js"
   },
   "dependencies": {

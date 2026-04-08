@@ -1,13 +1,78 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { generateUserId } from '$lib/userId';
-import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 
+// Reuse the same admin check pattern as analytics endpoint
 async function getCurrentAdmin(event: { request: Request }): Promise<{ id: string } | null> {
-  const user = await getAdminUserFromRequest(event.request);
-  if (!user) return null;
-  // Ensure admin role (getAdminUserFromRequest returns role from Prisma, which may be 'admin' or matched by email)
-  return { id: user.id };
+  try {
+    const mockUserId = event.request.headers.get('X-User-Id');
+    const mockUserEmail = event.request.headers.get('X-User-Email');
+
+    if (mockUserId && mockUserEmail) {
+      const email = mockUserEmail.trim().toLowerCase();
+      // HARDCODE: jonakfir@gmail.com is ALWAYS admin
+      if (email === 'jonakfir@gmail.com') {
+        const user = await ensurePrismaUser(email);
+        return user ? { id: String(user.id) } : null;
+      }
+      const user = await prisma.user.findFirst({
+        where: { username: email },
+        select: { id: true, role: true }
+      });
+      if (user && user.role === 'admin') return { id: String(user.id) };
+      return null;
+    }
+
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+
+    const response = await fetch(`${base}/auth/me`, {
+      method: 'GET',
+      headers: { 'Cookie': cookieHeader },
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+    const backendUser = data?.user;
+
+    if (!backendUser || !backendUser.id) {
+      return null;
+    }
+
+    // HARDCODE: jonakfir@gmail.com is ALWAYS admin - bypass all checks
+    const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
+    if (email === 'jonakfir@gmail.com') {
+      const user = await ensurePrismaUser(email);
+      return user ? { id: String(user.id) } : null;
+    }
+
+    // For other users, check Prisma role
+    const prismaUser = await ensurePrismaUser(email);
+    if (prismaUser && prismaUser.role === 'admin') return { id: String(prismaUser.id) };
+    return null;
+  } catch (error) {
+    console.error('[getCurrentAdmin] Error:', error);
+    // If everything fails but email is jonakfir@gmail.com, still allow
+    try {
+      const { PUBLIC_API_URL } = await import('$env/static/public');
+      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+      const cookieHeader = event.request.headers.get('cookie') || '';
+      const response = await fetch(`${base}/auth/me`, {
+        method: 'GET',
+        headers: { 'Cookie': cookieHeader },
+        credentials: 'include'
+      });
+      const data = await response.json();
+      const backendUser = data?.user;
+      const email = (backendUser?.email || backendUser?.username || '').trim().toLowerCase();
+      if (email === 'jonakfir@gmail.com') {
+        return { id: 'admin-override' }; // Temporary ID for hardcoded admin
+      }
+    } catch {}
+    return null;
+  }
 }
 
 // GET /api/admin/users - List users for admin tools (supports simple search + limit)

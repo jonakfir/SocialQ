@@ -1,10 +1,42 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { getAdminUserFromRequest } from '$lib/utils/syncUser';
+import { ensurePrismaUser } from '$lib/utils/syncUser';
 import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
-  return getAdminUserFromRequest(event.request);
+  try {
+    const mockUserId = event.request.headers.get('X-User-Id');
+    const mockUserEmail = event.request.headers.get('X-User-Email');
+    if (mockUserId && mockUserEmail) {
+      const user = await prisma.user.findFirst({
+        where: { username: mockUserEmail.trim().toLowerCase() },
+        select: { id: true, role: true }
+      });
+      return user ? { id: String(user.id), role: user.role } : null;
+    }
+
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) headers['Authorization'] = authHeader;
+
+    const response = await fetch(`${base}/auth/me`, {
+      method: 'GET',
+      headers,
+      credentials: 'include'
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const backendUser = data?.user;
+    if (!backendUser?.email) return null;
+    const prismaUser = await ensurePrismaUser(backendUser.email);
+    return prismaUser || null;
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
+    return null;
+  }
 }
 
 /**
@@ -28,17 +60,13 @@ export const DELETE: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Only admins can delete organizations' }, { status: 403 });
     }
 
-    const orgIdParam = event.params.orgId;
-    if (!orgIdParam) {
+    const orgId = event.params.orgId;
+    if (!orgId) {
       return json({ ok: false, error: 'Organization ID required' }, { status: 400 });
-    }
-    const orgIdNum = parseInt(orgIdParam, 10);
-    if (isNaN(orgIdNum)) {
-      return json({ ok: false, error: 'Invalid organization ID' }, { status: 400 });
     }
 
     const org = await prisma.organization.findUnique({
-      where: { id: orgIdNum },
+      where: { id: orgId },
       select: { id: true, name: true }
     });
     if (!org) {
@@ -46,7 +74,7 @@ export const DELETE: RequestHandler = async (event) => {
     }
 
     await prisma.organization.delete({
-      where: { id: orgIdNum }
+      where: { id: orgId }
     });
 
     return json({ ok: true, message: `Organization "${org.name}" deleted` });

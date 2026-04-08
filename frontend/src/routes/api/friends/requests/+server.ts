@@ -26,15 +26,12 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     }
     
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const authHeader = event.request.headers.get('authorization') || '';
     const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
-
+    
     try {
-      const meHeaders: Record<string, string> = { cookie: cookieHeader };
-      if (authHeader) meHeaders['Authorization'] = authHeader;
       const response = await fetch(`${backendUrl}/auth/me`, {
-        headers: meHeaders
+        headers: { cookie: cookieHeader }
       });
       
       if (response.ok) {
@@ -76,7 +73,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
             });
           }
           
-          return { id: String(prismaUser.id) };
+          return { id: prismaUser.id };
         }
       }
     } catch {
@@ -122,12 +119,11 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const uidNum = toPrismaUserId(user.id);
     const [sent, received] = await Promise.all([
       // Sent requests (pending)
       prisma.friendRequest.findMany({
         where: {
-          fromUserId: uidNum,
+          fromUserId: user.id,
           status: 'pending'
         },
         include: {
@@ -140,7 +136,7 @@ export const GET: RequestHandler = async (event) => {
       // Received requests (pending)
       prisma.friendRequest.findMany({
         where: {
-          toUserId: uidNum,
+          toUserId: uid,
           status: 'pending'
         },
         include: {
@@ -219,12 +215,12 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'toUserId or invitationCode required' }, { status: 400 });
     }
 
-    let targetUser: { id: number } | null = null;
+    let targetUser: { id: string } | null = null;
 
     // Find target user by ID or invitation code
     if (toUserId) {
       targetUser = await prisma.user.findUnique({
-        where: { id: toPrismaUserId(String(toUserId)) },
+        where: { id: String(toUserId) },
         select: { id: true }
       });
     } else if (invitationCode) {
@@ -238,13 +234,13 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'User not found' }, { status: 404 });
     }
 
-    const uidNum = toPrismaUserId(user.id);
-    const targetIdNum = targetUser.id;
-
     // Can't send request to yourself
-    if (targetIdNum === uidNum) {
+    if (targetUser.id === user.id) {
       return json({ ok: false, error: 'Cannot send request to yourself' }, { status: 400 });
     }
+
+    const uidNum = toPrismaUserId(user.id);
+    const targetIdNum = toPrismaUserId(targetUser.id);
     // Check if friendship already exists
     const existingFriendship = await prisma.friendship.findFirst({
       where: {
@@ -262,16 +258,16 @@ export const POST: RequestHandler = async (event) => {
     // Check if reverse request exists (bidirectional auto-accept)
     const reverseRequest = await prisma.friendRequest.findFirst({
       where: {
-        fromUserId: targetIdNum,
-        toUserId: uidNum,
+        fromUserId: targetUser.id,
+        toUserId: user.id,
         status: 'pending'
       }
     });
 
     if (reverseRequest) {
       // Auto-accept: create friendship and update both requests
-      const [userId1, userId2] = [uidNum, targetIdNum].sort((a, b) => a - b);
-
+      const [userId1, userId2] = [user.id, targetUser.id].sort();
+      
       await prisma.$transaction([
         prisma.friendship.create({
           data: { userId1, userId2 }
@@ -282,8 +278,8 @@ export const POST: RequestHandler = async (event) => {
         }),
         prisma.friendRequest.create({
           data: {
-            fromUserId: uidNum,
-            toUserId: targetIdNum,
+            fromUserId: user.id,
+            toUserId: targetUser.id,
             status: 'accepted'
           }
         })

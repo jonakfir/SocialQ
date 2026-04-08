@@ -1,14 +1,51 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 async function getCurrentUser(event: { request: Request }) {
-  return getAdminUserFromRequest(event.request);
+  try {
+    const mockUserEmail = event.request.headers.get('X-User-Email');
+    if (mockUserEmail) {
+      const user = await prisma.user.findFirst({ where: { username: mockUserEmail.trim().toLowerCase() }, select: { id: true, role: true } });
+      return user;
+    }
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    
+    // Get JWT token from Authorization header
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
+    const cookieHeader = event.request.headers.get('cookie') || '';
+    
+    // Build headers for backend request
+    const headers: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) {
+      headers['Authorization'] = authHeader;
+    }
+    
+    const response = await fetch(`${base}/auth/me`, {
+      method: 'GET',
+      headers,
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      console.error('[getCurrentUser] Backend /auth/me failed:', response.status);
+      return null;
+    }
+    
+    const data = await response.json();
+    const email = data?.user?.email;
+    if (!email) return null;
+    const prismaUser = await prisma.user.findFirst({ where: { username: email }, select: { id: true, role: true } });
+    return prismaUser;
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
+    return null;
+  }
 }
 
 function isGlobalAdmin(u: { role: string } | null | undefined) { return !!u && u.role === 'admin'; }
 
-async function isOrgAdmin(userId: number, orgId: number) {
+async function isOrgAdmin(userId: string, orgId: string) {
   const membership = await prisma.organizationMembership.findFirst({
     where: { organizationId: orgId, userId, status: 'approved', role: 'org_admin' },
     select: { id: true }
@@ -21,11 +58,7 @@ export const GET: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-
-    const orgId = Number(event.params.orgId);
-    if (!Number.isInteger(orgId)) {
-      return json({ ok: false, error: 'Invalid organization id' }, { status: 400 });
-    }
+    const orgId = event.params.orgId!;
 
     // visibility: org admins and global admins can view all; members can only see approved list (still ok)
     const members = await prisma.organizationMembership.findMany({
@@ -49,13 +82,11 @@ export const POST: RequestHandler = async (event) => {
   try {
     const user = await getCurrentUser(event);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-
-    const orgId = Number(event.params.orgId);
+    const orgId = event.params.orgId!;
     const body = await event.request.json();
-    const targetUserId = Number(String(body?.userId ?? '').trim());
+    const targetUserId = String(body?.userId || '').trim();
     const action = String(body?.action || '').toLowerCase();
-
-    if (!Number.isInteger(orgId) || !Number.isInteger(targetUserId) || !['approve', 'remove', 'promote', 'demote'].includes(action)) {
+    if (!targetUserId || !['approve', 'remove', 'promote', 'demote'].includes(action)) {
       return json({ ok: false, error: 'Invalid request' }, { status: 400 });
     }
 
