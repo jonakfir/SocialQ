@@ -68,20 +68,23 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
       }
       
       return {
-        id: prismaUser.id,
+        id: String(prismaUser.id),
         backendId: Number(mockUserId)
       };
     }
     
     // Try backend auth
     const cookieHeader = event.request.headers.get('cookie') || '';
+    const authHeader = event.request.headers.get('authorization') || '';
     const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
     const authUrl = `${backendUrl}/auth/me`;
-    
+
     try {
+      const meHeaders: Record<string, string> = { cookie: cookieHeader };
+      if (authHeader) meHeaders['Authorization'] = authHeader;
       const response = await fetch(authUrl, {
-        headers: { cookie: cookieHeader }
+        headers: meHeaders
       });
       
       if (response.ok) {
@@ -125,7 +128,7 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
           }
           
           return {
-            id: prismaUser.id,
+            id: String(prismaUser.id),
             backendId: Number(data.user.id)
           };
         }

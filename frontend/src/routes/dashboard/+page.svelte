@@ -12,25 +12,27 @@
   async function checkUserRole() {
     try {
       const res = await apiFetch('/auth/me');
-      const data = await res.json();
-      if (data?.ok && data?.user) {
-        const email = (data.user.email || data.user.username || '').toLowerCase();
-        if (email === 'jonakfir@gmail.com') {
-          userRole = 'admin';
-          accessLevel = 'pro';
-          return;
-        }
-        userRole = data.user.role || 'personal';
-        accessLevel = data.user.accessLevel ?? 'none';
-      } else {
-        const res2 = await apiFetch('/api/user/role');
-        const data2 = await res2.json();
-        if (data2?.ok && data2?.role) {
-          userRole = data2.role;
-        }
+      if (!res.ok) {
+        goto('/login');
+        return;
       }
+      const data = await res.json();
+      const user = data?.user;
+      if (!user) {
+        goto('/login');
+        return;
+      }
+      const email = (user.email || user.username || '').toLowerCase();
+      if (email === 'jonakfir@gmail.com') {
+        userRole = 'admin';
+        accessLevel = 'pro';
+        return;
+      }
+      userRole = user.role || 'personal';
+      accessLevel = user.accessLevel ?? 'none';
     } catch (error) {
       console.error('Error checking user role:', error);
+      goto('/login');
     }
   }
 

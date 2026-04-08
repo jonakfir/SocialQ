@@ -1,62 +1,12 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 /**
  * Get current user
  */
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
-  try {
-    const mockUserId = event.request.headers.get('X-User-Id');
-    const mockUserEmail = event.request.headers.get('X-User-Email');
-    
-    if (mockUserId && mockUserEmail) {
-      const email = mockUserEmail.trim().toLowerCase();
-      // HARDCODE: jonakfir@gmail.com is ALWAYS admin
-      if (email === 'jonakfir@gmail.com') {
-        const user = await ensurePrismaUser(email);
-        return user ? { id: String(user.id), role: 'admin' } : null;
-      }
-      const user = await prisma.user.findFirst({
-        where: { username: email },
-        select: { id: true, role: true }
-      });
-      if (user) return { id: String(user.id), role: user.role || 'personal' };
-      return null;
-    }
-    
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
-    const response = await fetch(`${base}/auth/me`, {
-      method: 'GET',
-      headers: { 'Cookie': cookieHeader },
-      credentials: 'include'
-    });
-    
-    const data = await response.json();
-    const backendUser = data?.user;
-    
-    if (!backendUser || !backendUser.id) {
-      return null;
-    }
-    
-    // HARDCODE: jonakfir@gmail.com is ALWAYS admin
-    const email = (backendUser.email || backendUser.username || '').trim().toLowerCase();
-    if (email === 'jonakfir@gmail.com') {
-      const user = await ensurePrismaUser(email);
-      return user ? { id: String(user.id), role: 'admin' } : null;
-    }
-    
-    // For other users, ensure they exist in Prisma
-    const prismaUser = await ensurePrismaUser(email);
-    if (prismaUser) return { id: prismaUser.id, role: prismaUser.role || 'personal' };
-    return null;
-  } catch (error) {
-    console.error('[getCurrentUser] Error:', error);
-    return null;
-  }
+  return getAdminUserFromRequest(event.request);
 }
 
 /**

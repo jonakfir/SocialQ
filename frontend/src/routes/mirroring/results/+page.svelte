@@ -263,7 +263,7 @@ ${link}
       <div class="score-circle" class:pulse={pulse} aria-live="polite">
         {Math.round($animatedScore)}/{total}
       </div>
-      <p class="subtitle" style="opacity: titleIn ? 1 : 0">Keep Practicing!</p>
+      <p class="subtitle" style="opacity: {titleIn ? 1 : 0}">Keep Practicing!</p>
     </div>
 
     <div class="buttons">

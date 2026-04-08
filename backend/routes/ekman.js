@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
           params.set('difficulty', diff);
           params.set('count', String(count));
           const url = `${FRONTEND_URL}/api/ekman-quiz?${params.toString()}`;
-          const proxyRes = await fetch(url, { headers: { 'X-Proxy-Secret': PROXY_SECRET } });
+          const proxyRes = await fetch(url, { headers: { 'X-Proxy-Secret': PROXY_SECRET }, signal: AbortSignal.timeout(8000) });
           if (proxyRes.ok) {
             const questions = await proxyRes.json();
             const arr = Array.isArray(questions) ? questions : [];

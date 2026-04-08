@@ -23,12 +23,15 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     }
     
     const cookieHeader = event.request.headers.get('cookie') || '';
+    const authHeader = event.request.headers.get('authorization') || '';
     const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
     const backendUrl = base || 'http://localhost:4000';
-    
+
     try {
+      const meHeaders: Record<string, string> = { cookie: cookieHeader };
+      if (authHeader) meHeaders['Authorization'] = authHeader;
       const response = await fetch(`${backendUrl}/auth/me`, {
-        headers: { cookie: cookieHeader }
+        headers: meHeaders
       });
       
       if (response.ok) {
@@ -70,7 +73,7 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
             });
           }
           
-          return { id: prismaUser.id };
+          return { id: String(prismaUser.id) };
         }
       }
     } catch {

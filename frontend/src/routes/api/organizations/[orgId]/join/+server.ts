@@ -12,7 +12,10 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     const { PUBLIC_API_URL } = await import('$env/static/public');
     const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const response = await fetch(`${base}/auth/me`, { method: 'GET', headers: { Cookie: cookieHeader }, credentials: 'include' });
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization') || '';
+    const meHeaders: HeadersInit = { Cookie: cookieHeader };
+    if (authHeader) meHeaders['Authorization'] = authHeader;
+    const response = await fetch(`${base}/auth/me`, { method: 'GET', headers: meHeaders, credentials: 'include' });
     const data = await response.json();
     const email = data?.user?.email;
     if (!email) return null;

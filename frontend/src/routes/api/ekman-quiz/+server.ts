@@ -51,9 +51,12 @@ export const GET: RequestHandler = async (event) => {
       where.difficulty = { in: [difficulty, 'all'] };
     }
 
+    // Fetch only enough rows to fill the quiz — use a larger pool (count*4) so shuffle has variety
+    const poolSize = Math.min(count * 4, 200);
     const rows = await prisma.ekmanImage.findMany({
       where,
-      select: { imageData: true, label: true, difficulty: true }
+      select: { imageData: true, label: true, difficulty: true },
+      take: poolSize
     });
 
     const pool = rows
