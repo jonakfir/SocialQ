@@ -311,7 +311,7 @@
       const res = await apiFetch(`/api/admin/organizations/${orgId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.ok) {
-        organizations = organizations.filter((o) => o.id !== orgId);
+        organizations = organizations.filter((o) => String(o.id) !== String(orgId));
       } else {
         alert('Failed to delete organization: ' + (data.error || 'Unknown error'));
       }

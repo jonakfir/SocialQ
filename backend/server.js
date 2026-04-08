@@ -245,6 +245,34 @@ app.get('/health', async (_req, res) => {
   });
 });
 
+// Minimal root route for load balancers / health checks (no DB dependency)
+app.get('/', (req, res) => res.status(200).send('OK'));
+
+// ---------------- Start listening early so health checks pass before heavy routes load ----------------
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('========================================');
+  console.log(`API listening on :${PORT}`);
+  console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
+  if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
+  console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+  console.log('GRAPH_VERSION:', GRAPH_VERSION);
+  console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
+  console.log('WA_TEMPLATE:', WA_TEMPLATE);
+  console.log('========================================');
+  console.log('[DB] Database schema initializing in background...');
+  console.log('[DB] First requests may be slower until schema is ready');
+  setImmediate(() => {
+    try {
+      loadRestOfApp();
+    } catch (err) {
+      console.error('[Startup] Failed to load routes:', err.message);
+      console.error(err.stack);
+    }
+  });
+});
+
+function loadRestOfApp() {
+
 // ---------------- Database readiness middleware ----------------
 // Ensure database tables exist before processing any requests
 let dbReady = false;
@@ -929,23 +957,8 @@ app.use((err, _req, res, _next) => {
   console.error('[Server Error]', err?.stack || err);
   res.status(err.status || 500).json({ error: err.message || 'Server error' });
 });
-
-// ---------------- Boot ----------------
-// Start server immediately - don't wait for schema init
-// Schema will initialize in background and requests will wait via ensureDatabaseReady middleware
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('========================================');
-  console.log(`API listening on :${PORT}`);
-  console.log('Allowed exact CORS origins:', exactAllowed.join(', ') || '(none)');
-  if (PREVIEW_SUFFIX) console.log('Also allowing preview suffix:', PREVIEW_SUFFIX);
-  console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
-  console.log('GRAPH_VERSION:', GRAPH_VERSION);
-  console.log('WA_PHONE_ID set:', !!WA_PHONE_ID);
-  console.log('WA_TEMPLATE:', WA_TEMPLATE);
-  console.log('========================================');
-  console.log('[DB] ⚠️  Database schema initializing in background...');
-  console.log('[DB] ⚠️  First requests may be slower until schema is ready');
-});
+  console.log('[Startup] All routes loaded');
+} // end loadRestOfApp()
 
 // Initialize schema in background (non-blocking)
 schemaInitPromise

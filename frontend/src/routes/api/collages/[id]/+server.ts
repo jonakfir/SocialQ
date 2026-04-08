@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 // Lazy load env
 import { prisma } from '$lib/db';
 import { generateUserId, toPrismaUserId } from '$lib/userId';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 /**
  * Get current user from backend API
@@ -11,55 +11,7 @@ import { ensurePrismaUser } from '$lib/utils/syncUser';
  * Also supports mock auth in dev mode via X-User-Id header
  */
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
-  try {
-    // Check for mock auth headers first (dev mode)
-    const mockUserId = event.request.headers.get('X-User-Id');
-    const mockUserEmail = event.request.headers.get('X-User-Email');
-    if (mockUserId && mockUserEmail) {
-      const prismaUser = await ensurePrismaUser(mockUserEmail);
-      return prismaUser;
-    }
-
-    // Try backend auth with JWT token and cookies
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    
-    // Get JWT token from Authorization header
-    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
-    // Build headers for backend request
-    const headers: HeadersInit = { Cookie: cookieHeader };
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
-    
-    const response = await fetch(`${base}/auth/me`, {
-      method: 'GET',
-      headers,
-      credentials: 'include'
-    });
-    
-    if (!response.ok) {
-      console.error('[getCurrentUser] Backend /auth/me failed:', response.status, response.statusText);
-      return null;
-    }
-    
-    const data = await response.json();
-    const backendUser = data?.user;
-    if (!backendUser?.email) {
-      console.error('[getCurrentUser] No user in backend response:', data);
-      return null;
-    }
-    
-    // Ensure user exists in Prisma with correct role
-    const prismaUser = await ensurePrismaUser(backendUser.email);
-    
-    return prismaUser;
-  } catch (error) {
-    console.error('[getCurrentUser] Error:', error);
-    return null;
-  }
+  return getAdminUserFromRequest(event.request);
 }
 
 /**
@@ -137,7 +89,7 @@ export const DELETE: RequestHandler = async (event) => {
     }
 
     // Verify ownership (unless admin)
-    if (!isAdmin && collage.userId !== user.id) {
+    if (!isAdmin && String(collage.userId) !== String(user.id)) {
       return json({ ok: false, error: 'Forbidden - You can only delete your own photos' }, { status: 403 });
     }
 
@@ -193,7 +145,7 @@ export const PATCH: RequestHandler = async (event) => {
     if (!folder || folder.length === 0) {
       return json({ ok: false, error: 'Folder name required' }, { status: 400 });
     }
-    if (collage.userId !== user.id) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
+    if (String(collage.userId) !== String(user.id)) return json({ ok: false, error: 'Forbidden' }, { status: 403 });
 
     const updated = await prisma.collage.update({
       where: { id: collageId },

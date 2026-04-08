@@ -1,53 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
-
-/**
- * Get current user and check if admin
- */
-async function getCurrentAdmin(event: { request: Request }): Promise<{ id: string } | null> {
-  try {
-    const mockUserId = event.request.headers.get('X-User-Id');
-    const mockUserEmail = event.request.headers.get('X-User-Email');
-    
-    if (mockUserId && mockUserEmail) {
-      const user = await prisma.user.findFirst({
-        where: { username: mockUserEmail.trim().toLowerCase() },
-        select: { id: true, role: true }
-      });
-      if (user && user.role === 'admin') return { id: String(user.id) };
-      return null;
-    }
-    
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
-    const response = await fetch(`${base}/auth/me`, {
-      method: 'GET',
-      headers: { 'Cookie': cookieHeader },
-      credentials: 'include'
-    });
-    
-    const data = await response.json();
-    const backendUser = data?.user;
-    
-    if (!backendUser || !backendUser.id) {
-      return null;
-    }
-    
-    const email = backendUser.email || backendUser.username;
-    const prismaUser = await prisma.user.findFirst({
-      where: { username: email },
-      select: { id: true, role: true }
-    });
-    
-    if (prismaUser && prismaUser.role === 'admin') return { id: String(prismaUser.id) };
-    return null;
-  } catch {
-    return null;
-  }
-}
+import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 /** Return empty user list so UI never gets 500; hint when DB failed. */
 function emptyUserListResponse(url?: URL | null, dbError?: boolean): ReturnType<typeof json> {
@@ -81,10 +34,10 @@ export const GET: RequestHandler = async (event) => {
       const { PUBLIC_API_URL } = await import('$env/static/public');
       const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
       const cookieHeader = event.request.headers.get('cookie') || '';
+      const authHeader = event.request.headers.get('authorization') || '';
       const backendRes = await fetch(`${base}/admin/users`, {
         method: 'GET',
-        headers: { Cookie: cookieHeader },
-        credentials: 'include'
+        headers: { Cookie: cookieHeader, Authorization: authHeader },
       });
       if (backendRes.ok) {
         const backendData = await backendRes.json();
@@ -185,10 +138,10 @@ export const GET: RequestHandler = async (event) => {
       const { PUBLIC_API_URL } = await import('$env/static/public');
       const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
       const cookieHeader = event.request.headers.get('cookie') || '';
+      const authHeader = event.request.headers.get('authorization') || '';
       const backendRes = await fetch(`${base}/admin/users`, {
         method: 'GET',
-        headers: { Cookie: cookieHeader },
-        credentials: 'include'
+        headers: { Cookie: cookieHeader, Authorization: authHeader },
       });
       if (backendRes.ok) {
         const backendData = await backendRes.json();

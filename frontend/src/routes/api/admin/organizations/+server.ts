@@ -1,60 +1,10 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 import { toPrismaUserId } from '$lib/userId';
 
 async function getCurrentUser(event: { request: Request }): Promise<{ id: string; role: string } | null> {
-  try {
-    const mockUserId = event.request.headers.get('X-User-Id');
-    const mockUserEmail = event.request.headers.get('X-User-Email');
-    if (mockUserId && mockUserEmail) {
-      const user = await prisma.user.findFirst({
-        where: { username: mockUserEmail.trim().toLowerCase() },
-        select: { id: true, role: true }
-      });
-      return user ? { id: String(user.id), role: user.role } : null;
-    }
-
-    // Try backend auth with JWT token and cookies
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    
-    // Get JWT token from Authorization header
-    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
-    // Build headers for backend request
-    const headers: HeadersInit = { Cookie: cookieHeader };
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
-    
-    const response = await fetch(`${base}/auth/me`, {
-      method: 'GET',
-      headers,
-      credentials: 'include'
-    });
-    
-    if (!response.ok) {
-      console.error('[getCurrentUser] Backend /auth/me failed:', response.status, response.statusText);
-      return null;
-    }
-    
-    const data = await response.json();
-    const backendUser = data?.user;
-    if (!backendUser?.email) {
-      console.error('[getCurrentUser] No user in backend response:', data);
-      return null;
-    }
-    
-    // Ensure user exists in Prisma with correct role
-    const prismaUser = await ensurePrismaUser(backendUser.email);
-    
-    return prismaUser;
-  } catch (error) {
-    console.error('[getCurrentUser] Error:', error);
-    return null;
-  }
+  return getAdminUserFromRequest(event.request);
 }
 
 // GET /api/admin/organizations - Get all organizations with member counts and org admins
@@ -380,9 +330,10 @@ export const POST: RequestHandler = async (event) => {
     const name = String(body?.name || '').trim();
     const description = String(body?.description || '').trim() || null;
     // Use provided createdByUserId if it's a non-empty string, otherwise use current admin
-    const createdByUserId = (body?.createdByUserId && String(body.createdByUserId).trim()) 
-      ? String(body.createdByUserId).trim() 
+    const createdByUserIdStr = (body?.createdByUserId && String(body.createdByUserId).trim())
+      ? String(body.createdByUserId).trim()
       : user.id;
+    const createdByUserId = toPrismaUserId(createdByUserIdStr);
 
     if (!name) {
       return json({ ok: false, error: 'Organization name is required' }, { status: 400 });

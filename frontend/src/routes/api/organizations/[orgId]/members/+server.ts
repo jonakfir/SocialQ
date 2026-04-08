@@ -1,46 +1,9 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 async function getCurrentUser(event: { request: Request }) {
-  try {
-    const mockUserEmail = event.request.headers.get('X-User-Email');
-    if (mockUserEmail) {
-      const user = await prisma.user.findFirst({ where: { username: mockUserEmail.trim().toLowerCase() }, select: { id: true, role: true } });
-      return user;
-    }
-    const { PUBLIC_API_URL } = await import('$env/static/public');
-    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-    
-    // Get JWT token from Authorization header
-    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization');
-    const cookieHeader = event.request.headers.get('cookie') || '';
-    
-    // Build headers for backend request
-    const headers: HeadersInit = { Cookie: cookieHeader };
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
-    
-    const response = await fetch(`${base}/auth/me`, {
-      method: 'GET',
-      headers,
-      credentials: 'include'
-    });
-    
-    if (!response.ok) {
-      console.error('[getCurrentUser] Backend /auth/me failed:', response.status);
-      return null;
-    }
-    
-    const data = await response.json();
-    const email = data?.user?.email;
-    if (!email) return null;
-    const prismaUser = await prisma.user.findFirst({ where: { username: email }, select: { id: true, role: true } });
-    return prismaUser;
-  } catch (error) {
-    console.error('[getCurrentUser] Error:', error);
-    return null;
-  }
+  return getAdminUserFromRequest(event.request);
 }
 
 function isGlobalAdmin(u: { role: string } | null | undefined) { return !!u && u.role === 'admin'; }

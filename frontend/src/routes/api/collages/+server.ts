@@ -64,12 +64,13 @@ async function getCurrentUser(event: { request: Request; cookies: any; url: URL;
     console.log('[getCurrentUser] Calling backend:', authUrl);
     console.log('[getCurrentUser] Cookies present:', cookieHeader ? 'Yes (' + cookieHeader.substring(0, 100) + '...)' : 'No');
     
-    // Call backend directly with cookies forwarded
+    // Call backend directly with cookies and Authorization header forwarded
+    const authHeader = event.request.headers.get('authorization') || event.request.headers.get('Authorization') || '';
+    const meHeaders: HeadersInit = { 'Cookie': cookieHeader };
+    if (authHeader) meHeaders['Authorization'] = authHeader;
     const response = await fetch(authUrl, {
       method: 'GET',
-      headers: {
-        'Cookie': cookieHeader
-      }
+      headers: meHeaders
     });
     
     if (!response.ok) {

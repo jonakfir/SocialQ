@@ -143,6 +143,7 @@
       localStorage.removeItem('email');
       localStorage.removeItem('username'); // legacy
       localStorage.removeItem('userId');
+      localStorage.removeItem('auth_token');
     } catch {}
     user = null;
     closeMenu();
