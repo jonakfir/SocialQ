@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 /**
  * Get current admin
@@ -90,7 +91,7 @@ export const GET: RequestHandler = async (event) => {
     
     // Map to friend objects
     const friends = friendships.map(f => {
-      const friend = f.userId1 === userId ? f.user2 : f.user1;
+      const friend = f.userId1 === userIdNum ? f.user2 : f.user1;
       return {
         id: friend.id,
         username: friend.username,
@@ -154,18 +155,18 @@ export const POST: RequestHandler = async (event) => {
     const existingFriendship = await prisma.friendship.findFirst({
       where: {
         OR: [
-          { userId1: userId, userId2: friendId },
-          { userId1: friendId, userId2: userId }
+          { userId1: userIdNum, userId2: friendIdNum },
+          { userId1: friendIdNum, userId2: userIdNum }
         ]
       }
     });
-    
+
     if (existingFriendship) {
       return json({ ok: false, error: 'Friendship already exists' }, { status: 400 });
     }
-    
+
     // Create friendship (ensure userId1 < userId2 for consistency)
-    const [id1, id2] = userId < friendId ? [userId, friendId] : [friendId, userId];
+    const [id1, id2] = userIdNum < friendIdNum ? [userIdNum, friendIdNum] : [friendIdNum, userIdNum];
     
     const friendship = await prisma.friendship.create({
       data: {
