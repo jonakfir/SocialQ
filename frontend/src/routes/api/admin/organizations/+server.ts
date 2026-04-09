@@ -397,8 +397,9 @@ export const POST: RequestHandler = async (event) => {
     }
 
     // Verify createdByUserId exists
+    const createdByUserIdNum = toPrismaUserId(createdByUserId);
     const creator = await prisma.user.findUnique({
-      where: { id: createdByUserId },
+      where: { id: createdByUserIdNum },
       select: { id: true, username: true }
     });
 
@@ -411,11 +412,11 @@ export const POST: RequestHandler = async (event) => {
       data: {
         name,
         description,
-        createdByUserId,
+        createdByUserId: createdByUserIdNum,
         status: 'approved', // Auto-approve when created by admin
         memberships: {
           create: {
-            userId: createdByUserId,
+            userId: createdByUserIdNum,
             role: 'org_admin',
             status: 'approved' // Auto-approve membership when created by admin
           }

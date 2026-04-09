@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
+import { toPrismaUserId } from '$lib/userId';
 
 /**
  * Get current user and check if admin
@@ -68,8 +69,7 @@ export const GET: RequestHandler = async (event) => {
         id: true,
         username: true,
         role: true,
-        createdAt: true,
-        updatedAt: true
+        createdAt: true
       }
     });
     
@@ -126,7 +126,7 @@ export const GET: RequestHandler = async (event) => {
 
     // Get user's organization memberships
     const memberships = await prisma.organizationMembership.findMany({
-      where: { userId, status: { not: 'removed' } },
+      where: { userId: userIdNum, status: { not: 'removed' } },
       include: {
         organization: {
           select: { id: true, name: true, status: true }
