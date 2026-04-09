@@ -147,7 +147,8 @@ model OrganizationMembership {
 // Ekman images for facial recognition quiz
 model EkmanImage {
   id         String                      @id @default(cuid())
-  imageData  String                      // Base64 encoded image data (data URL)
+  imageData  String                      // Base64 encoded image data (data URL) — legacy, use imageUrl when set
+  imageUrl   String?                     // S3/CDN URL (preferred over imageData when present)
   label      String                      // Emotion label: 'Anger', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise'
   difficulty String                      // Difficulty level: '1', '2', '3', '4', or 'all'
   folder     String?                     // Optional folder (existing column in DB)

@@ -119,13 +119,13 @@ router.get('/', async (req, res) => {
 
       let sql;
       if (ekmanOnly && hasFolder) {
-        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage"
+        sql = `SELECT "imageData", "imageUrl", "label", "difficulty" FROM "EkmanImage"
                WHERE "folder" = 'canonical' AND (${diffFilter})`;
       } else if (hasPhotoType) {
-        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage"
+        sql = `SELECT "imageData", "imageUrl", "label", "difficulty" FROM "EkmanImage"
                WHERE "photoType" IN ('ekman', 'other') AND (${diffFilter})`;
       } else {
-        sql = `SELECT "imageData", "label", "difficulty" FROM "EkmanImage" WHERE ${diffFilter}`;
+        sql = `SELECT "imageData", "imageUrl", "label", "difficulty" FROM "EkmanImage" WHERE ${diffFilter}`;
       }
 
       const result = await pool.query(sql, args);
@@ -137,7 +137,7 @@ router.get('/', async (req, res) => {
 
     let pool2 = rows
       .map((r) => ({
-        img: r.imageData,
+        img: r.imageUrl || r.imageData,  // prefer CDN URL over base64 blob
         label: r.label,
         difficulty: r.difficulty
       }))
