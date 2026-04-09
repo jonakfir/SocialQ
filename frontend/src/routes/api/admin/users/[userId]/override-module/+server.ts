@@ -50,7 +50,7 @@ export const POST: RequestHandler = async (event) => {
 
     const targetNumId = toPrismaUserId(targetUserId);
     const adminNumId = toPrismaUserId(admin.id);
-    const target = await prisma.user.findUnique({ where: { id: targetNumId } });
+    const target = await prisma.user.findUnique({ where: { id: targetNumId }, select: { id: true } });
     if (!target) return json({ ok: false, error: 'User not found' }, { status: 404 });
 
     await prisma.verifiedModuleCompletion.upsert({

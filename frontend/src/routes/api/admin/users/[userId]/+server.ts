@@ -53,10 +53,10 @@ export const DELETE: RequestHandler = async (event) => {
     if (!userIdParam) return json({ ok: false, error: 'User ID required' }, { status: 400 });
     const userIdNum = toPrismaUserId(userIdParam);
 
-    const user = await prisma.user.findUnique({ where: { id: userIdNum } });
+    const user = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
     if (!user) return json({ ok: false, error: 'User not found' }, { status: 404 });
 
-    await prisma.user.delete({ where: { id: userIdNum } });
+    await prisma.user.delete({ where: { id: userIdNum }, select: { id: true } });
 
     return json({ ok: true });
   } catch (error: any) {

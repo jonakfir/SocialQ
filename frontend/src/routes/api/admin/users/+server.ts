@@ -194,7 +194,7 @@ export const POST: RequestHandler = async (event) => {
     }
 
     // Reject duplicates in Prisma
-    const existing = await prisma.user.findUnique({ where: { username: email } });
+    const existing = await prisma.user.findUnique({ where: { username: email }, select: { id: true } });
     if (existing) {
       return json({ ok: false, error: 'User already exists' }, { status: 400 });
     }
@@ -246,7 +246,7 @@ export const POST: RequestHandler = async (event) => {
       if (attempts > 10) {
         return json({ ok: false, error: 'Failed to generate unique invitation code' }, { status: 500 });
       }
-    } while (await prisma.user.findUnique({ where: { invitationCode } }));
+    } while (await prisma.user.findUnique({ where: { invitationCode }, select: { id: true } }));
 
     const user = await prisma.user.create({
       data: {
