@@ -233,7 +233,7 @@ export const POST: RequestHandler = async (event) => {
 
     // Update role in Prisma if needed
     const user = await prisma.user.update({
-      where: { id: synced.id },
+      where: { id: Number(synced.id) },
       data: { role },
       select: { id: true, username: true, role: true, createdAt: true }
     });
