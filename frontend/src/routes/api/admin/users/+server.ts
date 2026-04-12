@@ -1,6 +1,5 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { generateUserId } from '$lib/userId';
 import { ensurePrismaUser } from '$lib/utils/syncUser';
 
 // Reuse the same admin check pattern as analytics endpoint
@@ -199,63 +198,43 @@ export const POST: RequestHandler = async (event) => {
       return json({ ok: false, error: 'User already exists' }, { status: 400 });
     }
 
-    // FIRST: Create user in backend PostgreSQL database (required for login)
-    try {
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-      const cookieHeader = event.request.headers.get('cookie') || '';
-      
-      // Use the backend register endpoint to create user in PostgreSQL
-      const backendResponse = await fetch(`${base}/auth/register`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Cookie': cookieHeader
-        },
-        credentials: 'include',
-        body: JSON.stringify({ email, password })
-      });
-      
-      const backendData = await backendResponse.json();
-      
-      if (!backendResponse.ok && !backendData.error?.includes('already used')) {
-        console.warn('[POST /api/admin/users] Backend user creation failed:', backendData.error);
-        // Continue anyway - we'll create in Prisma
-      } else if (backendResponse.ok) {
-        console.log('[POST /api/admin/users] User created in backend database');
+    // FIRST: Create user in backend (AWS App Runner) — this is the authoritative user store
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const authHeader = event.request.headers.get('authorization') || '';
+    const cookieHeader = event.request.headers.get('cookie') || '';
+
+    const backendResponse = await fetch(`${base}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+        'Cookie': cookieHeader
+      },
+      body: JSON.stringify({ email, password })
+    });
+
+    const backendData = await backendResponse.json();
+
+    if (!backendResponse.ok) {
+      const errMsg = backendData?.error || 'Failed to create user in backend';
+      // 409 = already exists in backend but not Prisma — fall through to sync
+      if (backendResponse.status !== 409) {
+        return json({ ok: false, error: errMsg }, { status: backendResponse.status });
       }
-    } catch (backendError) {
-      console.warn('[POST /api/admin/users] Failed to create user in backend, continuing with Prisma only:', backendError);
-      // Continue with Prisma creation anyway
     }
 
-    // SECOND: Create user in Prisma (for frontend features)
-    const bcrypt = await import('bcryptjs');
-    const hashed = await bcrypt.hash(password, 10);
+    // SECOND: Sync user into Prisma (so frontend features work)
+    // ensurePrismaUser will create or return the existing Prisma record
+    const synced = await ensurePrismaUser(email);
+    if (!synced) {
+      return json({ ok: false, error: 'User created in backend but failed to sync to Prisma' }, { status: 500 });
+    }
 
-    // Generate unique 9-digit user ID
-    const id = await generateUserId();
-
-    // Generate unique invitation code
-    const { randomBytes } = await import('crypto');
-    let invitationCode: string;
-    let attempts = 0;
-    do {
-      invitationCode = randomBytes(8).toString('hex').toUpperCase();
-      attempts++;
-      if (attempts > 10) {
-        return json({ ok: false, error: 'Failed to generate unique invitation code' }, { status: 500 });
-      }
-    } while (await prisma.user.findUnique({ where: { invitationCode }, select: { id: true } }));
-
-    const user = await prisma.user.create({
-      data: {
-        id,
-        username: email,
-        password: hashed,
-        role,
-        invitationCode
-      },
+    // Update role in Prisma if needed
+    const user = await prisma.user.update({
+      where: { id: synced.id },
+      data: { role },
       select: { id: true, username: true, role: true, createdAt: true }
     });
 
