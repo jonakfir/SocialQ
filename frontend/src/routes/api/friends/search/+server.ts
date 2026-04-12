@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { prisma } from '$lib/db';
-import { generateUserId, toPrismaUserId } from '$lib/userId';
+import { toPrismaUserId } from '$lib/userId';
 import { env as publicEnv } from '$env/dynamic/public';
 
 async function proxyToBackend(path: string, request: Request, init?: RequestInit): Promise<Response> {
@@ -22,63 +22,29 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       return { id: String(mockUserId) };
     }
     
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const backendUrl = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
     const cookieHeader = event.request.headers.get('cookie') || '';
-    const { PUBLIC_API_URL } = await import('$env/static/public'); const base = (PUBLIC_API_URL || '').replace(/\/$/, '');
-    const backendUrl = base || 'http://localhost:4000';
-    
+    const authHeader = event.request.headers.get('authorization') || '';
+    const headers: Record<string, string> = {};
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    if (authHeader) headers['Authorization'] = authHeader;
+
     try {
-      const response = await fetch(`${backendUrl}/auth/me`, {
-        headers: { cookie: cookieHeader }
-      });
-      
+      const response = await fetch(`${backendUrl}/auth/me`, { headers });
       if (response.ok) {
         const data = await response.json();
         if (data?.user?.id) {
-          const userId = String(data.user.id);
-          // Find by username (email) since that's our unique identifier
-          // Don't use ID lookup anymore since we're letting Prisma generate unique IDs
-          let prismaUser = await prisma.user.findFirst({
-            where: {
-              username: data.user.email || data.user.username || `user_${userId}`
-            }
-          });
-          
-          if (!prismaUser) {
-            const bcrypt = await import('bcryptjs');
-            const defaultPassword = await bcrypt.hash('temp', 10);
-            const { randomBytes } = await import('crypto');
-            
-            // Generate unique 9-digit user ID
-            const newUserId = await generateUserId();
-            
-            // Generate unique invitation code
-            let invitationCode: string;
-            let attempts = 0;
-            do {
-              invitationCode = randomBytes(8).toString('hex').toUpperCase();
-              attempts++;
-              if (attempts > 10) {
-                throw new Error('Failed to generate unique invitation code');
-              }
-            } while (await prisma.user.findUnique({ where: { invitationCode } }));
-            
-            prismaUser = await prisma.user.create({
-              data: {
-                id: newUserId,
-                username: data.user.email || data.user.username || `user_${userId}`,
-                password: defaultPassword,
-                invitationCode
-              }
-            });
-          }
-          
-          return { id: prismaUser.id };
+          const email = data.user.email || data.user.username;
+          const { ensurePrismaUser } = await import('$lib/utils/syncUser');
+          const prismaUser = await ensurePrismaUser(email);
+          if (prismaUser) return { id: String(prismaUser.id) };
         }
       }
     } catch {
       // Backend not available
     }
-    
+
     return null;
   } catch {
     return null;

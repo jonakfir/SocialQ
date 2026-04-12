@@ -84,8 +84,10 @@ async function getCurrentAdmin(event: { request: Request }): Promise<{ id: strin
  */
 export const GET: RequestHandler = async (event) => {
   try {
-    // TEMPORARY: Always allow - ensure user exists in Prisma
-    await ensurePrismaUser('jonakfir@gmail.com');
+    const admin = await getAdminUserFromRequest(event.request);
+    if (!admin || admin.role !== 'admin') {
+      return json({ ok: false, error: 'Unauthorized' }, { status: 403 });
+    }
     
     // Sync users from backend to Prisma first
     try {

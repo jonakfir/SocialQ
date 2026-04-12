@@ -164,8 +164,7 @@ export const PATCH: RequestHandler = async (event) => {
         id: true,
         username: true,
         role: true,
-        createdAt: true,
-        updatedAt: true
+        createdAt: true
       }
     });
     
