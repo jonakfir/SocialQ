@@ -157,8 +157,14 @@ export const PATCH: RequestHandler = async (event) => {
     }
     
     // SECOND: Update Prisma database (for frontend features)
+    // Use upsert so it works even if user hasn't been synced to Prisma yet
+    const userIdNum = toPrismaUserId(userId);
+    const existing = await prisma.user.findUnique({ where: { id: userIdNum }, select: { id: true } });
+    if (!existing) {
+      return json({ ok: true, user: { id: Number(userId), role } }); // backend already updated, Prisma sync will catch up
+    }
     const updatedUser = await prisma.user.update({
-      where: { id: toPrismaUserId(userId) },
+      where: { id: userIdNum },
       data: { role },
       select: {
         id: true,

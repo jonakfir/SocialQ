@@ -48,10 +48,10 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
       select: { id: true }
     });
     
-    // If user doesn't exist in Prisma, sync from backend
+    // If user doesn't exist in Prisma, auto-create from backend ID
     if (!prismaUser) {
-      const { ensurePrismaUser } = await import('$lib/utils/syncUser');
-      prismaUser = await ensurePrismaUser(email);
+      const { ensurePrismaUserForUpload } = await import('$lib/utils/syncUser');
+      prismaUser = await ensurePrismaUserForUpload(backendUser.id, email);
     }
     
     if (prismaUser) return { id: String(prismaUser.id) };

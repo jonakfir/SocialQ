@@ -1,6 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
-import { ensurePrismaUser } from '$lib/utils/syncUser';
+import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 
 /**
  * Get current user and check if admin

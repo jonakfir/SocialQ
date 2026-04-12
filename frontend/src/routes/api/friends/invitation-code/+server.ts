@@ -24,8 +24,9 @@ async function getCurrentUser(event: { request: Request }): Promise<{ id: string
     if (!data?.user?.id) return null;
 
     const email = data.user.email || data.user.username;
-    const { ensurePrismaUser } = await import('$lib/utils/syncUser');
-    const prismaUser = await ensurePrismaUser(email);
+    const backendId = data.user.id;
+    const { ensurePrismaUserForUpload } = await import('$lib/utils/syncUser');
+    const prismaUser = await ensurePrismaUserForUpload(backendId, email);
     return prismaUser ? { id: String(prismaUser.id) } : null;
   } catch {
     return null;
