@@ -3,7 +3,7 @@
  * Key: daily_free_played_YYYY-MM-DD_userId, value: JSON array of game ids.
  */
 
-export type DailyGameId = 'facial_recognition' | 'transition_recognition' | 'emotion_training' | 'mirroring';
+export type DailyGameId = 'facial_recognition' | 'transition_recognition' | 'emotion_training' | 'mirroring' | 'memory';
 
 const STORAGE_KEY_PREFIX = 'daily_free_played_';
 const PENDING_KEY = 'daily_free_play_pending_game';
@@ -68,7 +68,7 @@ export function getAndClearPendingGame(): DailyGameId | null {
   try {
     const g = sessionStorage.getItem(PENDING_KEY);
     sessionStorage.removeItem(PENDING_KEY);
-    if (g && ['facial_recognition', 'transition_recognition', 'emotion_training', 'mirroring'].includes(g))
+    if (g && ['facial_recognition', 'transition_recognition', 'emotion_training', 'mirroring', 'memory'].includes(g))
       return g as DailyGameId;
     return null;
   } catch {

@@ -50,6 +50,12 @@
       label: 'Mirroring Game',
       subtitle: 'Mirror the face',
       href: '/mirroring/settings'
+    },
+    {
+      id: 'memory',
+      label: 'Good with Faces',
+      subtitle: 'Match the emotions',
+      href: '/memory'
     }
   ];
 

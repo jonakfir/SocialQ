@@ -2,6 +2,51 @@
 // Find backend user in shared DB by email (no create - backend owns user creation)
 import { prisma } from '$lib/db';
 
+/**
+ * Verify the request is from an admin user.
+ * Supports JWT Bearer token and cookie auth.
+ * Returns the user with role if admin, null otherwise.
+ */
+export async function getAdminUserFromRequest(request: Request): Promise<{ id: string; role: string } | null> {
+  try {
+    const authHeader = request.headers.get('authorization') || '';
+    const cookieHeader = request.headers.get('cookie') || '';
+
+    // Decode JWT directly if Bearer token present (fast path, no backend call needed)
+    if (authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.slice(7);
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        const email = payload.un || payload.email || '';
+        if (email) {
+          const user = await ensurePrismaUser(email.toLowerCase().trim());
+          if (user && user.role === 'admin') return user;
+        }
+      } catch { /* fall through to backend call */ }
+    }
+
+    // Fall back to backend /auth/me
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const headers: Record<string, string> = {};
+    if (authHeader) headers['Authorization'] = authHeader;
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+    const res = await fetch(`${base}/auth/me`, { headers });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const email = (data?.user?.email || data?.user?.username || '').toLowerCase().trim();
+    if (!email) return null;
+
+    const user = await ensurePrismaUser(email);
+    if (user && user.role === 'admin') return user;
+    return null;
+  } catch (error: any) {
+    console.error('[getAdminUserFromRequest] Error:', error);
+    return null;
+  }
+}
+
 /** Return type: id as string for API compatibility. */
 export async function ensurePrismaUser(email: string): Promise<{ id: string; role: string } | null> {
   try {
