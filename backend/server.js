@@ -209,6 +209,9 @@ app.post('/debug/init-schema', async (_req, res) => {
   }
 });
 
+// Root health check (required by App Runner)
+app.get('/', (_req, res) => res.send('OK'));
+
 // ---------------- Health ----------------
 app.get('/health', async (_req, res) => {
   let dbStatus = 'unknown';
