@@ -20,6 +20,52 @@ const {
 
 const router = express.Router();
 
+// ---------------- Schema readiness ----------------
+//
+// Login / register used to run `SELECT 1 FROM users LIMIT 1` on EVERY request
+// before the real query, as a self-healing "auto-init the schema if missing"
+// guard. That added a full DB round-trip per login — ~300ms over AWS RDS for
+// a check that only needs to succeed once per process.
+//
+// Now we cache the result in a module-level flag. First request that needs
+// the DB runs the check; if it succeeds or the emergency init succeeds, the
+// flag flips to `true` and no subsequent request pays the cost.
+let schemaReady = false;
+
+async function ensureSchemaReady(routeLabel) {
+  if (schemaReady) return { ok: true };
+  const dbModule = require('../db/db');
+  const { pool } = dbModule;
+  if (!pool) { schemaReady = true; return { ok: true }; } // SQLite path is always ready
+
+  try {
+    await pool.query('SELECT 1 FROM users LIMIT 1');
+    schemaReady = true;
+    return { ok: true };
+  } catch (dbErr) {
+    if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
+      console.error(`[${routeLabel}] Database table missing, attempting emergency initialization...`);
+      console.error(`[${routeLabel}] Error was:`, dbErr.message);
+      const initSchema = dbModule.initializeSchema;
+      if (!initSchema || typeof initSchema !== 'function') {
+        console.error(`[${routeLabel}] ❌ initializeSchema not available`);
+        return { ok: false, status: 503, error: 'Database not ready', details: 'Database initialization failed. Please contact support.' };
+      }
+      try {
+        await initSchema();
+        console.log(`[${routeLabel}] ✅ Emergency schema initialization successful`);
+        await pool.query('SELECT 1 FROM users LIMIT 1');
+        schemaReady = true;
+        return { ok: true };
+      } catch (initErr) {
+        console.error(`[${routeLabel}] ❌ Emergency schema initialization failed:`, initErr.message);
+        return { ok: false, status: 503, error: 'Database not ready', details: 'Please try again in a moment' };
+      }
+    }
+    throw dbErr;
+  }
+}
+
 // ---------------- Config ----------------
 const SESSION_COOKIE = 'session';                 // JWT cookie (httpOnly)
 const UID_COOKIE     = 'uid';                     // simple numeric id for server-side routes
@@ -203,45 +249,8 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email ≥ 3 chars, password ≥ 6 chars' });
     }
 
-    // Check if database is ready (users table exists)
-    const dbModule = require('../db/db');
-    const { pool } = dbModule;
-    if (pool) {
-      try {
-        await pool.query('SELECT 1 FROM users LIMIT 1');
-      } catch (dbErr) {
-        if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
-          console.error('[register] Database table missing, attempting emergency initialization...');
-          console.error('[register] Error was:', dbErr.message);
-          
-          // Get initializeSchema function
-          const initSchema = dbModule.initializeSchema;
-          if (!initSchema || typeof initSchema !== 'function') {
-            console.error('[register] ❌ initializeSchema not available');
-            return res.status(503).json({ 
-              error: 'Database not ready', 
-              details: 'Database initialization failed. Please contact support.' 
-            });
-          }
-          
-          try {
-            await initSchema();
-            console.log('[register] ✅ Emergency schema initialization successful');
-            // Verify it worked
-            await pool.query('SELECT 1 FROM users LIMIT 1');
-          } catch (initErr) {
-            console.error('[register] ❌ Emergency schema initialization failed:', initErr.message);
-            console.error('[register] Init error stack:', initErr.stack);
-            return res.status(503).json({ 
-              error: 'Database not ready', 
-              details: 'Please try again in a moment' 
-            });
-          }
-        } else {
-          throw dbErr;
-        }
-      }
-    }
+    const ready = await ensureSchemaReady('register');
+    if (!ready.ok) return res.status(ready.status).json({ error: ready.error, details: ready.details });
 
     const existing = await findUserByEmail(email) || await findUserByUsername(email);
     if (existing) return res.status(409).json({ error: 'Email already used' });
@@ -363,49 +372,14 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
-    // Check if database is ready (users table exists)
-    const dbModule = require('../db/db');
-    const { pool } = dbModule;
-    if (pool) {
-      try {
-        await pool.query('SELECT 1 FROM users LIMIT 1');
-      } catch (dbErr) {
-        if (dbErr.message?.includes('does not exist') || dbErr.message?.includes('relation')) {
-          console.error('[login] Database table missing, attempting emergency initialization...');
-          console.error('[login] Error was:', dbErr.message);
-          
-          // Get initializeSchema function
-          const initSchema = dbModule.initializeSchema;
-          if (!initSchema || typeof initSchema !== 'function') {
-            console.error('[login] ❌ initializeSchema not available');
-            return res.status(503).json({ 
-              error: 'Database not ready', 
-              details: 'Database initialization failed. Please contact support.' 
-            });
-          }
-          
-          try {
-            await initSchema();
-            console.log('[login] ✅ Emergency schema initialization successful');
-            // Verify it worked
-            await pool.query('SELECT 1 FROM users LIMIT 1');
-          } catch (initErr) {
-            console.error('[login] ❌ Emergency schema initialization failed:', initErr.message);
-            console.error('[login] Init error stack:', initErr.stack);
-            return res.status(503).json({ 
-              error: 'Database not ready', 
-              details: 'Please try again in a moment' 
-            });
-          }
-        } else {
-          throw dbErr;
-        }
-      }
-    }
+    const ready = await ensureSchemaReady('login');
+    if (!ready.ok) return res.status(ready.status).json({ error: ready.error, details: ready.details });
 
-    // Regular login
+    // Regular login. `findUserByUsername` in db.js is literally an alias for
+    // `findUserByEmail` (kept for back-compat) — calling both doubled the DB
+    // cost for bad-credential attempts with no behavioral benefit.
     console.log('[login] Login attempt for:', email);
-    let user = await findUserByEmail(email) || await findUserByUsername(email);
+    const user = await findUserByEmail(email);
 
     if (!user) {
       console.log('[login] User not found:', email);
