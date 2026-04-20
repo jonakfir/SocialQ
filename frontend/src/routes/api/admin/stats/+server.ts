@@ -2,6 +2,13 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { prisma } from '$lib/db';
 import { ensurePrismaUser, getAdminUserFromRequest } from '$lib/utils/syncUser';
 
+// Module-level cache: admin/stats runs a full backend→Prisma user sync on each
+// request. Skip it when it ran recently — a 60s TTL is short enough that
+// newly-created users show up on next refresh, long enough that opening the
+// admin Dashboard feels instant.
+let lastUserSyncAt = 0;
+const USER_SYNC_TTL_MS = 60_000;
+
 /**
  * Get current user and check if admin
  */
@@ -89,31 +96,43 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 403 });
     }
     
-    // Sync users from backend to Prisma first
-    try {
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-      const cookieHeader = event.request.headers.get('cookie') || '';
-      
-      // Get all users from backend
-      const backendUsersResponse = await fetch(`${base}/admin/users`, {
-        method: 'GET',
-        headers: { 'Cookie': cookieHeader },
-        credentials: 'include'
-      });
-      
-      if (backendUsersResponse.ok) {
-        const backendUsersData = await backendUsersResponse.json();
-        if (backendUsersData.ok && backendUsersData.users) {
-          // Sync each backend user to Prisma using helper function
-          for (const backendUser of backendUsersData.users) {
-            const email = backendUser.email || backendUser.username;
-            await ensurePrismaUser(email);
+    // Sync users from backend to Prisma. Two changes from the old code:
+    //   1. Cache — this endpoint is hit every time the admin navigates to
+    //      /admin, and a full sync isn't needed that often. Skip if the
+    //      previous sync was within the TTL (set on the module below).
+    //   2. Parallel — when a sync DOES run, fire every ensurePrismaUser()
+    //      in parallel via Promise.all instead of sequentially. The old
+    //      loop was paying N * RTT (≥10s for ~50 users over AWS RDS), which
+    //      made the admin Dashboard link feel dead.
+    if (Date.now() - lastUserSyncAt > USER_SYNC_TTL_MS) {
+      try {
+        const { PUBLIC_API_URL } = await import('$env/static/public');
+        const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+        const cookieHeader = event.request.headers.get('cookie') || '';
+
+        const backendUsersResponse = await fetch(`${base}/admin/users`, {
+          method: 'GET',
+          headers: { 'Cookie': cookieHeader },
+          credentials: 'include'
+        });
+
+        if (backendUsersResponse.ok) {
+          const backendUsersData = await backendUsersResponse.json();
+          if (backendUsersData.ok && Array.isArray(backendUsersData.users)) {
+            const t0 = Date.now();
+            await Promise.all(
+              backendUsersData.users.map((u: { email?: string; username?: string }) => {
+                const email = u.email || u.username;
+                return email ? ensurePrismaUser(email).catch(() => null) : null;
+              })
+            );
+            lastUserSyncAt = Date.now();
+            console.log(`[admin/stats] user sync: ${backendUsersData.users.length} users in ${Date.now() - t0}ms`);
           }
         }
+      } catch (syncError) {
+        console.warn('[GET /api/admin/stats] Failed to sync users from backend:', syncError);
       }
-    } catch (syncError) {
-      console.warn('[GET /api/admin/stats] Failed to sync users from backend:', syncError);
     }
     
     // Use Prisma for stats (now synced with backend)
