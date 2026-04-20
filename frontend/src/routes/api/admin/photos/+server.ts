@@ -130,12 +130,25 @@ export const GET: RequestHandler = async (event) => {
       where.userId = where.userId ? { in: [where.userId, ...orgUserIds].filter((x, i, a) => a.indexOf(x) === i) } : { in: orgUserIds };
     }
 
+    // PERF: the Collage.imageUrl column holds the FULL image — either an http
+    // URL (post-S3-migration) OR a multi-MB `data:image/...;base64,...` string
+    // (legacy). With 500 legacy rows that's gigabytes over the Postgres wire
+    // and a frozen grid. Two changes:
+    //   1. Don't fetch imageUrl here at all. List returns just the metadata.
+    //   2. Each row's imageUrl in the response is a per-id lazy endpoint
+    //      (`/api/admin/photos/[id]/image`) that 302-redirects for http URLs
+    //      or streams decoded bytes for data URLs. Combined with `loading="lazy"`
+    //      + `content-visibility: auto` on the UI grid, only visible tiles
+    //      fetch their bytes, and those fetches parallelize in the browser.
+    //
+    // Measured before (18 collages, legacy base64): 10,504ms list response.
+    // Expected after: list finishes in ~400ms; visible tiles load in the
+    // background without blocking.
     const t0 = Date.now();
     const collages = await prisma.collage.findMany({
       where,
       select: {
         id: true,
-        imageUrl: true,
         emotions: true,
         folder: true,
         approvedAnyway: true,
@@ -159,7 +172,7 @@ export const GET: RequestHandler = async (event) => {
 
     const formattedCollages = collages.map((c) => ({
       id: c.id,
-      imageUrl: c.imageUrl,
+      imageUrl: `/api/admin/photos/${c.id}/image`,
       emotions: c.emotions ? JSON.parse(c.emotions) : null,
       folder: c.folder || 'Me',
       approvedAnyway: c.approvedAnyway ?? false,
