@@ -114,26 +114,25 @@ export const GET: RequestHandler = async (event) => {
       ];
     }
 
-    // PERF: every row's `imageData` is a base64 `data:image/...` URL — often
-    // MB-sized. Two-pass strategy to avoid pulling base64 we won't use:
-    //   Pass 1: select the small metadata columns + `imageUrl` for ALL rows.
-    //   Pass 2: for the subset whose `imageUrl` is NULL (pre-migration legacy
-    //           rows), fetch `imageData` in a targeted `where: { id: { in } }`
-    //           query. Rows that HAVE a CloudFront URL never load the heavy
-    //           base64 column over the Postgres wire.
+    // PERF: never fetch `imageData` (the multi-MB base64 column) in the list
+    // query. It used to come inline in two forms:
+    //   - a single-pass SELECT with imageData → gigabytes over the wire
+    //   - a two-pass SELECT that fetched imageData in a second `where { id in }`
+    //     query → crashed Prisma with "Failed to convert rust String into napi
+    //     string" when any single row's base64 was over the FFI string limit.
     //
-    // Why a second query instead of a clever single query: Prisma can't
-    // conditionally select a column based on another column's value. The
-    // second query is almost always small (or empty, post-migration).
-    //
-    // Response contract is unchanged — callers still see `imageData` as the
-    // preferred image source (URL when available, base64 otherwise).
+    // New approach: return a stable lazy URL as `imageData`. The UI stuffs
+    // that into `<img src>`; the browser only fetches tiles it's about to
+    // paint (thanks to loading="lazy" + content-visibility). The per-image
+    // endpoint 302-redirects to the CDN for migrated rows or streams the
+    // decoded bytes for a single legacy row at a time — well under Prisma's
+    // FFI string limit.
     const t0 = Date.now();
     const thin = await prisma.ekmanImage.findMany({
       where,
       select: {
         id: true,
-        imageUrl: true,
+        imageUrl: true,  // cheap string; lets us skip the per-id fetch in the response URL? no — keep the lazy URL uniform so behavior is consistent
         label: true,
         difficulty: true,
         photoType: true,
@@ -148,28 +147,20 @@ export const GET: RequestHandler = async (event) => {
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
-
-    // Pass 2 — only for rows still on base64. Empty array ⇒ skip the query.
-    const legacyIds = thin.filter((r) => !r.imageUrl).map((r) => r.id);
-    const legacyData: Record<string, string> = {};
-    if (legacyIds.length > 0) {
-      const legacyRows = await prisma.ekmanImage.findMany({
-        where: { id: { in: legacyIds } },
-        select: { id: true, imageData: true },
-      });
-      for (const r of legacyRows) legacyData[r.id] = r.imageData;
-    }
-    const elapsed = Date.now() - t0;
+    const legacyCount = thin.filter((r) => !r.imageUrl).length;
     console.log(
-      `[GET /api/admin/ekman-images] ${thin.length} rows in ${elapsed}ms ` +
-      `(legacy base64: ${legacyIds.length}) (filters: ${JSON.stringify({ emotion, photoType, difficulty, folder, folderStartsWith, excludeSynthetic, excludeGeneratedFolder })})`
+      `[GET /api/admin/ekman-images] ${thin.length} rows in ${Date.now() - t0}ms ` +
+      `(legacy-needing-lazy: ${legacyCount}) (filters: ${JSON.stringify({ emotion, photoType, difficulty, folder, folderStartsWith, excludeSynthetic, excludeGeneratedFolder })})`
     );
 
-    // Format response — same shape as before. `imageData` is the URL when one
-    // exists, otherwise the base64 data URL from the legacy lookup.
+    // Every row's `imageData` in the response is now a lazy endpoint. Even
+    // rows with `imageUrl` go through the lazy endpoint so the UI doesn't need
+    // to branch — the endpoint 302-redirects for those, costing one extra
+    // cheap hop. If that hop ever becomes a hotspot, switch to returning
+    // imageUrl directly here for migrated rows.
     const formattedImages = thin.map((img) => ({
       id: img.id,
-      imageData: img.imageUrl || legacyData[img.id] || '',
+      imageData: `/api/admin/ekman-images/${img.id}/image`,
       label: img.label,
       difficulty: img.difficulty,
       photoType: img.photoType,
