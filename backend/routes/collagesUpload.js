@@ -14,8 +14,9 @@ function generateId() {
 
 async function handlePost(req, res) {
   try {
-    const userEmail = (req.body.userEmail || '').trim().toLowerCase();
-    const userId = parseInt(req.body.userId, 10);
+    const body = req.body || {};
+    const userEmail = (body.userEmail || '').trim().toLowerCase();
+    const userId = parseInt(body.userId, 10);
     if (!userEmail || !Number.isInteger(userId) || userId <= 0) {
       return res.status(401).json({ ok: false, error: 'Unauthorized - Please log in first' });
     }
@@ -23,8 +24,8 @@ async function handlePost(req, res) {
     if (!file || !file.buffer) {
       return res.status(400).json({ ok: false, error: 'No file provided' });
     }
-    const emotions = req.body.emotions ? (() => { try { const e = JSON.parse(req.body.emotions); return Array.isArray(e) ? JSON.stringify(e) : null; } catch { return null; } })() : null;
-    const approvedAnyway = req.body.approvedAnyway === 'true' || req.body.approvedAnyway === '1';
+    const emotions = body.emotions ? (() => { try { const e = JSON.parse(body.emotions); return Array.isArray(e) ? JSON.stringify(e) : null; } catch { return null; } })() : null;
+    const approvedAnyway = body.approvedAnyway === 'true' || body.approvedAnyway === '1';
     const folder = approvedAnyway ? 'Unverified Photos' : 'Verified Photos';
     const mime = file.mimetype || 'image/png';
     const dataUrl = `data:${mime};base64,${file.buffer.toString('base64')}`;

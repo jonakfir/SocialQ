@@ -86,6 +86,27 @@
   type TabType = 'user' | 'unverified' | 'ekman' | 'generated' | 'democlass' | 'demofamily';
   let activeTab: TabType = 'user';
 
+  // ── Stale-response guard ──────────────────────────────────────────────
+  // Fixes the "sticky emotion" bug: when the user clicks emotion tabs fast,
+  // we'd fire overlapping fetches and the LAST response to arrive would win —
+  // regardless of which request the user actually intended. Now each load
+  // function bumps a per-tab generation counter and aborts prior in-flight
+  // requests, and we only apply a response if it's still the latest.
+  const loadGenerations: Record<TabType, number> = {
+    user: 0, unverified: 0, ekman: 0, generated: 0, democlass: 0, demofamily: 0,
+  };
+  const loadControllers: Partial<Record<TabType, AbortController>> = {};
+  function nextGen(tab: TabType): { gen: number; signal: AbortSignal } {
+    loadControllers[tab]?.abort();
+    const ctrl = new AbortController();
+    loadControllers[tab] = ctrl;
+    const gen = ++loadGenerations[tab];
+    return { gen, signal: ctrl.signal };
+  }
+  function isLatest(tab: TabType, gen: number): boolean {
+    return gen === loadGenerations[tab];
+  }
+
   // Upload modal state
   let showUploadModal = false;
   let uploading = false;
@@ -174,6 +195,7 @@
   }
 
   async function loadPhotos() {
+    const { gen, signal } = nextGen('user');
     if (activeTab === 'user') loading = true;
     error = null;
     try {
@@ -195,9 +217,9 @@
         params.set('endDate', endDate);
       }
 
-      const res = await apiFetch(`/api/admin/photos?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/photos?${params.toString()}`, { signal });
       const data = await res.json();
-      
+      if (!isLatest('user', gen)) return;
       if (data.ok) {
         photos = data.photos || [];
         totalPhotos = data.total || 0;
@@ -205,14 +227,16 @@
         error = data.error || 'Failed to load photos';
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       error = e?.message || 'Failed to load photos';
       console.error('Error loading photos:', e);
     } finally {
-      if (activeTab === 'user') loading = false;
+      if (isLatest('user', gen) && activeTab === 'user') loading = false;
     }
   }
 
   async function loadUnverifiedPhotos() {
+    const { gen, signal } = nextGen('unverified');
     if (activeTab === 'unverified') loading = true;
     error = null;
     try {
@@ -234,9 +258,9 @@
         params.set('endDate', endDate);
       }
 
-      const res = await apiFetch(`/api/admin/photos?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/photos?${params.toString()}`, { signal });
       const data = await res.json();
-      
+      if (!isLatest('unverified', gen)) return;
       if (data.ok) {
         unverifiedPhotos = data.photos || [];
         totalUnverifiedPhotos = data.total || 0;
@@ -244,20 +268,22 @@
         if (activeTab === 'unverified') error = data.error || 'Failed to load unverified photos';
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       if (activeTab === 'unverified') error = e?.message || 'Failed to load unverified photos';
       console.error('Error loading unverified photos:', e);
     } finally {
-      if (activeTab === 'unverified') loading = false;
+      if (isLatest('unverified', gen) && activeTab === 'unverified') loading = false;
     }
   }
 
   async function loadEkmanImages() {
+    const { gen, signal } = nextGen('ekman');
     try {
       const params = new URLSearchParams();
       // Exclude synthetic photos and generated photos folder
       params.set('excludeSynthetic', 'true');
       params.set('excludeGeneratedFolder', 'true');
-      
+
       if (selectedEmotion && selectedEmotion !== 'All') {
         params.set('emotion', EMOTION_MAP[selectedEmotion] || selectedEmotion);
       }
@@ -265,46 +291,56 @@
         params.set('difficulty', selectedDifficulty);
       }
 
-      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`, { signal });
       const data = await res.json();
-      
+      if (!isLatest('ekman', gen)) return;
       if (data.ok) {
         ekmanImages = data.images || [];
         totalEkmanImages = data.total || 0;
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       console.error('Error loading Ekman images:', e);
     }
   }
 
   async function loadGeneratedImages() {
+    const { gen, signal } = nextGen('generated');
     if (activeTab === 'generated') loading = true;
     try {
       const params = new URLSearchParams();
-      params.set('photoType', 'synthetic');
-      
-      // Use emotion filter to determine folder
+
       if (selectedEmotion && selectedEmotion !== 'All') {
+        // Specific emotion → exact folder match, which catches rows regardless of photoType.
         const mappedEmotion = EMOTION_MAP[selectedEmotion] || selectedEmotion;
         params.set('folder', `Generated Photos/${mappedEmotion}`);
         params.set('emotion', mappedEmotion);
+      } else {
+        // "All" → prefix-match every Generated Photos/* folder. Previously we
+        // only set photoType=synthetic which missed rows whose photoType is null
+        // but whose folder is "Generated Photos/...". Those rows exist in the DB
+        // (caught by the emotion-specific query), so the prefix match is the
+        // correct superset.
+        params.set('folderStartsWith', 'Generated Photos/');
       }
 
-      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`, { signal });
       const data = await res.json();
-      
+      if (!isLatest('generated', gen)) return; // stale response, discard
       if (data.ok) {
         generatedImages = data.images || [];
         totalGeneratedImages = data.total || 0;
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return; // expected when a newer request supersedes
       console.error('Error loading generated images:', e);
     } finally {
-      if (activeTab === 'generated') loading = false;
+      if (isLatest('generated', gen) && activeTab === 'generated') loading = false;
     }
   }
 
   async function loadDemoClassImages() {
+    const { gen, signal } = nextGen('democlass');
     if (activeTab === 'democlass') loading = true;
     try {
       const params = new URLSearchParams();
@@ -315,20 +351,23 @@
       if (selectedDifficulty && selectedDifficulty !== 'All') {
         params.set('difficulty', selectedDifficulty);
       }
-      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`, { signal });
       const data = await res.json();
+      if (!isLatest('democlass', gen)) return;
       if (data.ok) {
         demoClassImages = data.images || [];
         totalDemoClassImages = data.total || 0;
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       console.error('Error loading Demo Class images:', e);
     } finally {
-      if (activeTab === 'democlass') loading = false;
+      if (isLatest('democlass', gen) && activeTab === 'democlass') loading = false;
     }
   }
 
   async function loadDemoFamilyImages() {
+    const { gen, signal } = nextGen('demofamily');
     if (activeTab === 'demofamily') loading = true;
     try {
       const params = new URLSearchParams();
@@ -339,16 +378,18 @@
       if (selectedDifficulty && selectedDifficulty !== 'All') {
         params.set('difficulty', selectedDifficulty);
       }
-      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`);
+      const res = await apiFetch(`/api/admin/ekman-images?${params.toString()}`, { signal });
       const data = await res.json();
+      if (!isLatest('demofamily', gen)) return;
       if (data.ok) {
         demoFamilyImages = data.images || [];
         totalDemoFamilyImages = data.total || 0;
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       console.error('Error loading Demo Family images:', e);
     } finally {
-      if (activeTab === 'demofamily') loading = false;
+      if (isLatest('demofamily', gen) && activeTab === 'demofamily') loading = false;
     }
   }
 
@@ -926,10 +967,10 @@
           <span class="total-count">Total: {totalPhotos} photo{totalPhotos !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each photos as photo}
+          {#each photos as photo (photo.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={photo.imageUrl} alt="Photo" loading="lazy" />
+                <img src={photo.imageUrl} alt="Photo" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this photo? This action cannot be undone."
@@ -980,10 +1021,10 @@
           <span class="total-count">Total: {totalUnverifiedPhotos} unverified photo{totalUnverifiedPhotos !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each unverifiedPhotos as photo}
+          {#each unverifiedPhotos as photo (photo.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={photo.imageUrl} alt="Photo" loading="lazy" />
+                <img src={photo.imageUrl} alt="Photo" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this photo? This action cannot be undone."
@@ -1042,10 +1083,10 @@
           <span class="total-count">Total: {totalEkmanImages} image{totalEkmanImages !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each ekmanImages as image}
+          {#each ekmanImages as image (image.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={image.imageData} alt="Ekman Image" loading="lazy" />
+                <img src={image.imageData} alt="Ekman Image" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this image? This action cannot be undone."
@@ -1108,10 +1149,10 @@
           <span class="total-count">Generated Photos: {totalGeneratedImages} image{totalGeneratedImages !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each generatedImages as image}
+          {#each generatedImages as image (image.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={image.imageData} alt="Generated" loading="lazy" />
+                <img src={image.imageData} alt="Generated" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this image? This action cannot be undone."
@@ -1152,10 +1193,10 @@
           <span class="total-count">Demo Class: {totalDemoClassImages} image{totalDemoClassImages !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each demoClassImages as image}
+          {#each demoClassImages as image (image.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={image.imageData} alt="Demo Class" loading="lazy" />
+                <img src={image.imageData} alt="Demo Class" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this image? This action cannot be undone."
@@ -1215,10 +1256,10 @@
           <span class="total-count">Demo Family: {totalDemoFamilyImages} image{totalDemoFamilyImages !== 1 ? 's' : ''}</span>
         </div>
         <div class="photos-grid">
-          {#each demoFamilyImages as image}
+          {#each demoFamilyImages as image (image.id)}
             <div class="photo-card">
               <div class="photo-image-container">
-                <img src={image.imageData} alt="Demo Family" loading="lazy" />
+                <img src={image.imageData} alt="Demo Family" loading="lazy" decoding="async" />
                 <div class="delete-photo-btn-wrapper">
                   <TrashDeleteButton
                     confirmMessage="Are you sure you want to delete this image? This action cannot be undone."
@@ -1589,6 +1630,11 @@
     overflow: hidden;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s, box-shadow 0.2s;
+    /* PERF: off-screen photo cards skip layout + paint. Critical when admins
+       scroll through hundreds of base64 images — combined with loading="lazy"
+       on the <img>, the browser only decodes what's visible. */
+    content-visibility: auto;
+    contain-intrinsic-size: 280px 320px;
   }
 
   .photo-card:hover {

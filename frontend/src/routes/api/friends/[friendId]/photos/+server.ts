@@ -99,23 +99,36 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Friendship not found' }, { status: 403 });
     }
 
-    // Fetch friend's collages
+    // PERF: select only the columns the memory game / photos UI actually read,
+    // cap rows, and send a short private cache header so repeated calls during
+    // one session don't thrash the DB.
+    const t0 = Date.now();
     const collages = await prisma.collage.findMany({
       where: { userId: friendId },
-      orderBy: { createdAt: 'desc' }
+      select: {
+        id: true,
+        imageUrl: true,
+        emotions: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
     });
+    console.log(`[GET /api/friends/${friendId}/photos] ${collages.length} rows in ${Date.now() - t0}ms`);
 
     return json({
       ok: true,
-      collages: collages.map(c => ({
+      collages: collages.map((c) => ({
         id: c.id,
         imageUrl: c.imageUrl,
         emotions: c.emotions ? JSON.parse(c.emotions) : null,
-        createdAt: c.createdAt
-      }))
+        createdAt: c.createdAt,
+      })),
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=30' },
     });
   } catch (error: any) {
-    console.error('[GET /api/friends/:friendId/photos] error:', error);
+    console.error('[GET /api/friends/:friendId/photos] error:', error?.message || error);
     return json(
       { ok: false, error: error?.message || 'Failed to fetch friend photos' },
       { status: 500 }

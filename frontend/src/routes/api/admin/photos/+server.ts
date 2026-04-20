@@ -112,53 +112,70 @@ export const GET: RequestHandler = async (event) => {
       where.approvedAnyway = true;
     }
 
-    // Fetch collages without include so we don't fail when userId has no matching User (orphaned/mismatched ids)
-    let collages = await prisma.collage.findMany({
-      where,
-      orderBy: { createdAt: 'desc' }
-    });
-
-    // Filter by organization if specified
+    // PERF: org filter moved into the DB query so we don't pull every matching
+    // collage then throw most away in JS. Also added `take: 500` cap + `select`
+    // so we don't fetch columns we don't use. Also `select` on User lookup.
     if (organizationId) {
       const orgMembers = await prisma.organizationMembership.findMany({
-        where: {
-          organizationId: organizationId,
-          status: 'approved'
-        },
+        where: { organizationId, status: 'approved' },
         select: { userId: true }
       });
-      const orgUserIds = new Set(orgMembers.map(m => m.userId));
-      collages = collages.filter(c => orgUserIds.has(c.userId));
+      const orgUserIds = orgMembers.map((m) => m.userId);
+      // If the org has zero approved members, short-circuit to empty.
+      if (orgUserIds.length === 0) {
+        return json({ ok: true, photos: [], total: 0 }, {
+          headers: { 'Cache-Control': 'private, max-age=15' },
+        });
+      }
+      where.userId = where.userId ? { in: [where.userId, ...orgUserIds].filter((x, i, a) => a.indexOf(x) === i) } : { in: orgUserIds };
     }
 
-    // Resolve users by id (handle orphaned collages where userId has no User row)
-    const userIds = [...new Set(collages.map(c => c.userId))];
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: { id: true, username: true }
+    const t0 = Date.now();
+    const collages = await prisma.collage.findMany({
+      where,
+      select: {
+        id: true,
+        imageUrl: true,
+        emotions: true,
+        folder: true,
+        approvedAnyway: true,
+        createdAt: true,
+        userId: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
     });
-    const userMap = new Map(users.map(u => [u.id, { id: String(u.id), username: u.username ?? '' }]));
+    console.log(`[GET /api/admin/photos] ${collages.length} rows in ${Date.now() - t0}ms`);
 
-    const formattedCollages = collages.map(c => {
-      const user = userMap.get(c.userId);
-      return {
-        id: c.id,
-        imageUrl: c.imageUrl,
-        emotions: c.emotions ? JSON.parse(c.emotions) : null,
-        folder: c.folder || 'Me',
-        approvedAnyway: c.approvedAnyway ?? false,
-        createdAt: c.createdAt,
-        user: user ?? { id: String(c.userId), username: 'Unknown user' }
-      };
-    });
+    // Resolve users by id (handle orphaned collages where userId has no User row)
+    const userIds = [...new Set(collages.map((c) => c.userId))];
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, username: true },
+        })
+      : [];
+    const userMap = new Map(users.map((u) => [u.id, { id: String(u.id), username: u.username ?? '' }]));
+
+    const formattedCollages = collages.map((c) => ({
+      id: c.id,
+      imageUrl: c.imageUrl,
+      emotions: c.emotions ? JSON.parse(c.emotions) : null,
+      folder: c.folder || 'Me',
+      approvedAnyway: c.approvedAnyway ?? false,
+      createdAt: c.createdAt,
+      user: userMap.get(c.userId) ?? { id: String(c.userId), username: 'Unknown user' },
+    }));
 
     return json({
       ok: true,
       photos: formattedCollages,
       total: formattedCollages.length
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=15' },
     });
   } catch (error: any) {
-    console.error('[GET /api/admin/photos] error', error);
+    console.error('[GET /api/admin/photos] error', error?.message || error);
     return json({ ok: false, error: error?.message || 'Failed to fetch photos' }, { status: 500 });
   }
 };

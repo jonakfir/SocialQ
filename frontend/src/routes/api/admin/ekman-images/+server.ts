@@ -74,7 +74,8 @@ export const GET: RequestHandler = async (event) => {
     const emotion = url.searchParams.get('emotion');
     const photoType = url.searchParams.get('photoType');
     const difficulty = url.searchParams.get('difficulty');
-    const folder = url.searchParams.get('folder'); // e.g. "Generated Photos/Anger"
+    const folder = url.searchParams.get('folder'); // e.g. "Generated Photos/Anger" — exact match
+    const folderStartsWith = url.searchParams.get('folderStartsWith'); // e.g. "Generated Photos/" — prefix match
     const excludeSynthetic = url.searchParams.get('excludeSynthetic') === 'true';
     const excludeGeneratedFolder = url.searchParams.get('excludeGeneratedFolder') === 'true';
 
@@ -98,6 +99,12 @@ export const GET: RequestHandler = async (event) => {
 
     if (folder) {
       where.folder = folder;
+    } else if (folderStartsWith) {
+      // Prefix match — e.g. all "Generated Photos/*" regardless of which emotion.
+      // Used by the admin photos page's Generated tab when emotion="All" so that
+      // rows whose photoType column happens to be null but whose folder is set
+      // still surface. Fixes the "Generated + All = empty" bug.
+      where.folder = { startsWith: folderStartsWith };
     } else if (excludeGeneratedFolder) {
       // Exclude photos in Generated Photos folder
       // Filter where folder is null OR folder doesn't contain "Generated Photos/"
@@ -107,34 +114,68 @@ export const GET: RequestHandler = async (event) => {
       ];
     }
 
-    // Fetch Ekman images with organization visibility
-    const images = await prisma.ekmanImage.findMany({
+    // PERF: every row's `imageData` is a base64 `data:image/...` URL — often
+    // MB-sized. Two-pass strategy to avoid pulling base64 we won't use:
+    //   Pass 1: select the small metadata columns + `imageUrl` for ALL rows.
+    //   Pass 2: for the subset whose `imageUrl` is NULL (pre-migration legacy
+    //           rows), fetch `imageData` in a targeted `where: { id: { in } }`
+    //           query. Rows that HAVE a CloudFront URL never load the heavy
+    //           base64 column over the Postgres wire.
+    //
+    // Why a second query instead of a clever single query: Prisma can't
+    // conditionally select a column based on another column's value. The
+    // second query is almost always small (or empty, post-migration).
+    //
+    // Response contract is unchanged — callers still see `imageData` as the
+    // preferred image source (URL when available, base64 otherwise).
+    const t0 = Date.now();
+    const thin = await prisma.ekmanImage.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        imageUrl: true,
+        label: true,
+        difficulty: true,
+        photoType: true,
+        folder: true,
+        createdAt: true,
         organizationVisibility: {
-          include: {
-            organization: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
+          select: {
+            organization: { select: { id: true, name: true } }
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 500,
     });
 
-    // Format response
-    const formattedImages = images.map(img => ({
+    // Pass 2 — only for rows still on base64. Empty array ⇒ skip the query.
+    const legacyIds = thin.filter((r) => !r.imageUrl).map((r) => r.id);
+    const legacyData: Record<string, string> = {};
+    if (legacyIds.length > 0) {
+      const legacyRows = await prisma.ekmanImage.findMany({
+        where: { id: { in: legacyIds } },
+        select: { id: true, imageData: true },
+      });
+      for (const r of legacyRows) legacyData[r.id] = r.imageData;
+    }
+    const elapsed = Date.now() - t0;
+    console.log(
+      `[GET /api/admin/ekman-images] ${thin.length} rows in ${elapsed}ms ` +
+      `(legacy base64: ${legacyIds.length}) (filters: ${JSON.stringify({ emotion, photoType, difficulty, folder, folderStartsWith, excludeSynthetic, excludeGeneratedFolder })})`
+    );
+
+    // Format response — same shape as before. `imageData` is the URL when one
+    // exists, otherwise the base64 data URL from the legacy lookup.
+    const formattedImages = thin.map((img) => ({
       id: img.id,
-      imageData: img.imageData,
+      imageData: img.imageUrl || legacyData[img.id] || '',
       label: img.label,
       difficulty: img.difficulty,
       photoType: img.photoType,
       folder: img.folder ?? null,
       createdAt: img.createdAt,
-      organizations: img.organizationVisibility.map(v => ({
+      organizations: img.organizationVisibility.map((v) => ({
         id: v.organization.id,
         name: v.organization.name
       }))
@@ -144,6 +185,8 @@ export const GET: RequestHandler = async (event) => {
       ok: true,
       images: formattedImages,
       total: formattedImages.length
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=15' },
     });
   } catch (error: any) {
     console.error('[GET /api/admin/ekman-images] error', error);

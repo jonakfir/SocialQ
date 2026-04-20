@@ -160,6 +160,10 @@ model EkmanImage {
   @@index([difficulty])
   @@index([label, difficulty])
   @@index([photoType])
+  // Added for the admin photos page "Generated" tab, which filters with
+  // `folder startsWith "Generated Photos/"`. Without this index the query is a
+  // full table scan; with it, it's a range scan over the B-tree.
+  @@index([folder])
 }
 
 // Junction table for organization visibility of Ekman images

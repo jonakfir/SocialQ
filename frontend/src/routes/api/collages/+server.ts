@@ -419,43 +419,47 @@ export const GET: RequestHandler = async (event) => {
       return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
     
-    console.log('[GET /api/collages] ========== AUTH SUCCESS ==========');
-    console.log('[GET /api/collages] Fetching collages for user ID:', user.id, '(type:', typeof user.id, ')');
+    // PERF: previously this handler ran `prisma.collage.findMany({})` (whole DB)
+    // for debug logging and logged every row including the base64 `imageUrl`
+    // (often MB each). That blew the response to 30+ seconds per request and
+    // easily minutes once the DB grew. Both are deleted below. Do NOT re-add
+    // `findMany({})` or `console.log(collages)` here.
 
-    // Fetch user's collages
+    const prismaUserId = toPrismaUserId(user.id);
+    const t0 = Date.now();
     const collages = await prisma.collage.findMany({
-      where: { userId: toPrismaUserId(user.id) },
-      orderBy: { createdAt: 'desc' }
+      where: { userId: prismaUserId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        imageUrl: true,
+        emotions: true,
+        folder: true,
+        createdAt: true,
+      },
+      take: 500, // safety cap — no one scrolls past 500 photos; add paging later if needed
     });
-
-    console.log('[GET /api/collages] Found', collages.length, 'collages');
-    console.log('[GET /api/collages] Collages:', collages.map(c => ({
-      id: c.id,
-      userId: c.userId,
-      imageUrl: c.imageUrl,
-      emotions: c.emotions
-    })));
-    
-    // Also try to find all collages to debug
-    const allCollages = await prisma.collage.findMany({});
-    console.log('[GET /api/collages] Total collages in DB:', allCollages.length);
-    if (allCollages.length > 0) {
-      console.log('[GET /api/collages] All collages userIds:', allCollages.map(c => ({ id: c.id, userId: c.userId, userIdType: typeof c.userId })));
-    }
+    console.log(`[GET /api/collages] user ${user.id}: ${collages.length} collages in ${Date.now() - t0}ms`);
 
     return json({
       ok: true,
-      collages: collages.map(c => ({
+      collages: collages.map((c) => ({
         id: c.id,
         imageUrl: c.imageUrl,
         emotions: c.emotions ? JSON.parse(c.emotions) : null,
         folder: c.folder || 'Me',
-        createdAt: c.createdAt
-      }))
+        createdAt: c.createdAt,
+      })),
+    }, {
+      headers: {
+        // Private because the list is per-user; short TTL lets the browser
+        // reuse the response if the user navigates back within 30s without
+        // re-hitting the DB.
+        'Cache-Control': 'private, max-age=30',
+      },
     });
   } catch (error: any) {
-    console.error('[GET /api/collages] error:', error);
-    console.error('[GET /api/collages] error stack:', error.stack);
+    console.error('[GET /api/collages] error:', error?.message || error);
     return json(
       { ok: false, error: error?.message || 'Failed to fetch collages' },
       { status: 500 }

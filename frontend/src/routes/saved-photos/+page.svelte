@@ -98,23 +98,19 @@
     });
     groups['All'] = [];
     
-    collages.forEach(collage => {
-      // Add to "All" category
+    // PERF: previously this loop ran up to 3 console.log/warn per collage-emotion
+    // pairing. With a few hundred photos that's thousands of console calls which
+    // block the main thread on every re-group. Silenced on the happy path; the
+    // warnings are preserved only for truly unknown emotions (rare).
+    collages.forEach((collage) => {
       groups['All'].push(collage);
-      
-      // Add to each emotion category if the collage contains that emotion
       if (collage.emotions && Array.isArray(collage.emotions)) {
         collage.emotions.forEach((emotion: string) => {
           const normalizedEmotion = normalizeEmotionName(emotion);
           if (normalizedEmotion && groups[normalizedEmotion]) {
             groups[normalizedEmotion].push(collage);
-            console.log(`[saved-photos] Added collage ${collage.id} to emotion group: ${normalizedEmotion} (original: ${emotion})`);
-          } else {
-            console.warn(`[saved-photos] Could not normalize emotion "${emotion}" for collage ${collage.id}. Available emotions:`, EMOTIONS);
           }
         });
-      } else {
-        console.warn(`[saved-photos] Collage ${collage.id} has no emotions array:`, collage.emotions);
       }
     });
     
@@ -161,13 +157,15 @@
     }
     loading = true;
     try {
-      console.log('[saved-photos] Fetching collages for user ID:', user.id);
+      const t0 = performance.now();
       const res = await apiFetch('/api/collages');
       const data = await res.json();
-      console.log('[saved-photos] Collages response:', data);
+      // PERF: do NOT log `data` or `collages` here — each collage has a
+      // base64 data URL for imageUrl, and logging the whole response dumps
+      // megabytes to DevTools, which blocks the main thread for seconds.
       if (data.ok) {
         collages = data.collages || [];
-        console.log('[saved-photos] Loaded', collages.length, 'collages:', collages);
+        console.log(`[saved-photos] Loaded ${collages.length} collages in ${Math.round(performance.now() - t0)}ms`);
       } else {
         console.error('[saved-photos] Failed to fetch collages:', data.error);
       }
@@ -521,6 +519,13 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     background: rgba(0, 0, 0, 0.05);
+    /* PERF: tell the browser it's OK to skip layout + paint for off-screen
+       tiles. Combined with loading="lazy" on the <img>, this means a user
+       with 300 photos only pays the cost for the ~20 visible at any time,
+       not all 300 at once. The `contain-intrinsic-size` keeps the grid
+       from jumping when tiles pop in/out of rendering. */
+    content-visibility: auto;
+    contain-intrinsic-size: 200px 200px;
   }
 
   .photo-item:active {
@@ -834,15 +839,15 @@
         </div>
       {:else}
         <div class="photos-grid">
-          {#each currentCollages as collage}
-            <div 
-              class="photo-item" 
+          {#each currentCollages as collage (collage.id)}
+            <div
+              class="photo-item"
               class:dragging={draggedCollageId === collage.id}
               draggable="true"
               on:dragstart={(e) => handleDragStart(collage.id, e)}
               on:dragend={(e) => handleDragEnd(e)}
             >
-              <img src={collage.imageUrl} alt="Saved collage" draggable="false" />
+              <img src={collage.imageUrl} alt="Saved collage" draggable="false" loading="lazy" decoding="async" />
               <div class="delete-btn-wrapper" on:click|stopPropagation role="presentation">
                 <TrashDeleteButton
                   confirmMessage="Delete this photo? This cannot be undone."
