@@ -58,7 +58,8 @@
   const trainItems = [
     { label: 'Facial Recognition',           action: () => nav('/facial-recognition/quiz/1') },
     { label: 'Emotion Training',             action: () => nav('/training/training-pick-emotion') },
-    { label: 'Transition Recognition',       action: () => nav('/transition-recognition/quiz/Normal') }
+    { label: 'Transition Recognition',       action: () => nav('/transition-recognition/quiz/Normal') },
+    { label: 'Good with Faces',              action: () => nav('/memory') }
   ];
   const testItems = [
     { label: 'Timed Facial Recognition',     action: () => nav('/facial-recognition/quiz/5') },

@@ -1,9 +1,17 @@
 <svelte:head>
   <title>Privacy Policy – AboutFace</title>
+  <meta name="description" content="AboutFace Privacy Policy describing camera and face data handling." />
 </svelte:head>
 
-<main class="min-h-screen bg-gray-950 text-white py-16 px-6">
-  <div class="max-w-2xl mx-auto">
+<!--
+  IMPORTANT: This page renders on top of the global body background
+  (`/web.png` mural set in app.css). We use a fixed dark overlay below so the
+  page is fully readable — App Review 5.1.1(i) flagged the previous
+  Tailwind-only styling as "the link does not lead to the corresponding
+  document" because the text was nearly invisible against the mural.
+-->
+<div class="legal-page">
+  <div class="legal-content">
     <h1 class="text-3xl font-bold mb-2">Privacy Policy</h1>
     <p class="text-gray-400 mb-10 text-sm">Last updated: April 11, 2026</p>
 
@@ -110,4 +118,53 @@
       </p>
     </section>
   </div>
-</main>
+</div>
+
+<style>
+  /* Vanilla CSS so this renders correctly even when Tailwind classes don't
+     ship to the deployed bundle and even though the global body has a
+     `background-image: url('/web.png') !important` set in app.css. */
+  .legal-page {
+    position: fixed;
+    inset: 0;
+    overflow-y: auto;
+    background: #0b1020;
+    color: #f5f7fa;
+    z-index: 100;
+    padding: 64px 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  .legal-content {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .legal-content :global(h1) {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+    color: #fff;
+  }
+  .legal-content :global(h2) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 2rem 0 0.75rem;
+    color: #f5f7fa;
+  }
+  .legal-content :global(p),
+  .legal-content :global(li) {
+    color: #d4dae4;
+    margin: 0 0 0.75rem;
+  }
+  .legal-content :global(ul) {
+    list-style: disc inside;
+    margin: 0 0 1rem;
+    padding: 0;
+  }
+  .legal-content :global(strong) { color: #fff; }
+  .legal-content :global(a) {
+    color: #6ab7ff;
+    text-decoration: underline;
+  }
+  .legal-content :global(.text-gray-400) { color: #9aa3b2; font-size: 0.875rem; display: block; margin-bottom: 2rem; }
+</style>
