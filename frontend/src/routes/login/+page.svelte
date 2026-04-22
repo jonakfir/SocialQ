@@ -105,64 +105,39 @@
         
         console.log('[Login] User role:', userRole, 'Email:', u, 'IsAdmin:', isAdmin);
         
-        // Check if user is an org admin by checking their memberships
-        let isOrgAdmin = false;
-        let primaryOrgId = null;
-        
-        if (!isAdmin) {
-          try {
-            const orgStatusRes = await apiFetch('/api/user/org-status');
-            const orgStatusData = await orgStatusRes.json();
-            if (orgStatusData.ok && orgStatusData.isOrgAdmin) {
-              isOrgAdmin = true;
-              primaryOrgId = orgStatusData.primaryOrgId;
-              console.log('[Login] ✅ ORG ADMIN DETECTED - Primary org:', primaryOrgId);
-            }
-          } catch (orgErr) {
-            console.warn('[Login] Failed to check org status:', orgErr);
-          }
-        }
-        
-        // Determine redirect URL
-        let redirectUrl = '/dashboard';
-        if (isAdmin) {
-          console.log('[Login] ✅ ADMIN DETECTED - Redirecting to admin page');
-          redirectUrl = '/admin/users';
-        } else if (isOrgAdmin && primaryOrgId) {
-          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org dashboard:', primaryOrgId);
-          redirectUrl = `/org/${primaryOrgId}/dashboard`;
-        } else if (isOrgAdmin) {
-          console.log('[Login] ✅ ORG ADMIN DETECTED - Redirecting to org hub');
-          redirectUrl = '/org';
-        } else {
-          console.log('[Login] Redirecting to dashboard');
-          redirectUrl = '/dashboard';
-        }
-        
-        console.log('[Login] FORCE REDIRECTING to:', redirectUrl);
-        
+        // Fire org-status in the background (non-blocking) — only matters for org admins,
+        // which are rare. Regular users redirect immediately; org admins get a second
+        // redirect once the check resolves.
+        const orgStatusPromise = isAdmin
+          ? Promise.resolve(null)
+          : apiFetch('/api/user/org-status')
+              .then(r => r.json())
+              .catch(err => { console.warn('[Login] org status check failed:', err); return null; });
+
         // Store admin flag in localStorage as backup for admin layout
         if (isAdmin) {
           localStorage.setItem('_admin_login', 'true');
           localStorage.setItem('_admin_email', u);
         }
-        
-        // Wait a moment for cookies to be set, then redirect
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Use goto() for SvelteKit navigation, with window.location as fallback
+
+        const initialRedirect = isAdmin ? '/admin/users' : '/dashboard';
         try {
-          await goto(redirectUrl, { replaceState: true, invalidateAll: true, noScroll: true });
-          // If goto doesn't work, force with window.location
-          setTimeout(() => {
-            if (window.location.pathname === '/login') {
-              console.warn('[Login] goto() may have failed, forcing window.location');
-              window.location.href = redirectUrl;
-            }
-          }, 100);
+          await goto(initialRedirect, { replaceState: true });
         } catch (err) {
           console.error('[Login] goto() error:', err);
-          window.location.href = redirectUrl;
+          window.location.href = initialRedirect;
+          return;
+        }
+
+        // After navigating, upgrade to the org-admin route if applicable.
+        if (!isAdmin) {
+          const orgStatusData = await orgStatusPromise;
+          if (orgStatusData?.ok && orgStatusData.isOrgAdmin) {
+            const orgTarget = orgStatusData.primaryOrgId
+              ? `/org/${orgStatusData.primaryOrgId}/dashboard`
+              : '/org';
+            try { await goto(orgTarget, { replaceState: true }); } catch {}
+          }
         }
         return;
       } else {

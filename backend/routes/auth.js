@@ -392,18 +392,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Get role from database (should already be set)
-    // Ensure role is fresh from database, not cached
-    let role = user.role || 'personal';
-    
-    // Double-check role from database if it seems wrong
-    if (!role || role === 'personal') {
-      const freshUser = await findUserById(user.id);
-      if (freshUser && freshUser.role) {
-        role = freshUser.role;
-      }
-    }
-    
+    const role = user.role || 'personal';
+
     const token = setSessionCookies(res, { id: user.id, email: user.email });
     const { accessLevel, trialEndsAt } = await getEffectiveAccessAndTrial(user);
     console.log('[login] ✅ Regular login successful, role:', role, 'accessLevel:', accessLevel, 'user.id:', user.id);
