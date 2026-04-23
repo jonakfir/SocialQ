@@ -987,13 +987,6 @@
   width: min(100%, 960px);
   height: auto;
   aspect-ratio: calc(var(--cols) / var(--rows));
-  /* Solid dark backdrop so the puzzle-piece gaps (the inset strips where
-     neither piece paints) show a flat color instead of the mural background
-     bleeding through. Matches the card-back navy to minimize contrast. */
-  background: #0d1f4a;
-  border-radius: 8px;
-  padding: 2px;
-  box-sizing: content-box;
 }
 
 /* ── Card animation system ──────────────────────────────────────

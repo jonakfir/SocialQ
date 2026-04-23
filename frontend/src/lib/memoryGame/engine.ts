@@ -138,12 +138,12 @@ interface ModePreset {
   summary: string;
 }
 
-// All five difficulties share the same 5×6 board (15 pairs / 30 cards). The
+// All five difficulties share the same 6×5 board (15 pairs / 30 cards). The
 // escalation comes from tier depth, match mode, art pack, hint/time gates,
 // and mismatch penalty — mirrors the spec in the product discussion.
 export const MODE_PRESETS: Record<GameMode, ModePreset> = {
   'super-easy': {
-    cols: 5, rows: 6, tiers: [1],
+    cols: 6, rows: 5, tiers: [1],
     hintsEnabled: true,  audioEnabled: true,  hintDelayMs: 3000,
     timeLimitMs: null,
     artPack: 'emoji',        matchMode: 'identical',
@@ -151,7 +151,7 @@ export const MODE_PRESETS: Record<GameMode, ModePreset> = {
     summary: 'Emoji · tier 1 · hint @ 3s · no time · no penalty',
   },
   'easy': {
-    cols: 5, rows: 6, tiers: [1, 2],
+    cols: 6, rows: 5, tiers: [1, 2],
     hintsEnabled: true,  audioEnabled: true,  hintDelayMs: 6000,
     timeLimitMs: null,
     artPack: 'cartoon',      matchMode: 'identical',
@@ -159,7 +159,7 @@ export const MODE_PRESETS: Record<GameMode, ModePreset> = {
     summary: 'Cartoon · tier 1–2 · hint @ 6s · no time',
   },
   'medium': {
-    cols: 5, rows: 6, tiers: [1, 2],
+    cols: 6, rows: 5, tiers: [1, 2],
     hintsEnabled: true,  audioEnabled: true,  hintDelayMs: 10000,
     timeLimitMs: 240000,
     // Cross-art with cartoon as the primary means the engine picks emoji as
@@ -169,7 +169,7 @@ export const MODE_PRESETS: Record<GameMode, ModePreset> = {
     summary: 'Emoji ↔ Cartoon · tier 1–2 · hint @ 10s · 4:00',
   },
   'hard': {
-    cols: 5, rows: 6, tiers: [1, 2, 3],
+    cols: 6, rows: 5, tiers: [1, 2, 3],
     hintsEnabled: false, audioEnabled: true,  hintDelayMs: 99_999,
     timeLimitMs: 150000,
     artPack: 'face',         matchMode: 'category',
@@ -177,7 +177,7 @@ export const MODE_PRESETS: Record<GameMode, ModePreset> = {
     summary: 'Real faces · tier 1–3 · category match · 2:30',
   },
   'expert': {
-    cols: 5, rows: 6, tiers: [1, 2, 3],
+    cols: 6, rows: 5, tiers: [1, 2, 3],
     hintsEnabled: false, audioEnabled: true,  hintDelayMs: 99_999,
     timeLimitMs: 90000,
     artPack: 'transition',   matchMode: 'transition-chain',
