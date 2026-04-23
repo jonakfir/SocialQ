@@ -187,7 +187,7 @@ export const MODE_PRESETS: Record<GameMode, ModePreset> = {
 };
 
 export const MODE_LABELS: Record<GameMode, string> = {
-  'super-easy': 'Super Easy',
+  'super-easy': 'Starter',
   'easy': 'Easy',
   'medium': 'Medium',
   'hard': 'Hard',

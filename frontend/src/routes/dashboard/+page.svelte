@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, preloadData } from '$app/navigation';
   import { isViewingAsPersonal, clearViewAs } from '$lib/viewAs';
   import { apiFetch } from '$lib/api';
 
@@ -55,17 +55,21 @@
 
   const nav = (p: string) => goto(p);
 
+  // Preload targets so the +page.server.ts load fires on pointer-enter, not on
+  // click. By the time the user taps the chip the data is already in memory
+  // and the navigation feels instant. Good with Faces previously blocked on
+  // a 500-row RDS query that made the transition feel broken.
   const trainItems = [
-    { label: 'Facial Recognition',           action: () => nav('/facial-recognition/quiz/1') },
-    { label: 'Emotion Training',             action: () => nav('/training/training-pick-emotion') },
-    { label: 'Transition Recognition',       action: () => nav('/transition-recognition/quiz/Normal') },
-    { label: 'Good with Faces',              action: () => nav('/memory') }
-  ];
+    { label: 'Facial Recognition',           path: '/facial-recognition/quiz/1' },
+    { label: 'Emotion Training',             path: '/training/training-pick-emotion' },
+    { label: 'Transition Recognition',       path: '/transition-recognition/quiz/Normal' },
+    { label: 'Good with Faces',              path: '/memory' }
+  ].map(({ label, path }) => ({ label, path, action: () => nav(path) }));
   const testItems = [
-    { label: 'Timed Facial Recognition',     action: () => nav('/facial-recognition/quiz/5') },
-    { label: 'Mirroring Game',               action: () => nav('/mirroring/settings') },
-    { label: 'Timed Transition Recognition', action: () => nav('/transition-recognition/quiz/Challenge') }
-  ];
+    { label: 'Timed Facial Recognition',     path: '/facial-recognition/quiz/5' },
+    { label: 'Mirroring Game',               path: '/mirroring/settings' },
+    { label: 'Timed Transition Recognition', path: '/transition-recognition/quiz/Challenge' }
+  ].map(({ label, path }) => ({ label, path, action: () => nav(path) }));
 
   function exitPersonal() {
     clearViewAs();

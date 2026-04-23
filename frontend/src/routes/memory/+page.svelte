@@ -28,9 +28,30 @@
     transitionPool?: Array<{ url: string; fromEmotionId: string; toEmotionId: string }>;
     user?: { id?: string | number; email?: string } | null;
   };
-  $: facePool = data?.facePool ?? {};
+  // Server load returns an empty facePool for the stock path (the DB query
+  // moved to /api/memory-face-pool so navigation isn't blocked). If we have a
+  // friend deck the server-resolved pool is used as-is. Otherwise we fetch
+  // the stock pool client-side on mount and merge it in — lobby renders
+  // immediately and face-mode games wait at most a few hundred ms for the
+  // fetch to resolve.
+  let clientFacePool: FacePool = {};
+  $: facePool = data?.friendId ? (data?.facePool ?? {}) : (Object.keys(clientFacePool).length ? clientFacePool : (data?.facePool ?? {}));
   $: transitionPool = data?.transitionPool ?? [];
   $: friendDeckId = data?.friendId ?? null;
+
+  onMount(async () => {
+    if (data?.friendId) return; // friend decks are already resolved server-side
+    try {
+      const res = await fetch('/api/memory-face-pool');
+      if (!res.ok) return;
+      const body = await res.json();
+      if (body?.facePool && typeof body.facePool === 'object') {
+        clientFacePool = body.facePool;
+      }
+    } catch {
+      /* fall through to emoji fallback */
+    }
+  });
 
   // ── Multiplayer seed (Phase 4.3) ────────────────────────────
   // If the URL has ?seed=... (optionally ?mode=&art=&match=), apply those to the
@@ -811,15 +832,27 @@
 }
 
 .mode-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;
 }
 .mode-btn {
   background: rgba(255,255,255,.06);
-  border: 1.5px solid rgba(255,255,255,.1);
-  border-radius: 14px; padding: 10px 8px;
-  color: #fff; cursor: pointer; text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  transition: all .2s;
+  border: 1.5px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  padding: 0 10px;
+  color: #fff; cursor: pointer;
+  /* Fixed height + center content both axes so every label sits in the same
+     place regardless of line count — "Super Easy" wraps to 2 lines but still
+     visually balances against the single-line buttons. */
+  min-height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center;
+  line-height: 1.15;
+  transition: transform .15s ease, background .2s, border-color .2s, box-shadow .2s;
+}
+.mode-btn:hover {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.24);
+  transform: translateY(-1px);
 }
 .mode-btn.sel {
   background: rgba(255,215,0,.18);
@@ -827,7 +860,7 @@
   box-shadow: 0 0 14px rgba(255,215,0,.25);
 }
 .mode-grid-label { font-size: .65rem; color: rgba(255,255,255,.5); }
-.mode-name       { font-size: .85rem; font-weight: 700; }
+.mode-name       { font-size: .95rem; font-weight: 700; letter-spacing: .01em; }
 .mode-tag        { font-size: .6rem; color: rgba(255,255,255,.5); }
 
 .mode-summary {
