@@ -137,28 +137,40 @@
 
   .admin-nav {
     display: flex;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.35rem;
     flex: 1;
   }
 
   .admin-nav-link {
-    padding: 0.6rem 1.2rem;
+    /* Flex + center keeps the label vertically balanced inside the pill — the
+       old padding-only rule rendered the text noticeably above center on the
+       active gradient blob because the border + box-shadow grew the pill
+       asymmetrically. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+    padding: 0 1.15rem;
     border-radius: 9999px;
     text-decoration: none;
     color: rgba(255, 255, 255, 0.9);
     font-weight: 700;
     font-size: 0.9rem;
+    line-height: 1;
     font-family: ui-sans-serif, system-ui, -apple-system, "Inter", "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
     letter-spacing: 0.25px;
-    transition: all 0.2s ease;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
     border: 2px solid transparent;
     text-shadow: 0 2px 4px rgba(0,0,0,.2);
+    white-space: nowrap;
   }
 
   .admin-nav-link:hover {
     background: rgba(255, 255, 255, 0.2);
     color: white;
     border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
   }
 
   .admin-nav-link.active {

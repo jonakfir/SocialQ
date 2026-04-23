@@ -252,43 +252,38 @@ export const GET: RequestHandler = async (event) => {
       }
     }
     
-    // Get all sessions matching filters
-    const sessions = await prisma.gameSession.findMany({
-      where,
-      orderBy: { createdAt: 'asc' },
-      include: {
-        questions: true,
-        user: {
-          select: {
-            id: true,
-            username: true
-          }
+    // Parallelize the three independent reads — sessions, full user list for
+    // the filter dropdown, and the signup time series (when no user filter is
+    // active). The old code awaited them sequentially, paying ~3× the RDS
+    // round-trip cost per request. This alone cuts analytics by several
+    // hundred ms on warm calls.
+    const userSignupsWhere: any = {};
+    if (dateFilter) userSignupsWhere.createdAt = dateFilter;
+    const [sessions, allUsers, userSignups] = await Promise.all([
+      prisma.gameSession.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        include: {
+          questions: true,
+          user: { select: { id: true, username: true } }
         }
-      }
-    });
-    
-    // Get all users for filter dropdown
-    const allUsers = await prisma.user.findMany({
-      select: {
-        id: true,
-        username: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    
+      }),
+      prisma.user.findMany({
+        select: { id: true, username: true },
+        orderBy: { createdAt: 'desc' }
+      }),
+      userId
+        ? Promise.resolve([] as Array<{ createdAt: Date }>)
+        : prisma.user.findMany({
+            where: userSignupsWhere,
+            orderBy: { createdAt: 'asc' },
+            select: { createdAt: true }
+          })
+    ]);
+
     // Time series: users over time (only if not filtering by user)
     const usersOverTime: Record<string, number> = {};
     if (!userId) {
-      const userSignupsWhere: any = {};
-      if (dateFilter) {
-        userSignupsWhere.createdAt = dateFilter;
-      }
-      const userSignups = await prisma.user.findMany({
-        where: userSignupsWhere,
-        orderBy: { createdAt: 'asc' },
-        select: { createdAt: true }
-      });
-      
       let cumulativeUsers = 0;
       userSignups.forEach((user: { createdAt: Date }) => {
         cumulativeUsers++;

@@ -63,6 +63,41 @@ function emptyUserListResponse(url?: URL | null, dbError?: boolean): ReturnType<
   });
 }
 
+// Module-level caches mirroring the ones in /api/admin/stats — admin/users is
+// hit every time the admin lands on the Users tab, and the backend→Prisma
+// sync doesn't need to run on every request. 60s TTL keeps fresh-enough
+// visibility of new accounts without paying the network cost each navigation.
+let lastUserSyncAt = 0;
+const USER_SYNC_TTL_MS = 60_000;
+// Cache the backend /admin/users payload across the sync and the merge below
+// so we fetch it only once per request (the old code fetched it twice).
+let backendUsersCache: { at: number; data: any } | null = null;
+const BACKEND_USERS_TTL_MS = 30_000;
+
+async function getBackendUsers(cookieHeader: string): Promise<any | null> {
+  if (backendUsersCache && Date.now() - backendUsersCache.at < BACKEND_USERS_TTL_MS) {
+    return backendUsersCache.data;
+  }
+  try {
+    const { PUBLIC_API_URL } = await import('$env/static/public');
+    const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
+    const res = await fetch(`${base}/admin/users`, {
+      method: 'GET',
+      headers: { Cookie: cookieHeader },
+      credentials: 'include'
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.ok) {
+      backendUsersCache = { at: Date.now(), data };
+      return data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * GET /api/admin/stats/users - List all users with summary statistics.
  * Never returns 500: any error returns 200 with empty users list.
@@ -74,29 +109,37 @@ export const GET: RequestHandler = async (event) => {
   } catch {
     return emptyUserListResponse(null);
   }
+  const cookieHeader = event.request.headers.get('cookie') || '';
+  // Fetch the backend user list exactly once per request (cached across
+  // the sync and the merge step at the bottom — the old code was calling
+  // this twice, adding a full network round trip per navigation).
+  const backendDataPromise = getBackendUsers(cookieHeader);
+
   try {
-    // Sync users from backend to Prisma first (same as dashboard stats) so list matches total
-    try {
-      await ensurePrismaUser('jonakfir@gmail.com');
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-      const cookieHeader = event.request.headers.get('cookie') || '';
-      const backendRes = await fetch(`${base}/admin/users`, {
-        method: 'GET',
-        headers: { Cookie: cookieHeader },
-        credentials: 'include'
-      });
-      if (backendRes.ok) {
-        const backendData = await backendRes.json();
-        if (backendData.ok && backendData.users) {
-          for (const u of backendData.users) {
-            const email = u.email || u.username;
-            if (email) await ensurePrismaUser(email);
-          }
+    // Sync users from backend to Prisma. Three changes from the old code:
+    //   1. Parallel — ensurePrismaUser per-user is fired via Promise.all
+    //      instead of a serial await loop. Over AWS RDS the serial loop
+    //      was paying ~50ms × 120 users = ~6s per request.
+    //   2. Cached — skip the entire sync when the previous one ran within
+    //      the TTL. The Users tab no longer pays for the sync on rapid
+    //      tab switches.
+    //   3. Single fetch — reuses the backend response cached above.
+    if (Date.now() - lastUserSyncAt > USER_SYNC_TTL_MS) {
+      try {
+        await ensurePrismaUser('jonakfir@gmail.com');
+        const backendData = await backendDataPromise;
+        if (backendData?.users && Array.isArray(backendData.users)) {
+          await Promise.all(
+            backendData.users.map((u: { email?: string; username?: string }) => {
+              const email = u.email || u.username;
+              return email ? ensurePrismaUser(email).catch(() => null) : null;
+            })
+          );
+          lastUserSyncAt = Date.now();
         }
+      } catch (syncErr) {
+        console.warn('[GET /api/admin/stats/users] Sync from backend failed:', syncErr);
       }
-    } catch (syncErr) {
-      console.warn('[GET /api/admin/stats/users] Sync from backend failed:', syncErr);
     }
 
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
@@ -147,71 +190,76 @@ export const GET: RequestHandler = async (event) => {
       return emptyUserListResponse(url);
     }
 
-    const organizationsCreatedByUser = new Map<string, Array<{ id: string; name: string; status: string; memberCount: number }>>();
-    
-    const usersWithStats = await Promise.all(
-      users.map(async (user) => {
-        let sessions: Array<{ gameType: string; score: number; total: number }> = [];
-        try {
-          sessions = await prisma.gameSession.findMany({
-            where: { userId: user.id },
-            select: { gameType: true, score: true, total: true }
-          });
-        } catch {
-          // skip per-user session load on error
+    // Single batched session query instead of N+1: old code fetched sessions
+    // per-user in a Promise.all, which on the page-sized slice (50 users ×
+    // ~50ms RDS round trip) added ~2.5s per request. Aggregate in memory
+    // after one findMany keyed by userId IN (...).
+    const userIds = users.map((u) => u.id);
+    let sessionsByUser = new Map<string, Array<{ gameType: string; score: number; total: number }>>();
+    if (userIds.length > 0) {
+      try {
+        const allSessions = await prisma.gameSession.findMany({
+          where: { userId: { in: userIds } },
+          select: { userId: true, gameType: true, score: true, total: true }
+        });
+        for (const s of allSessions) {
+          const arr = sessionsByUser.get(s.userId) ?? [];
+          arr.push({ gameType: s.gameType, score: s.score, total: s.total });
+          sessionsByUser.set(s.userId, arr);
         }
-        const gameTypeStats: Record<string, { count: number; avgScore: number; totalQuestions: number }> = {};
-        sessions.forEach((session) => {
-          if (!gameTypeStats[session.gameType]) {
-            gameTypeStats[session.gameType] = { count: 0, avgScore: 0, totalQuestions: 0 };
-          }
-          gameTypeStats[session.gameType].count++;
-          gameTypeStats[session.gameType].avgScore += session.total > 0 ? (session.score / session.total) * 100 : 0;
-          gameTypeStats[session.gameType].totalQuestions += session.total;
-        });
-        Object.keys(gameTypeStats).forEach((gameType) => {
-          const stats = gameTypeStats[gameType];
-          stats.avgScore = stats.count > 0 ? stats.avgScore / stats.count : 0;
-        });
-        return {
-          ...user,
-          organizationsCreated: organizationsCreatedByUser.get(user.id) ?? [],
-          stats: { totalSessions: sessions.length, gameTypeStats }
-        };
-      })
-    );
-
-    try {
-      const { PUBLIC_API_URL } = await import('$env/static/public');
-      const base = (PUBLIC_API_URL || '').replace(/\/$/, '') || 'http://localhost:4000';
-      const cookieHeader = event.request.headers.get('cookie') || '';
-      const backendRes = await fetch(`${base}/admin/users`, {
-        method: 'GET',
-        headers: { Cookie: cookieHeader },
-        credentials: 'include'
-      });
-      if (backendRes.ok) {
-        const backendData = await backendRes.json();
-        const backendUsers = (backendData.users || []) as Array<{ id: number; email?: string; username?: string; role?: string; accessLevel?: string; stripeCustomerId?: string | null; stripeSubscriptionId?: string | null; trialEndsAt?: string | null }>;
-        const byEmail = new Map<string, (typeof backendUsers)[0]>();
-        backendUsers.forEach((u) => {
-          const email = (u.email || u.username || '').toLowerCase().trim();
-          if (email) byEmail.set(email, u);
-        });
-        usersWithStats.forEach((u: any) => {
-          const backend = byEmail.get((u.username || '').toLowerCase().trim());
-          if (backend) {
-            u.backendId = backend.id;
-            u.role = backend.role ?? u.role;
-            u.accessLevel = backend.accessLevel ?? 'none';
-            u.stripeCustomerId = backend.stripeCustomerId ?? null;
-            u.stripeSubscriptionId = backend.stripeSubscriptionId ?? null;
-            u.trialEndsAt = backend.trialEndsAt ?? null;
-          } else {
-            u.accessLevel = u.accessLevel ?? 'none';
-          }
-        });
+      } catch (err) {
+        console.warn('[GET /api/admin/stats/users] Batch session fetch failed:', err);
       }
+    }
+
+    const organizationsCreatedByUser = new Map<string, Array<{ id: string; name: string; status: string; memberCount: number }>>();
+
+    const usersWithStats = users.map((user) => {
+      const sessions = sessionsByUser.get(user.id) ?? [];
+      const gameTypeStats: Record<string, { count: number; avgScore: number; totalQuestions: number }> = {};
+      sessions.forEach((session) => {
+        if (!gameTypeStats[session.gameType]) {
+          gameTypeStats[session.gameType] = { count: 0, avgScore: 0, totalQuestions: 0 };
+        }
+        gameTypeStats[session.gameType].count++;
+        gameTypeStats[session.gameType].avgScore += session.total > 0 ? (session.score / session.total) * 100 : 0;
+        gameTypeStats[session.gameType].totalQuestions += session.total;
+      });
+      Object.keys(gameTypeStats).forEach((gameType) => {
+        const stats = gameTypeStats[gameType];
+        stats.avgScore = stats.count > 0 ? stats.avgScore / stats.count : 0;
+      });
+      return {
+        ...user,
+        organizationsCreated: organizationsCreatedByUser.get(user.id) ?? [],
+        stats: { totalSessions: sessions.length, gameTypeStats }
+      } as any;
+    });
+
+    // Merge the backend fields (role, accessLevel, stripe ids, trialEndsAt).
+    // Reuses the same backend fetch the sync step already kicked off above —
+    // the cache dedupes this into a single network call per request.
+    try {
+      const backendData = await backendDataPromise;
+      const backendUsers = (backendData?.users || []) as Array<{ id: number; email?: string; username?: string; role?: string; accessLevel?: string; stripeCustomerId?: string | null; stripeSubscriptionId?: string | null; trialEndsAt?: string | null }>;
+      const byEmail = new Map<string, (typeof backendUsers)[0]>();
+      backendUsers.forEach((u) => {
+        const email = (u.email || u.username || '').toLowerCase().trim();
+        if (email) byEmail.set(email, u);
+      });
+      usersWithStats.forEach((u: any) => {
+        const backend = byEmail.get((u.username || '').toLowerCase().trim());
+        if (backend) {
+          u.backendId = backend.id;
+          u.role = backend.role ?? u.role;
+          u.accessLevel = backend.accessLevel ?? 'none';
+          u.stripeCustomerId = backend.stripeCustomerId ?? null;
+          u.stripeSubscriptionId = backend.stripeSubscriptionId ?? null;
+          u.trialEndsAt = backend.trialEndsAt ?? null;
+        } else {
+          u.accessLevel = u.accessLevel ?? 'none';
+        }
+      });
     } catch (_) {
       usersWithStats.forEach((u: any) => { u.accessLevel = u.accessLevel ?? 'none'; });
     }
