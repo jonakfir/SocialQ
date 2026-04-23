@@ -247,6 +247,67 @@
     return emotionById[card.art.emotionId]?.color ?? '#3B82F6';
   }
 
+  // Puzzle-piece clip-path: each card gets an interlocking jigsaw shape
+  // determined by its (col, row) position. Shared edges between adjacent
+  // cards are complementary (one tab, the other notch) so pieces visually
+  // interlock when rendered edge-to-edge with no gap.
+  function puzzlePath(col: number, row: number, cols: number, rows: number): string {
+    const hash = (a: number, b: number) => {
+      const s = Math.sin(a * 12.9898 + b * 78.233 + 1.3) * 43758.5453;
+      return s - Math.floor(s);
+    };
+    // For each internal edge: canonical direction +1 or -1, assigned by hash.
+    // This card sees the edge from its own perspective; the neighbor sees the opposite.
+    // topDir/leftDir use the edge's "owner" hash directly; bottomDir/rightDir invert
+    // (because those shared edges are "owned" by the neighbor).
+    const topDir    = row === 0 ? 0 : (hash(col, row * 2) > 0.5 ? 1 : -1);
+    const leftDir   = col === 0 ? 0 : (hash(col * 2 + 7, row) > 0.5 ? 1 : -1);
+    const bottomDir = row === rows - 1 ? 0 : -(hash(col, (row + 1) * 2) > 0.5 ? 1 : -1);
+    const rightDir  = col === cols - 1 ? 0 : -(hash((col + 1) * 2 + 7, row) > 0.5 ? 1 : -1);
+
+    const T = 0.10;       // tab depth (fraction of bounding box) — smaller = more body visible
+    const S = 1 - T;      // inner body extent
+    const NW = 0.28;      // neck width along edge
+
+    const yTop    = topDir === 0    ? 0 : T;
+    const xRight  = rightDir === 0  ? 1 : S;
+    const yBottom = bottomDir === 0 ? 1 : S;
+    const xLeft   = leftDir === 0   ? 0 : T;
+
+    function edge(x1: number, y1: number, x2: number, y2: number, dir: number, side: string): string {
+      if (dir === 0) return `L ${x2} ${y2} `;
+      let ox = 0, oy = 0;
+      if (side === 'top')    oy = -1;
+      else if (side === 'right')  ox =  1;
+      else if (side === 'bottom') oy =  1;
+      else if (side === 'left')   ox = -1;
+      const bump = T * dir;
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const ex = dx / len, ey = dy / len;
+      const n1x = x1 + ex * len * (0.5 - NW / 2);
+      const n1y = y1 + ey * len * (0.5 - NW / 2);
+      const n2x = x1 + ex * len * (0.5 + NW / 2);
+      const n2y = y1 + ey * len * (0.5 + NW / 2);
+      const c1x = n1x + ox * bump * 1.5 - ex * 0.04;
+      const c1y = n1y + oy * bump * 1.5 - ey * 0.04;
+      const c2x = n2x + ox * bump * 1.5 + ex * 0.04;
+      const c2y = n2y + oy * bump * 1.5 + ey * 0.04;
+      return `L ${n1x} ${n1y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${n2x} ${n2y} L ${x2} ${y2} `;
+    }
+
+    let d = `M ${xLeft} ${yTop} `;
+    d += edge(xLeft,  yTop,    xRight,  yTop,    topDir,    'top');
+    d += edge(xRight, yTop,    xRight,  yBottom, rightDir,  'right');
+    d += edge(xRight, yBottom, xLeft,   yBottom, bottomDir, 'bottom');
+    d += edge(xLeft,  yBottom, xLeft,   yTop,    leftDir,   'left');
+    return d + 'Z';
+  }
+
+  $: puzzlePaths = game
+    ? game.cards.map((_, i) => puzzlePath(i % game!.cols, Math.floor(i / game!.cols), game!.cols, game!.rows))
+    : [];
+
   function onFaceImgError(e: Event) {
     const t = e.target as HTMLImageElement | null;
     if (!t) return;
@@ -288,7 +349,7 @@
   function computeBoardSize() {
     if (!boardWrapEl || !game) return;
     const rect = boardWrapEl.getBoundingClientRect();
-    const pad = 16; // breathing room from the wrap edges
+    const pad = 4; // breathing room from the wrap edges — small so pieces are as big as possible
     const availW = Math.max(0, rect.width - pad);
     const availH = Math.max(0, rect.height - pad);
     if (availW <= 0 || availH <= 0) return;
@@ -470,6 +531,19 @@
     <div class="prog-fill" style="width:{progress}%"></div>
   </div>
 
+  <!-- Puzzle-piece clip-paths: one per card. Uses objectBoundingBox units so
+       the path scales to each card's size. Shared edges between neighboring
+       cards are complementary (tab ↔ notch) giving a jigsaw look. -->
+  <svg aria-hidden="true" width="0" height="0" style="position:absolute">
+    <defs>
+      {#each puzzlePaths as d, i}
+        <clipPath id="puzzle-{i}" clipPathUnits="objectBoundingBox">
+          <path d={d} />
+        </clipPath>
+      {/each}
+    </defs>
+  </svg>
+
   <!-- Board -->
   <div class="board-wrap" bind:this={boardWrapEl}>
     <div class="board" style="{gridStyle} {boardSize ? `width:${boardSize.w}px; height:${boardSize.h}px;` : ''}">
@@ -483,7 +557,7 @@
         on:click={() => handleCardClick(card.id)}
         disabled={card.isFlipped || card.isMatched || game.status !== 'playing'}
         aria-label={card.isFlipped ? card.art.label : 'Hidden card'}
-        style="--deal-delay: {i * 30}ms"
+        style="--deal-delay: {i * 30}ms; clip-path: url(#puzzle-{i});"
       >
         <div class="card-inner">
           <!-- Back -->
@@ -893,7 +967,7 @@
 .board-wrap {
   flex: 1; width: 100%;
   display: flex; align-items: center; justify-content: center;
-  padding: 10px 12px;
+  padding: 4px 6px;
   min-height: 0; min-width: 0;
   overflow: hidden;
 }
@@ -905,11 +979,21 @@
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), 1fr);
   grid-template-rows: repeat(var(--rows, 4), 1fr);
-  gap: clamp(6px, 1.2vw, 14px);
+  /* Zero gap so puzzle piece tabs (at the bounding-box edge) visually interlock
+     with the adjacent card's notch — a positive gap would expose empty space
+     between the pieces and break the jigsaw illusion. */
+  gap: 0;
   /* Fallback size until JS sets inline width/height (first paint, no-JS). */
   width: min(100%, 960px);
   height: auto;
   aspect-ratio: calc(var(--cols) / var(--rows));
+  /* Solid dark backdrop so the puzzle-piece gaps (the inset strips where
+     neither piece paints) show a flat color instead of the mural background
+     bleeding through. Matches the card-back navy to minimize contrast. */
+  background: #0d1f4a;
+  border-radius: 8px;
+  padding: 2px;
+  box-sizing: content-box;
 }
 
 /* ── Card animation system ──────────────────────────────────────
