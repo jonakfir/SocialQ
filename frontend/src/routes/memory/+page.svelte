@@ -548,6 +548,7 @@
   <div class="board-wrap" bind:this={boardWrapEl}>
     <div class="board" style="{gridStyle} {boardSize ? `width:${boardSize.w}px; height:${boardSize.h}px;` : ''}">
     {#each game.cards as card, i (card.id)}
+      <div class="card-slot">
       <button
         class="card"
         class:flipped={card.isFlipped || card.isMatched}
@@ -584,13 +585,11 @@
               <div class="face-fallback" style="display:none">
                 <span class="card-emoji">{emotionById[card.art.emotionId]?.emoji ?? '😐'}</span>
               </div>
-              {#if card.isMatched}<div class="face-label">{card.art.label}</div>{/if}
             {:else if card.art.type === 'cartoon'}
               <img src={card.art.value} alt={card.art.label} class="cartoon-img" on:error={onCartoonImgError} />
               <div class="cartoon-fallback" style="display:none">
                 <span class="card-emoji">{emotionById[card.art.emotionId]?.emoji ?? '😐'}</span>
               </div>
-              {#if card.isMatched}<div class="face-label">{card.art.label}</div>{/if}
             {:else if card.art.type === 'transition'}
               <!-- Short mp4 of an emotion transition (e.g. Angry → Happy).
                    Autoplay muted so iOS Safari allows it; loop so the clip keeps
@@ -605,14 +604,18 @@
                 preload="metadata"
                 aria-label={card.art.label}
               ></video>
-              {#if card.isMatched}<div class="face-label">{card.art.label}</div>{/if}
             {:else}
               <span class="card-emoji">{card.art.value}</span>
-              {#if card.isMatched}<span class="emoji-label">{card.art.label}</span>{/if}
             {/if}
           </div>
         </div>
       </button>
+        {#if card.isMatched}
+          <!-- Render label OUTSIDE the .card's clip-path so the text doesn't
+               get sliced off by the puzzle-piece tabs/notches. -->
+          <div class="match-label" style="--ec:{cardColor(card)}">{card.art.label}</div>
+        {/if}
+      </div>
     {/each}
     </div>
   </div>
@@ -1002,6 +1005,38 @@
  *   5. hint       — gentle breathing pulse on the partner card.
  *
  * Everything respects `prefers-reduced-motion` at the bottom. */
+
+/* Each grid cell wraps the clipped .card PLUS an unclipped label overlay
+   that renders on top after a match, so the emotion name isn't sliced off
+   by the puzzle-piece tabs. */
+.card-slot {
+  position: relative;
+  width: 100%; height: 100%;
+  min-width: 0; min-height: 0;
+}
+
+.match-label {
+  position: absolute;
+  left: 50%; bottom: 8%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--ec, #3B82F6);
+  color: #fff;
+  font-weight: 800;
+  font-size: clamp(10px, 1.5vw, 14px);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  pointer-events: none;
+  z-index: 5;
+  animation: matchLabelIn 400ms cubic-bezier(.25, 1.3, .4, 1) both;
+}
+@keyframes matchLabelIn {
+  from { opacity: 0; transform: translate(-50%, 6px) scale(.9); }
+  to   { opacity: 1; transform: translate(-50%, 0)   scale(1); }
+}
 
 .card {
   border: none; background: transparent; padding: 0;
